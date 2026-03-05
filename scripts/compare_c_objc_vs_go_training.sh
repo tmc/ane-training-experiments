@@ -375,14 +375,11 @@ binary_supports_flag() {
 	if [[ ! -x "$bin" ]]; then
 		return 1
 	fi
-	strings "$bin" 2>/dev/null | rg -F -q -- "$flag"
+	strings "$bin" 2>/dev/null | grep -F -- "$flag" >/dev/null 2>&1
 }
 
 ensure_full_flag_support() {
 	local missing=()
-	if [[ "$VECLIB_THREADS" -gt 0 ]] && ! binary_supports_flag "$C_FULL_BIN" "--veclib-threads"; then
-		missing+=("--veclib-threads")
-	fi
 	if [[ "$DW_CONCURRENCY" -gt 0 ]] && ! binary_supports_flag "$C_FULL_BIN" "--dw-concurrency"; then
 		missing+=("--dw-concurrency")
 	fi
