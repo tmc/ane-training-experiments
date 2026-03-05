@@ -91,6 +91,7 @@ func main() {
 		recompileEach  = flag.Bool("recompile-every-step", false, "recompile ANE kernel at each step (parity experiment)")
 		diagnostics    = flag.Bool("diagnostics", false, "print model/client diagnostics at startup")
 		allowExpDirect = flag.Bool("allow-experimental-ane-trainer", false, "allow direct Go ane trainer path (forward-only/experimental; not full train_large_ane parity)")
+		parityMode     = flag.Bool("parity-mode", false, "enforce full train_large_ane parity profile (backend=full, seq=384, full-accum=80, veclib=6, dw=3)")
 	)
 	flag.Parse()
 	model := defaultIfEmpty(*modelPath, cDefaultModelPath)
@@ -99,12 +100,36 @@ func main() {
 	if *backend != "auto" && *backend != "ane" && *backend != "ane-dynamic" && *backend != "cpu" && *backend != "full" {
 		fatalf("backend must be one of: auto, ane, ane-dynamic, cpu, full")
 	}
+	if *parityMode && *backend == "cpu" {
+		fatalf("parity-mode is incompatible with backend=cpu")
+	}
+	if *parityMode && *backend == "ane-dynamic" {
+		fatalf("parity-mode is incompatible with backend=ane-dynamic")
+	}
 	selectedBackend := *backend
 	if selectedBackend == "auto" {
 		if strings.HasSuffix(strings.ToLower(model), ".bin") {
 			selectedBackend = "full"
 		} else {
 			selectedBackend = "ane"
+		}
+	}
+	if *parityMode {
+		selectedBackend = "full"
+		if *seqOverride == 0 {
+			*seqOverride = 384
+		}
+		if *fullAccumSteps == 0 {
+			*fullAccumSteps = 80
+		}
+		if *veclibThreads == 0 {
+			*veclibThreads = 6
+		}
+		if *dwConcurrency == 0 {
+			*dwConcurrency = 3
+		}
+		if *noANEExtras {
+			fatalf("parity-mode requires ANE extras enabled (remove -no-ane-extras)")
 		}
 	}
 	runFullWorkload := selectedBackend == "full" || (selectedBackend == "ane" && strings.HasSuffix(strings.ToLower(model), ".bin"))
