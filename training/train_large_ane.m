@@ -101,6 +101,12 @@ static Kern *compile_classifier_fwd(const float *embed) {
     }), DIM*SEQ*2, VOCAB*SEQ*2);
 }
 
+static Kern *compile_classifier_bwd(const float *embed) {
+    return compile_kern_mil_w(gen_classifier_bwd(), (@{
+        @"@model_path/weights/embed_t.bin": @{@"offset":@0, @"data":build_blob_t(embed, VOCAB, DIM)},
+    }), VOCAB*SEQ*2, DIM*SEQ*2);
+}
+
 // NEW: Compile final RMSNorm kernel
 static Kern *compile_final_rmsnorm_kern(const float *rms_w) {
     return compile_kern_mil_w(gen_final_rmsnorm(), (@{
@@ -205,14 +211,18 @@ int main(int argc, char *argv[]) {
         const char *ckpt_path = CKPT_PATH_DEFAULT;
         const char *model_path = MODEL_PATH_DEFAULT;
         const char *data_path = DATA_PATH_DEFAULT;
+        int accum_steps = ACCUM_STEPS;
         bool do_resume = false;
         bool ane_extras = true;  // classifier, softmax, rmsnorm_bwd on ANE
+        bool ane_cls_bwd = false;  // classifier backward (dy) on ANE
         int pos = 0;
         for (int i=1; i<argc; i++) {
             if (strcmp(argv[i], "--resume") == 0) do_resume = true;
             else if (strcmp(argv[i], "--no-ane-extras") == 0) ane_extras = false;
+            else if (strcmp(argv[i], "--ane-cls-bwd") == 0) ane_cls_bwd = true;
             else if (strcmp(argv[i], "--steps") == 0 && i+1<argc) total_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--lr") == 0 && i+1<argc) lr = atof(argv[++i]);
+            else if (strcmp(argv[i], "--accum") == 0 && i+1<argc) accum_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
             else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
             else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
@@ -223,6 +233,14 @@ int main(int argc, char *argv[]) {
                 else if (pos == 3) lr = atof(argv[i]);
                 pos++;
             }
+        }
+        if (accum_steps < 1) {
+            printf("warning: --accum must be >= 1; using %d\n", ACCUM_STEPS);
+            accum_steps = ACCUM_STEPS;
+        }
+        if (ane_cls_bwd && !ane_extras) {
+            printf("warning: --ane-cls-bwd ignored with --no-ane-extras\n");
+            ane_cls_bwd = false;
         }
 
         LayerWeights lw[NLAYERS]; LayerAdam la[NLAYERS];
@@ -251,7 +269,8 @@ int main(int argc, char *argv[]) {
         }
         if (!resuming) {
             printf("=== ANE Training: Stories110M (ANE-offloaded) ===\n");
-            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d\n", DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS);
+            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d accum=%d\n",
+                   DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS, accum_steps);
             if (ane_extras) printf("NEW: final_rmsnorm, classifier_fwd, softmax, rmsnorm_bwd on ANE\n");
             else printf("ANE extras DISABLED (classifier/softmax/rmsnorm_bwd on CPU)\n");
             {
@@ -331,7 +350,7 @@ int main(int argc, char *argv[]) {
         }
 
         // Final RMSNorm and classifier are recompiled per batch since they have baked weights
-        Kern *finalRmsKern = NULL, *classifierKern = NULL;
+        Kern *finalRmsKern = NULL, *classifierKern = NULL, *classifierBwdKern = NULL;
 
         dispatch_queue_t dw_q = dispatch_queue_create("dw_cblas", DISPATCH_QUEUE_SERIAL);
         dispatch_group_t dw_grp = dispatch_group_create();
@@ -345,14 +364,14 @@ int main(int argc, char *argv[]) {
         int step = start_step;
         while (step < total_steps) {
             // Check compile budget — account for new kernels
-            // Per batch: 60 layer kernels [+ 24 rmsnorm_bwd + 1 classifier + 1 final_rms = 86 with extras]
-            int kernels_needed = TOTAL_WEIGHT_KERNELS + (ane_extras ? 2*NLAYERS + 2 : 0);
+            // Per batch: 60 layer kernels [+ 24 rmsnorm_bwd + 2 classifier/final (+1 cls_bwd) = 86/87 with extras]
+            int kernels_needed = TOTAL_WEIGHT_KERNELS + (ane_extras ? 2*NLAYERS + 2 + (ane_cls_bwd ? 1 : 0) : 0);
             if (g_compile_count + kernels_needed > MAX_COMPILES) {
                 for (int L=0; L<NLAYERS; L++) {
                     free_layer_kernels(&kern[L]); free_kern(sdpaBwd2[L]);
                     free_kern(rmsAttBwd[L]); free_kern(rmsFFNBwd[L]);
                 }
-                free_kern(softmaxKern); free_kern(finalRmsKern); free_kern(classifierKern);
+                free_kern(softmaxKern); free_kern(finalRmsKern); free_kern(classifierKern); free_kern(classifierBwdKern);
                 double wall = tb_ms(mach_absolute_time() - t_wall_start);
                 save_checkpoint(ckpt_path, step, total_steps, lr, last_loss,
                     total_compile_ms+cum_compile, total_train_ms+cum_train, wall+cum_wall,
@@ -360,10 +379,17 @@ int main(int argc, char *argv[]) {
                     lw, la, rms_final, &arms_final, embed, &aembed);
                 printf("[exec() restart step %d, %d compiles, loss=%.4f]\n", step, g_compile_count, last_loss);
                 fflush(stdout);
-                if (ane_extras)
-                    execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path, NULL);
+                char accum_buf[32];
+                snprintf(accum_buf, sizeof(accum_buf), "%d", accum_steps);
+                if (ane_extras && ane_cls_bwd)
+                    execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
+                          "--accum", accum_buf, "--ane-cls-bwd", NULL);
+                else if (ane_extras)
+                    execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
+                          "--accum", accum_buf, NULL);
                 else
-                    execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path, "--no-ane-extras", NULL);
+                    execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
+                          "--accum", accum_buf, "--no-ane-extras", NULL);
                 perror("execl"); return 1;
             }
 
@@ -401,10 +427,11 @@ int main(int argc, char *argv[]) {
 
             // Compile final RMSNorm and classifier with current weights (if ane_extras)
             if (ane_extras) {
-                free_kern(finalRmsKern); free_kern(classifierKern);
+                free_kern(finalRmsKern); free_kern(classifierKern); free_kern(classifierBwdKern);
                 finalRmsKern = compile_final_rmsnorm_kern(rms_final);
                 classifierKern = compile_classifier_fwd(embed);
-                if (!finalRmsKern || !classifierKern) {
+                if (ane_cls_bwd) classifierBwdKern = compile_classifier_bwd(embed);
+                if (!finalRmsKern || !classifierKern || (ane_cls_bwd && !classifierBwdKern)) {
                     printf("finalRms or classifier compile failed\n");
                     g_compile_count = MAX_COMPILES; continue;
                 }
@@ -427,7 +454,7 @@ int main(int argc, char *argv[]) {
             uint64_t tt = mach_absolute_time();
             double t_ane=0,t_io=0,t_elem=0,t_rms=0,t_cblas_wait=0,t_cls=0;
 
-            for (int a=0; a<ACCUM_STEPS && step<total_steps; a++, step++) {
+            for (int a=0; a<accum_steps && step<total_steps; a++, step++) {
                 uint64_t t0,t1;
                 size_t max_pos = n_tokens - SEQ - 1;
                 size_t pos = (size_t)(drand48() * max_pos);
@@ -532,10 +559,16 @@ int main(int argc, char *argv[]) {
                 t1=mach_absolute_time(); t_elem+=tb_ms(t1-t0); t0=t1;
 
                 // ===== BACKWARD =====
-                // Classifier backward: dx_final = embed^T @ dlogits (CPU — ANE is slower)
-                cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                            DIM, SEQ, VOCAB, 1.0f,
-                            embed, DIM, dlogits, SEQ, 0.0f, dy, SEQ);
+                // Classifier backward: dx_final = embed^T @ dlogits
+                if (ane_extras && ane_cls_bwd && classifierBwdKern) {
+                    io_write_fp16(classifierBwdKern->ioIn, dlogits, VOCAB, SEQ);
+                    ane_eval(classifierBwdKern);
+                    io_read_fp16(classifierBwdKern->ioOut, dy, 0, DIM, SEQ);
+                } else {
+                    cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                                DIM, SEQ, VOCAB, 1.0f,
+                                embed, DIM, dlogits, SEQ, 0.0f, dy, SEQ);
+                }
                 // dembed async on CPU
                 dispatch_group_async(dw_grp, dw_q, ^{
                     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
@@ -720,8 +753,9 @@ int main(int argc, char *argv[]) {
         double sdpa_flops = NLAYERS * 2.0*HEADS*5*SEQ*SEQ*HD;
         double cls_flops = 2.0*VOCAB*DIM*SEQ;
         double total_flops = (fwd_flops*3 + sdpa_flops + cls_flops*3) * total_steps_done;
-        // In train_large_ane: classifier fwd + softmax run on ANE (not CPU)
-        double ane_flops = (fwd_flops*2 + sdpa_flops + cls_flops) * total_steps_done;
+        // In train_large_ane: classifier fwd + softmax run on ANE; optionally cls backward too.
+        double ane_cls_flops = cls_flops + ((ane_extras && ane_cls_bwd) ? cls_flops : 0.0);
+        double ane_flops = (fwd_flops*2 + sdpa_flops + ane_cls_flops) * total_steps_done;
 
         printf("\n=== NEW Efficiency Report ===\n");
         printf("Total steps:     %d\n", total_steps_done);
@@ -739,7 +773,7 @@ int main(int argc, char *argv[]) {
             layer_weights_free(&lw[L]); layer_adam_free(&la[L]);
             layer_acts_free(&acts[L]); layer_grads_free(&grads[L]);
         }
-        free_kern(softmaxKern); free_kern(finalRmsKern); free_kern(classifierKern);
+        free_kern(softmaxKern); free_kern(finalRmsKern); free_kern(classifierKern); free_kern(classifierBwdKern);
         munmap(token_data, data_len); close(data_fd);
         free(rms_final); free(embed); free(grms_final); free(gembed);
         adam_free(&arms_final); adam_free(&aembed);

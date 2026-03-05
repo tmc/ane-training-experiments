@@ -15,15 +15,31 @@
 #include <fcntl.h>
 
 // Stories110M config
+#ifndef DIM
 #define DIM 768
+#endif
+#ifndef HIDDEN
 #define HIDDEN 2048
+#endif
+#ifndef HEADS
 #define HEADS 12
+#endif
 #define HD (DIM/HEADS)
+#ifndef SEQ
 #define SEQ 256
+#endif
+#ifndef NLAYERS
 #define NLAYERS 12
+#endif
+#ifndef VOCAB
 #define VOCAB 32000
-#define ACCUM_STEPS 10
+#endif
+#ifndef ACCUM_STEPS
+#define ACCUM_STEPS 40
+#endif
+#ifndef MAX_COMPILES
 #define MAX_COMPILES 100
+#endif
 
 // Per compile: 5 weight-bearing kernels per layer + 1 classifier = 5*12+1 = 61
 // Plus 1 static (sdpaBwd2 per layer, no weights) = 12 more but those are weight-free
