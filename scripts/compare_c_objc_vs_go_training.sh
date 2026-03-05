@@ -18,6 +18,7 @@ DYNAMIC_ACCUM=20
 FULL_ACCUM=0
 VECLIB_THREADS=0
 DW_CONCURRENCY=0
+PROFILE="default"
 SEQ_OVERRIDE=""
 OUT_DIR="/tmp/ane_compare"
 SKIP_BUILD=0
@@ -46,6 +47,7 @@ Flags:
   --full-accum N        accumulation steps for full C/ObjC trainer (default: trainer default)
   --veclib-threads N    set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer paths (default: process default)
   --dw-concurrency N    set dW async task concurrency for full C/ObjC trainer paths (default: trainer default)
+  --profile NAME        preset workload profile: default|high-util
   --seq-override N      rebuild trainer binaries with SEQ=N for higher work per dispatch
   --allow-mismatch      allow non-equivalent workload pairings (default: false)
   --warmup-steps N      ignore first N overlapped steps in summary means (default: 0)
@@ -124,6 +126,10 @@ while [[ $# -gt 0 ]]; do
 			DW_CONCURRENCY="$2"
 			shift 2
 			;;
+		--profile)
+			PROFILE="$2"
+			shift 2
+			;;
 		--seq-override)
 			SEQ_OVERRIDE="$2"
 			shift 2
@@ -167,6 +173,25 @@ while [[ $# -gt 0 ]]; do
 		;;
 	esac
 done
+
+if [[ "$PROFILE" != "default" && "$PROFILE" != "high-util" ]]; then
+	echo "profile must be one of: default, high-util" >&2
+	exit 1
+fi
+if [[ "$PROFILE" == "high-util" ]]; then
+	if [[ "$FULL_ACCUM" -eq 0 ]]; then
+		FULL_ACCUM=80
+	fi
+	if [[ -z "$SEQ_OVERRIDE" ]]; then
+		SEQ_OVERRIDE=384
+	fi
+	if [[ "$VECLIB_THREADS" -eq 0 ]]; then
+		VECLIB_THREADS=6
+	fi
+	if [[ "$DW_CONCURRENCY" -eq 0 ]]; then
+		DW_CONCURRENCY=3
+	fi
+fi
 
 if [[ -z "${GO_MODEL}" ]]; then
 	case "$GO_BACKEND" in
@@ -812,6 +837,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "go_backend_flag=$GO_BACKEND"
 	echo "dynamic_accum=$DYNAMIC_ACCUM"
 	echo "full_accum=$FULL_ACCUM"
+	echo "profile=$PROFILE"
 	echo "veclib_threads=$VECLIB_THREADS"
 	echo "dw_concurrency=$DW_CONCURRENCY"
 	echo "ane_cls_bwd=$ANE_CLS_BWD"
