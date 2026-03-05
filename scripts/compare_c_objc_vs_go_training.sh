@@ -707,8 +707,37 @@ detect_c_mode() {
 	echo "unknown"
 }
 
+extract_ane_util() {
+	local log="$1"
+	local line
+	line="$(grep -E "ANE utilization:" "$log" | tail -n1 || true)"
+	if [[ -z "$line" ]]; then
+		echo "n/a"
+		return
+	fi
+	echo "$line" | sed -E 's/.*ANE utilization:[[:space:]]*([0-9.]+)%.*/\1/'
+}
+
+extract_compile_pct() {
+	local log="$1"
+	local line
+	line="$(grep -E "Compile time:" "$log" | tail -n1 || true)"
+	if [[ -z "$line" ]]; then
+		line="$(grep -E "^Compile:[[:space:]]+" "$log" | tail -n1 || true)"
+	fi
+	if [[ -z "$line" ]]; then
+		echo "n/a"
+		return
+	fi
+	echo "$line" | sed -E 's/.*\(([^)]*,[[:space:]]*)?([0-9]+(\.[0-9]+)?)%\).*/\2/'
+}
+
 GO_MODE="$(detect_go_mode "$GO_LOG")"
 C_RUNTIME_MODE="$(detect_c_mode "$C_LOG")"
+GO_ANE_UTIL="$(extract_ane_util "$GO_LOG")"
+C_ANE_UTIL="$(extract_ane_util "$C_LOG")"
+GO_COMPILE_PCT="$(extract_compile_pct "$GO_LOG")"
+C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 
 {
 	echo "c_exit_code=$C_RC"
@@ -731,6 +760,10 @@ C_RUNTIME_MODE="$(detect_c_mode "$C_LOG")"
 	echo "c_mode_flag=$C_MODE"
 	echo "c_mode=$C_RUNTIME_MODE"
 	echo "go_mode=$GO_MODE"
+	echo "c_ane_util_pct=$C_ANE_UTIL"
+	echo "go_ane_util_pct=$GO_ANE_UTIL"
+	echo "c_compile_pct=$C_COMPILE_PCT"
+	echo "go_compile_pct=$GO_COMPILE_PCT"
 		awk -F, '
 		BEGIN {
 			n = 0
