@@ -13,6 +13,7 @@ FULL_ACCUM_LIST="20,40"
 WARMUP_STEPS=0
 SKIP_BUILD=1
 RUN_ORDER_MODE="alternate"
+VECLIB_THREADS=0
 
 usage() {
 	cat <<'EOF'
@@ -26,6 +27,7 @@ Flags:
   --full-accum-list CSV  full trainer accumulation values (default: 20,40)
   --warmup-steps N       summary warmup steps passed to compare script (default: 0)
   --run-order MODE       alternate|go-c|c-go (default: alternate)
+  --veclib-threads N     set VECLIB_MAXIMUM_THREADS for full trainer runs (default: process default)
   --skip-build 0|1       pass --skip-build to compare runs (default: 1)
   --out-dir DIR          tuner output directory (default: /tmp/ane_full_tune)
   --compare-out-dir DIR  compare script output directory (default: /tmp/ane_compare)
@@ -62,6 +64,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--run-order)
 		RUN_ORDER_MODE="$2"
+		shift 2
+		;;
+	--veclib-threads)
+		VECLIB_THREADS="$2"
 		shift 2
 		;;
 	--skip-build)
@@ -106,6 +112,10 @@ if ! [[ "$WARMUP_STEPS" =~ ^[0-9]+$ ]]; then
 fi
 if [[ "$SKIP_BUILD" != "0" && "$SKIP_BUILD" != "1" ]]; then
 	echo "skip-build must be 0 or 1: $SKIP_BUILD" >&2
+	exit 1
+fi
+if ! [[ "$VECLIB_THREADS" =~ ^[0-9]+$ ]]; then
+	echo "veclib-threads must be >= 0: $VECLIB_THREADS" >&2
 	exit 1
 fi
 if [[ "$RUN_ORDER_MODE" != "alternate" && "$RUN_ORDER_MODE" != "go-c" && "$RUN_ORDER_MODE" != "c-go" ]]; then
@@ -170,6 +180,9 @@ for seq in $seq_values; do
 				"--run-order" "$run_order"
 				"--warmup-steps" "$WARMUP_STEPS"
 				"--out-dir" "$COMPARE_OUT_DIR")
+			if [[ "$VECLIB_THREADS" -gt 0 ]]; then
+				cmd+=("--veclib-threads" "$VECLIB_THREADS")
+			fi
 			if [[ "$current_skip_build" == "1" ]]; then
 				cmd+=("--skip-build")
 			fi

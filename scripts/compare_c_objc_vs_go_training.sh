@@ -16,6 +16,7 @@ FULL_BIN="$ROOT/training/train_large_ane"
 DYNAMIC_BIN="$ROOT/training/training_dynamic/train"
 DYNAMIC_ACCUM=20
 FULL_ACCUM=0
+VECLIB_THREADS=0
 SEQ_OVERRIDE=""
 OUT_DIR="/tmp/ane_compare"
 SKIP_BUILD=0
@@ -42,6 +43,7 @@ Flags:
   --dynamic-bin PATH    dynamic trainer binary path (default: ./training/training_dynamic/train)
   --dynamic-accum N     accumulation steps for ane-dynamic mode (default: 20)
   --full-accum N        accumulation steps for full C/ObjC trainer (default: trainer default)
+  --veclib-threads N    set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer paths (default: process default)
   --seq-override N      rebuild trainer binaries with SEQ=N for higher work per dispatch
   --allow-mismatch      allow non-equivalent workload pairings (default: false)
   --warmup-steps N      ignore first N overlapped steps in summary means (default: 0)
@@ -110,6 +112,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--full-accum)
 			FULL_ACCUM="$2"
+			shift 2
+			;;
+		--veclib-threads)
+			VECLIB_THREADS="$2"
 			shift 2
 			;;
 		--seq-override)
@@ -197,6 +203,10 @@ if ! [[ "$DYNAMIC_ACCUM" =~ ^[0-9]+$ ]] || [[ "$DYNAMIC_ACCUM" -lt 1 ]]; then
 fi
 if ! [[ "$FULL_ACCUM" =~ ^[0-9]+$ ]]; then
 	echo "full-accum must be a non-negative integer: $FULL_ACCUM" >&2
+	exit 1
+fi
+if ! [[ "$VECLIB_THREADS" =~ ^[0-9]+$ ]]; then
+	echo "veclib-threads must be a non-negative integer: $VECLIB_THREADS" >&2
 	exit 1
 fi
 if [[ -n "$SEQ_OVERRIDE" ]]; then
@@ -333,6 +343,9 @@ c_flags=(--model "$C_MODEL" --data "$DATA" --steps "$STEPS" --lr "$LR" --ckpt "$
 if [[ "$FULL_ACCUM" -gt 0 ]]; then
 	c_flags+=(--accum "$FULL_ACCUM")
 fi
+if [[ "$VECLIB_THREADS" -gt 0 ]]; then
+	c_flags+=(--veclib-threads "$VECLIB_THREADS")
+fi
 if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
 	c_flags+=(--no-ane-extras)
 fi
@@ -410,6 +423,9 @@ else
 		go_flags+=(-full-bin "$GO_FULL_BIN")
 		if [[ "$FULL_ACCUM" -gt 0 ]]; then
 			go_flags+=(-full-accum-steps "$FULL_ACCUM")
+		fi
+		if [[ "$VECLIB_THREADS" -gt 0 ]]; then
+			go_flags+=(-veclib-threads "$VECLIB_THREADS")
 		fi
 	fi
 	if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
@@ -745,6 +761,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "go_backend_flag=$GO_BACKEND"
 	echo "dynamic_accum=$DYNAMIC_ACCUM"
 	echo "full_accum=$FULL_ACCUM"
+	echo "veclib_threads=$VECLIB_THREADS"
 	echo "ane_cls_bwd=$ANE_CLS_BWD"
 	echo "seq_override=${SEQ_OVERRIDE:-<none>}"
 	echo "run_order=$RUN_ORDER"

@@ -72,6 +72,7 @@ func main() {
 		backend        = flag.String("backend", defaultBackend, "training backend: auto|ane|ane-dynamic|cpu|full")
 		fullBin        = flag.String("full-bin", "", "path to full C/ObjC trainer binary (default: ./training/train_large_ane)")
 		fullAccumSteps = flag.Uint("full-accum-steps", 0, "override full C/ObjC trainer accumulation steps (0 uses trainer default)")
+		veclibThreads  = flag.Int("veclib-threads", 0, "set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer (0 uses process default)")
 		dynamicBin     = flag.String("dynamic-bin", "", "path to dynamic C/ObjC trainer binary (default: ./training/training_dynamic/train)")
 		seqOverride    = flag.Uint("seq-override", 0, "build and use C/ObjC trainer binaries with compile-time SEQ override (full/ane-dynamic backends)")
 		dynamicANECls  = flag.Bool("dynamic-ane-cls", false, "enable ANE classifier path for ane-dynamic backend")
@@ -116,6 +117,9 @@ func main() {
 	if *maxRestarts < 0 {
 		fatalf("max-restarts must be >= 0")
 	}
+	if *veclibThreads < 0 {
+		fatalf("veclib-threads must be >= 0")
+	}
 	requiresCheckpoint := !(runFullWorkload || runDynamicWorkload)
 	if *resume && requiresCheckpoint && strings.TrimSpace(*ckptPath) == "" {
 		fatalf("resume requires -ckpt")
@@ -128,17 +132,18 @@ func main() {
 	}
 	if runFullWorkload {
 		if err := runFullTraining(fullRunOptions{
-			binPath:     *fullBin,
-			seqOverride: int(*seqOverride),
-			modelPath:   model,
-			dataPath:    data,
-			ckptPath:    *ckptPath,
-			resume:      *resume,
-			steps:       int(*steps),
-			lr:          *learningRate,
-			accumSteps:  int(*fullAccumSteps),
-			noANEExtras: *noANEExtras,
-			aneClsBwd:   *aneClsBwd,
+			binPath:       *fullBin,
+			seqOverride:   int(*seqOverride),
+			modelPath:     model,
+			dataPath:      data,
+			ckptPath:      *ckptPath,
+			resume:        *resume,
+			steps:         int(*steps),
+			lr:            *learningRate,
+			accumSteps:    int(*fullAccumSteps),
+			veclibThreads: *veclibThreads,
+			noANEExtras:   *noANEExtras,
+			aneClsBwd:     *aneClsBwd,
 		}); err != nil {
 			fatalf("full backend: %v", err)
 		}
@@ -468,17 +473,18 @@ type cpuRunOptions struct {
 }
 
 type fullRunOptions struct {
-	binPath     string
-	seqOverride int
-	modelPath   string
-	dataPath    string
-	ckptPath    string
-	resume      bool
-	steps       int
-	lr          float64
-	accumSteps  int
-	noANEExtras bool
-	aneClsBwd   bool
+	binPath       string
+	seqOverride   int
+	modelPath     string
+	dataPath      string
+	ckptPath      string
+	resume        bool
+	steps         int
+	lr            float64
+	accumSteps    int
+	veclibThreads int
+	noANEExtras   bool
+	aneClsBwd     bool
 }
 
 type dynamicRunOptions struct {
@@ -509,6 +515,9 @@ func runFullTraining(opts fullRunOptions) error {
 	}
 	if opts.accumSteps > 0 {
 		args = append(args, "--accum", strconv.Itoa(opts.accumSteps))
+	}
+	if opts.veclibThreads > 0 {
+		args = append(args, "--veclib-threads", strconv.Itoa(opts.veclibThreads))
 	}
 	if opts.ckptPath != "" {
 		args = append(args, "--ckpt", opts.ckptPath)

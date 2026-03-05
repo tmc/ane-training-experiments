@@ -9,7 +9,7 @@
 //               NLL loss + gradient (needs target indexing)
 //
 // Build: make train_large_ane
-// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--accum N] [--data PATH]
+// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--accum N] [--veclib-threads N] [--data PATH]
 #include "stories_io.h"
 #include "stories_mil.h"
 #include "stories_cpu_ops.h"
@@ -212,6 +212,7 @@ int main(int argc, char *argv[]) {
         const char *model_path = MODEL_PATH_DEFAULT;
         const char *data_path = DATA_PATH_DEFAULT;
         int accum_steps = ACCUM_STEPS;
+        int veclib_threads = 0;
         bool do_resume = false;
         bool ane_extras = true;  // classifier, softmax, rmsnorm_bwd on ANE
         bool ane_cls_bwd = false;  // classifier backward (dy) on ANE
@@ -223,6 +224,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(argv[i], "--steps") == 0 && i+1<argc) total_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--lr") == 0 && i+1<argc) lr = atof(argv[++i]);
             else if (strcmp(argv[i], "--accum") == 0 && i+1<argc) accum_steps = atoi(argv[++i]);
+            else if (strcmp(argv[i], "--veclib-threads") == 0 && i+1<argc) veclib_threads = atoi(argv[++i]);
             else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
             else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
             else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
@@ -237,6 +239,15 @@ int main(int argc, char *argv[]) {
         if (accum_steps < 1) {
             printf("warning: --accum must be >= 1; using %d\n", ACCUM_STEPS);
             accum_steps = ACCUM_STEPS;
+        }
+        if (veclib_threads < 0) {
+            printf("warning: --veclib-threads must be >= 0; disabling override\n");
+            veclib_threads = 0;
+        }
+        if (veclib_threads > 0) {
+            char veclib_buf[32];
+            snprintf(veclib_buf, sizeof(veclib_buf), "%d", veclib_threads);
+            setenv("VECLIB_MAXIMUM_THREADS", veclib_buf, 1);
         }
         if (ane_cls_bwd && !ane_extras) {
             printf("warning: --ane-cls-bwd ignored with --no-ane-extras\n");
@@ -269,8 +280,8 @@ int main(int argc, char *argv[]) {
         }
         if (!resuming) {
             printf("=== ANE Training: Stories110M (ANE-offloaded) ===\n");
-            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d accum=%d\n",
-                   DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS, accum_steps);
+            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d accum=%d veclib_threads=%d\n",
+                   DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS, accum_steps, veclib_threads);
             if (ane_extras) printf("NEW: final_rmsnorm, classifier_fwd, softmax, rmsnorm_bwd on ANE\n");
             else printf("ANE extras DISABLED (classifier/softmax/rmsnorm_bwd on CPU)\n");
             {
@@ -381,15 +392,17 @@ int main(int argc, char *argv[]) {
                 fflush(stdout);
                 char accum_buf[32];
                 snprintf(accum_buf, sizeof(accum_buf), "%d", accum_steps);
+                char veclib_buf[32];
+                snprintf(veclib_buf, sizeof(veclib_buf), "%d", veclib_threads);
                 if (ane_extras && ane_cls_bwd)
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, "--ane-cls-bwd", NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--ane-cls-bwd", NULL);
                 else if (ane_extras)
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, NULL);
                 else
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, "--no-ane-extras", NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--no-ane-extras", NULL);
                 perror("execl"); return 1;
             }
 
