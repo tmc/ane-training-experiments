@@ -214,6 +214,7 @@ done
 {
 	echo "results_csv=$CSV"
 	echo "raw_log=$LOG"
+	echo "veclib_threads=$VECLIB_THREADS"
 	echo
 	echo "aggregate by seq+accum (mean over runs):"
 	echo "seq,full_accum,runs,mean_c_util,mean_go_util,mean_c_step_ms,mean_go_step_ms,mean_go_vs_c_ratio"
