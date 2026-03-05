@@ -73,6 +73,7 @@ func main() {
 		fullBin        = flag.String("full-bin", "", "path to full C/ObjC trainer binary (default: ./training/train_large_ane)")
 		fullAccumSteps = flag.Uint("full-accum-steps", 0, "override full C/ObjC trainer accumulation steps (0 uses trainer default)")
 		veclibThreads  = flag.Int("veclib-threads", 0, "set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer (0 uses process default)")
+		dwConcurrency  = flag.Int("dw-concurrency", 0, "set C/ObjC dW async task concurrency for full trainer (0 uses trainer default, currently 3)")
 		dynamicBin     = flag.String("dynamic-bin", "", "path to dynamic C/ObjC trainer binary (default: ./training/training_dynamic/train)")
 		seqOverride    = flag.Uint("seq-override", 0, "build and use C/ObjC trainer binaries with compile-time SEQ override (full/ane-dynamic backends)")
 		dynamicANECls  = flag.Bool("dynamic-ane-cls", false, "enable ANE classifier path for ane-dynamic backend")
@@ -120,6 +121,9 @@ func main() {
 	if *veclibThreads < 0 {
 		fatalf("veclib-threads must be >= 0")
 	}
+	if *dwConcurrency < 0 {
+		fatalf("dw-concurrency must be >= 0")
+	}
 	requiresCheckpoint := !(runFullWorkload || runDynamicWorkload)
 	if *resume && requiresCheckpoint && strings.TrimSpace(*ckptPath) == "" {
 		fatalf("resume requires -ckpt")
@@ -142,6 +146,7 @@ func main() {
 			lr:            *learningRate,
 			accumSteps:    int(*fullAccumSteps),
 			veclibThreads: *veclibThreads,
+			dwConcurrency: *dwConcurrency,
 			noANEExtras:   *noANEExtras,
 			aneClsBwd:     *aneClsBwd,
 		}); err != nil {
@@ -483,6 +488,7 @@ type fullRunOptions struct {
 	lr            float64
 	accumSteps    int
 	veclibThreads int
+	dwConcurrency int
 	noANEExtras   bool
 	aneClsBwd     bool
 }
@@ -518,6 +524,9 @@ func runFullTraining(opts fullRunOptions) error {
 	}
 	if opts.veclibThreads > 0 {
 		args = append(args, "--veclib-threads", strconv.Itoa(opts.veclibThreads))
+	}
+	if opts.dwConcurrency > 0 {
+		args = append(args, "--dw-concurrency", strconv.Itoa(opts.dwConcurrency))
 	}
 	if opts.ckptPath != "" {
 		args = append(args, "--ckpt", opts.ckptPath)

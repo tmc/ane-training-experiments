@@ -14,6 +14,7 @@ WARMUP_STEPS=0
 SKIP_BUILD=1
 RUN_ORDER_MODE="alternate"
 VECLIB_THREADS=0
+DW_CONCURRENCY=0
 
 usage() {
 	cat <<'EOF'
@@ -28,6 +29,7 @@ Flags:
   --warmup-steps N       summary warmup steps passed to compare script (default: 0)
   --run-order MODE       alternate|go-c|c-go (default: alternate)
   --veclib-threads N     set VECLIB_MAXIMUM_THREADS for full trainer runs (default: process default)
+  --dw-concurrency N     set dW async task concurrency for full trainer runs (default: trainer default)
   --skip-build 0|1       pass --skip-build to compare runs (default: 1)
   --out-dir DIR          tuner output directory (default: /tmp/ane_full_tune)
   --compare-out-dir DIR  compare script output directory (default: /tmp/ane_compare)
@@ -68,6 +70,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--veclib-threads)
 		VECLIB_THREADS="$2"
+		shift 2
+		;;
+	--dw-concurrency)
+		DW_CONCURRENCY="$2"
 		shift 2
 		;;
 	--skip-build)
@@ -116,6 +122,10 @@ if [[ "$SKIP_BUILD" != "0" && "$SKIP_BUILD" != "1" ]]; then
 fi
 if ! [[ "$VECLIB_THREADS" =~ ^[0-9]+$ ]]; then
 	echo "veclib-threads must be >= 0: $VECLIB_THREADS" >&2
+	exit 1
+fi
+if ! [[ "$DW_CONCURRENCY" =~ ^[0-9]+$ ]]; then
+	echo "dw-concurrency must be >= 0: $DW_CONCURRENCY" >&2
 	exit 1
 fi
 if [[ "$RUN_ORDER_MODE" != "alternate" && "$RUN_ORDER_MODE" != "go-c" && "$RUN_ORDER_MODE" != "c-go" ]]; then
@@ -183,6 +193,9 @@ for seq in $seq_values; do
 			if [[ "$VECLIB_THREADS" -gt 0 ]]; then
 				cmd+=("--veclib-threads" "$VECLIB_THREADS")
 			fi
+			if [[ "$DW_CONCURRENCY" -gt 0 ]]; then
+				cmd+=("--dw-concurrency" "$DW_CONCURRENCY")
+			fi
 			if [[ "$current_skip_build" == "1" ]]; then
 				cmd+=("--skip-build")
 			fi
@@ -215,6 +228,7 @@ done
 	echo "results_csv=$CSV"
 	echo "raw_log=$LOG"
 	echo "veclib_threads=$VECLIB_THREADS"
+	echo "dw_concurrency=$DW_CONCURRENCY"
 	echo
 	echo "aggregate by seq+accum (mean over runs):"
 	echo "seq,full_accum,runs,mean_c_util,mean_go_util,mean_c_step_ms,mean_go_step_ms,mean_go_vs_c_ratio"

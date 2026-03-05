@@ -17,6 +17,7 @@ DYNAMIC_BIN="$ROOT/training/training_dynamic/train"
 DYNAMIC_ACCUM=20
 FULL_ACCUM=0
 VECLIB_THREADS=0
+DW_CONCURRENCY=0
 SEQ_OVERRIDE=""
 OUT_DIR="/tmp/ane_compare"
 SKIP_BUILD=0
@@ -44,6 +45,7 @@ Flags:
   --dynamic-accum N     accumulation steps for ane-dynamic mode (default: 20)
   --full-accum N        accumulation steps for full C/ObjC trainer (default: trainer default)
   --veclib-threads N    set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer paths (default: process default)
+  --dw-concurrency N    set dW async task concurrency for full C/ObjC trainer paths (default: trainer default)
   --seq-override N      rebuild trainer binaries with SEQ=N for higher work per dispatch
   --allow-mismatch      allow non-equivalent workload pairings (default: false)
   --warmup-steps N      ignore first N overlapped steps in summary means (default: 0)
@@ -116,6 +118,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--veclib-threads)
 			VECLIB_THREADS="$2"
+			shift 2
+			;;
+		--dw-concurrency)
+			DW_CONCURRENCY="$2"
 			shift 2
 			;;
 		--seq-override)
@@ -207,6 +213,10 @@ if ! [[ "$FULL_ACCUM" =~ ^[0-9]+$ ]]; then
 fi
 if ! [[ "$VECLIB_THREADS" =~ ^[0-9]+$ ]]; then
 	echo "veclib-threads must be a non-negative integer: $VECLIB_THREADS" >&2
+	exit 1
+fi
+if ! [[ "$DW_CONCURRENCY" =~ ^[0-9]+$ ]]; then
+	echo "dw-concurrency must be a non-negative integer: $DW_CONCURRENCY" >&2
 	exit 1
 fi
 if [[ -n "$SEQ_OVERRIDE" ]]; then
@@ -334,6 +344,41 @@ if [[ "$C_MODE" == "ane-dynamic" || "$GO_BACKEND" == "ane-dynamic" ]]; then
 	fi
 fi
 
+binary_supports_flag() {
+	local bin="$1"
+	local flag="$2"
+	if [[ ! -x "$bin" ]]; then
+		return 1
+	fi
+	strings "$bin" 2>/dev/null | rg -F -q -- "$flag"
+}
+
+ensure_full_flag_support() {
+	local missing=()
+	if [[ "$VECLIB_THREADS" -gt 0 ]] && ! binary_supports_flag "$C_FULL_BIN" "--veclib-threads"; then
+		missing+=("--veclib-threads")
+	fi
+	if [[ "$DW_CONCURRENCY" -gt 0 ]] && ! binary_supports_flag "$C_FULL_BIN" "--dw-concurrency"; then
+		missing+=("--dw-concurrency")
+	fi
+	if [[ ${#missing[@]} -eq 0 ]]; then
+		return
+	fi
+	if [[ -n "$SEQ_OVERRIDE" ]]; then
+		echo "rebuilding seq override binary to pick up trainer flags: ${missing[*]}" >&2
+		make -B -C "$ROOT/training" train_large_ane SEQ_OVERRIDE="$SEQ_OVERRIDE" OUT="$(basename "$C_FULL_BIN")"
+		make -B -C "$ROOT/training/training_dynamic" train SEQ_OVERRIDE="$SEQ_OVERRIDE" OUT="$(basename "$C_DYNAMIC_BIN")"
+		return
+	fi
+	echo "full trainer binary $C_FULL_BIN is missing support for: ${missing[*]}" >&2
+	echo "rebuild training binaries (drop --skip-build) or remove unsupported flags" >&2
+	exit 1
+}
+
+if [[ "$C_MODE" == "ane" || "$GO_BACKEND" == "ane" ]]; then
+	ensure_full_flag_support
+fi
+
 common_extra=()
 if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
 	common_extra+=(--no-ane-extras)
@@ -345,6 +390,9 @@ if [[ "$FULL_ACCUM" -gt 0 ]]; then
 fi
 if [[ "$VECLIB_THREADS" -gt 0 ]]; then
 	c_flags+=(--veclib-threads "$VECLIB_THREADS")
+fi
+if [[ "$DW_CONCURRENCY" -gt 0 ]]; then
+	c_flags+=(--dw-concurrency "$DW_CONCURRENCY")
 fi
 if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
 	c_flags+=(--no-ane-extras)
@@ -426,6 +474,9 @@ else
 		fi
 		if [[ "$VECLIB_THREADS" -gt 0 ]]; then
 			go_flags+=(-veclib-threads "$VECLIB_THREADS")
+		fi
+		if [[ "$DW_CONCURRENCY" -gt 0 ]]; then
+			go_flags+=(-dw-concurrency "$DW_CONCURRENCY")
 		fi
 	fi
 	if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
@@ -762,6 +813,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "dynamic_accum=$DYNAMIC_ACCUM"
 	echo "full_accum=$FULL_ACCUM"
 	echo "veclib_threads=$VECLIB_THREADS"
+	echo "dw_concurrency=$DW_CONCURRENCY"
 	echo "ane_cls_bwd=$ANE_CLS_BWD"
 	echo "seq_override=${SEQ_OVERRIDE:-<none>}"
 	echo "run_order=$RUN_ORDER"

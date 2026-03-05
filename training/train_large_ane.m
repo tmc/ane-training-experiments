@@ -9,7 +9,8 @@
 //               NLL loss + gradient (needs target indexing)
 //
 // Build: make train_large_ane
-// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--accum N] [--veclib-threads N] [--data PATH]
+// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--accum N]
+//                           [--veclib-threads N] [--dw-concurrency N] [--data PATH]
 #include "stories_io.h"
 #include "stories_mil.h"
 #include "stories_cpu_ops.h"
@@ -19,6 +20,7 @@
 #define CKPT_PATH_DEFAULT "ane_stories110M_ckpt.bin"
 #define MODEL_PATH_DEFAULT "stories110M.bin"
 #define DATA_PATH_DEFAULT "tinystories_data00.bin"
+#define DW_CONCURRENCY_DEFAULT 3
 
 // ===== Weight loading from llama2.c format =====
 static bool load_pretrained(LayerWeights *lw, float *rms_final, float *embed, const char *path) {
@@ -213,6 +215,7 @@ int main(int argc, char *argv[]) {
         const char *data_path = DATA_PATH_DEFAULT;
         int accum_steps = ACCUM_STEPS;
         int veclib_threads = 0;
+        int dw_concurrency = DW_CONCURRENCY_DEFAULT;
         bool do_resume = false;
         bool ane_extras = true;  // classifier, softmax, rmsnorm_bwd on ANE
         bool ane_cls_bwd = false;  // classifier backward (dy) on ANE
@@ -225,6 +228,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(argv[i], "--lr") == 0 && i+1<argc) lr = atof(argv[++i]);
             else if (strcmp(argv[i], "--accum") == 0 && i+1<argc) accum_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--veclib-threads") == 0 && i+1<argc) veclib_threads = atoi(argv[++i]);
+            else if (strcmp(argv[i], "--dw-concurrency") == 0 && i+1<argc) dw_concurrency = atoi(argv[++i]);
             else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
             else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
             else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
@@ -243,6 +247,10 @@ int main(int argc, char *argv[]) {
         if (veclib_threads < 0) {
             printf("warning: --veclib-threads must be >= 0; disabling override\n");
             veclib_threads = 0;
+        }
+        if (dw_concurrency < 1) {
+            printf("warning: --dw-concurrency must be >= 1; using %d\n", DW_CONCURRENCY_DEFAULT);
+            dw_concurrency = DW_CONCURRENCY_DEFAULT;
         }
         if (veclib_threads > 0) {
             char veclib_buf[32];
@@ -280,8 +288,8 @@ int main(int argc, char *argv[]) {
         }
         if (!resuming) {
             printf("=== ANE Training: Stories110M (ANE-offloaded) ===\n");
-            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d accum=%d veclib_threads=%d\n",
-                   DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS, accum_steps, veclib_threads);
+            printf("dim=%d hidden=%d heads=%d seq=%d vocab=%d layers=%d accum=%d veclib_threads=%d dw_concurrency=%d\n",
+                   DIM, HIDDEN, HEADS, SEQ, VOCAB, NLAYERS, accum_steps, veclib_threads, dw_concurrency);
             if (ane_extras) printf("NEW: final_rmsnorm, classifier_fwd, softmax, rmsnorm_bwd on ANE\n");
             else printf("ANE extras DISABLED (classifier/softmax/rmsnorm_bwd on CPU)\n");
             {
@@ -363,8 +371,10 @@ int main(int argc, char *argv[]) {
         // Final RMSNorm and classifier are recompiled per batch since they have baked weights
         Kern *finalRmsKern = NULL, *classifierKern = NULL, *classifierBwdKern = NULL;
 
-        dispatch_queue_t dw_q = dispatch_queue_create("dw_cblas", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_t dw_q = dispatch_queue_create("dw_cblas",
+            dw_concurrency > 1 ? DISPATCH_QUEUE_CONCURRENT : DISPATCH_QUEUE_SERIAL);
         dispatch_group_t dw_grp = dispatch_group_create();
+        dispatch_semaphore_t dw_slots = dispatch_semaphore_create(dw_concurrency);
 
         float last_loss = 999.0f;
         double total_compile_ms=0, total_train_ms=0;
@@ -394,15 +404,19 @@ int main(int argc, char *argv[]) {
                 snprintf(accum_buf, sizeof(accum_buf), "%d", accum_steps);
                 char veclib_buf[32];
                 snprintf(veclib_buf, sizeof(veclib_buf), "%d", veclib_threads);
+                char dw_buf[32];
+                snprintf(dw_buf, sizeof(dw_buf), "%d", dw_concurrency);
                 if (ane_extras && ane_cls_bwd)
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--ane-cls-bwd", NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--dw-concurrency", dw_buf,
+                          "--ane-cls-bwd", NULL);
                 else if (ane_extras)
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, "--veclib-threads", veclib_buf, NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--dw-concurrency", dw_buf, NULL);
                 else
                     execl(argv[0], argv[0], "--resume", "--ckpt", ckpt_path, "--data", data_path,
-                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--no-ane-extras", NULL);
+                          "--accum", accum_buf, "--veclib-threads", veclib_buf, "--dw-concurrency", dw_buf,
+                          "--no-ane-extras", NULL);
                 perror("execl"); return 1;
             }
 
@@ -583,10 +597,12 @@ int main(int argc, char *argv[]) {
                                 embed, DIM, dlogits, SEQ, 0.0f, dy, SEQ);
                 }
                 // dembed async on CPU
+                dispatch_semaphore_wait(dw_slots, DISPATCH_TIME_FOREVER);
                 dispatch_group_async(dw_grp, dw_q, ^{
                     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
                                 VOCAB, DIM, SEQ, 1.0f,
                                 dlogits, SEQ, x_final, SEQ, 1.0f, gembed, DIM);
+                    dispatch_semaphore_signal(dw_slots);
                 });
 
                 // Final RMSNorm backward (CPU — just one call, not worth ANE overhead)
@@ -618,6 +634,7 @@ int main(int argc, char *argv[]) {
                     float *capt_dh1 = (float*)malloc(SEQ*HIDDEN*4); memcpy(capt_dh1, dh1, SEQ*HIDDEN*4);
                     float *capt_dh3 = (float*)malloc(SEQ*HIDDEN*4); memcpy(capt_dh3, dh3, SEQ*HIDDEN*4);
                     float *capt_x2n = (float*)malloc(SEQ*DIM*4); memcpy(capt_x2n, ac->x2norm, SEQ*DIM*4);
+                    dispatch_semaphore_wait(dw_slots, DISPATCH_TIME_FOREVER);
                     dispatch_group_async(dw_grp, dw_q, ^{
                         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, HIDDEN, SEQ,
                                     1.0f, capt_dffn, SEQ, capt_silu, SEQ, 1.0f, gr->W2, HIDDEN);
@@ -626,6 +643,7 @@ int main(int argc, char *argv[]) {
                         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, HIDDEN, DIM, SEQ,
                                     1.0f, capt_dh3, SEQ, capt_x2n, SEQ, 1.0f, gr->W3, DIM);
                         free(capt_dffn); free(capt_silu); free(capt_dh1); free(capt_dh3); free(capt_x2n);
+                        dispatch_semaphore_signal(dw_slots);
                     });
 
                     // RMSNorm2 backward
@@ -651,10 +669,12 @@ int main(int argc, char *argv[]) {
                     memcpy(do_out_buf, dx2, SEQ*DIM*4);
                     float *capt_do = (float*)malloc(SEQ*DIM*4); memcpy(capt_do, do_out_buf, SEQ*DIM*4);
                     float *capt_attn = (float*)malloc(SEQ*DIM*4); memcpy(capt_attn, ac->attn_out, SEQ*DIM*4);
+                    dispatch_semaphore_wait(dw_slots, DISPATCH_TIME_FOREVER);
                     dispatch_group_async(dw_grp, dw_q, ^{
                         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, DIM, SEQ,
                                     1.0f, capt_do, SEQ, capt_attn, SEQ, 1.0f, gr->Wo, DIM);
                         free(capt_do); free(capt_attn);
+                        dispatch_semaphore_signal(dw_slots);
                     });
 
                     // SDPA backward (ANE) — same as original
@@ -674,6 +694,7 @@ int main(int argc, char *argv[]) {
                     float *capt_dk = (float*)malloc(SEQ*DIM*4); memcpy(capt_dk, dk, SEQ*DIM*4);
                     float *capt_dv = (float*)malloc(SEQ*DIM*4); memcpy(capt_dv, dv, SEQ*DIM*4);
                     float *capt_xn = (float*)malloc(SEQ*DIM*4); memcpy(capt_xn, ac->xnorm, SEQ*DIM*4);
+                    dispatch_semaphore_wait(dw_slots, DISPATCH_TIME_FOREVER);
                     dispatch_group_async(dw_grp, dw_q, ^{
                         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, DIM, SEQ,
                                     1.0f, capt_dq, SEQ, capt_xn, SEQ, 1.0f, gr->Wq, DIM);
@@ -682,6 +703,7 @@ int main(int argc, char *argv[]) {
                         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, DIM, SEQ,
                                     1.0f, capt_dv, SEQ, capt_xn, SEQ, 1.0f, gr->Wv, DIM);
                         free(capt_dq); free(capt_dk); free(capt_dv); free(capt_xn);
+                        dispatch_semaphore_signal(dw_slots);
                     });
 
                     // QKV backward (ANE) — same as original
