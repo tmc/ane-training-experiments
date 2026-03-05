@@ -90,6 +90,7 @@ func main() {
 		outputBytes    = flag.Uint("output-bytes", 4096, "output tensor bytes")
 		recompileEach  = flag.Bool("recompile-every-step", false, "recompile ANE kernel at each step (parity experiment)")
 		diagnostics    = flag.Bool("diagnostics", false, "print model/client diagnostics at startup")
+		allowExpDirect = flag.Bool("allow-experimental-ane-trainer", false, "allow direct Go ane trainer path (forward-only/experimental; not full train_large_ane parity)")
 	)
 	flag.Parse()
 	model := defaultIfEmpty(*modelPath, cDefaultModelPath)
@@ -108,6 +109,9 @@ func main() {
 	}
 	runFullWorkload := selectedBackend == "full" || (selectedBackend == "ane" && strings.HasSuffix(strings.ToLower(model), ".bin"))
 	runDynamicWorkload := selectedBackend == "ane-dynamic"
+	if selectedBackend == "ane" && !runFullWorkload && !*allowExpDirect {
+		fatalf("backend=ane with non-.bin model uses the experimental direct Go trainer (not full train_large_ane parity); use -backend full or -backend ane-dynamic for full training, or pass -allow-experimental-ane-trainer=true")
+	}
 	if *inputBytes == 0 || *outputBytes == 0 {
 		fatalf("input-bytes and output-bytes must be > 0")
 	}
