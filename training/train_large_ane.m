@@ -9,7 +9,7 @@
 //               NLL loss + gradient (needs target indexing)
 //
 // Build: make train_large_ane
-// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--data PATH]
+// Run:   ./train_large_ane [--resume] [--steps N] [--lr F] [--accum N] [--data PATH]
 #include "stories_io.h"
 #include "stories_mil.h"
 #include "stories_cpu_ops.h"
