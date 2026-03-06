@@ -11,11 +11,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	aneiosurface "github.com/maderix/ANE/ane/iosurface"
 	aneruntime "github.com/maderix/ANE/ane/runtime"
 	"github.com/tmc/apple/coregraphics"
+	"github.com/tmc/apple/coreml"
 	"github.com/tmc/apple/foundation"
 	appiosurface "github.com/tmc/apple/iosurface"
 	"github.com/tmc/apple/objc"
@@ -81,6 +81,9 @@ type SharedEventEvalOptions struct {
 type Diagnostics struct {
 	HasVirtualClient               bool
 	VirtualClientClass             string
+	VirtualClientConnectCode       uint32
+	VirtualClientConnectKnown      bool
+	SupportsCompletionEventEval    bool
 	AllowRestrictedAccess          bool
 	AllowRestrictedAccessKnown     bool
 	IsVirtualClient                bool
@@ -256,21 +259,19 @@ func resolveCompiledModelURL(opts CompileOptions) (foundation.NSURL, string, err
 		return foundation.NSURL{}, "", fmt.Errorf("compile: create file URL for model package path")
 	}
 
-	var compileErr objc.ID
-	compiledURL := objc.Send[objc.ID](
-		objc.ID(modelClass),
-		objc.Sel("compileModelAtURL:error:"),
-		pkgURL,
-		unsafe.Pointer(&compileErr),
-	)
-	if compiledURL == 0 {
+	compiledURL, err := coreml.GetMLModelClass().CompileModelAtURLError(pkgURL)
+	if err != nil || compiledURL.GetID() == 0 {
+		msg := "unknown error"
+		if err != nil {
+			msg = err.Error()
+		}
 		return foundation.NSURL{}, "", fmt.Errorf(
 			"compile: compileModelAtURL failed: %s (hint: pass CompiledModelPath to skip runtime CoreML compilation; on newer macOS releases, compileModelAtURL may fail for some models)",
-			objcErrorString(compileErr),
+			msg,
 		)
 	}
-	compiledPath := objc.IDToString(objc.Send[objc.ID](compiledURL, objc.Sel("path")))
-	return foundation.NSURLFromID(compiledURL), compiledPath, nil
+	compiledPath := compiledURL.Path()
+	return compiledURL, compiledPath, nil
 }
 
 func fileURL(path string) foundation.NSURL {
@@ -539,13 +540,28 @@ func mapModelRequest(client appleneuralengine.ANEClient, model, request objc.ID,
 	if cacheInference {
 		cacheModes = append(cacheModes, false)
 	}
+	var mapErr error
+	var virtualErr error
 	for _, cache := range cacheModes {
 		if ok, _ := client.MapIOSurfacesWithModelRequestCacheInferenceError(idObject(model), idObject(request), cache); ok {
 			return nil
 		}
+		if mapErr == nil {
+			_, mapErr = client.MapIOSurfacesWithModelRequestCacheInferenceError(idObject(model), idObject(request), cache)
+		}
+		if vc := attachedVirtualClient(client); vc != nil {
+			if ok, _ := vc.DoMapIOSurfacesWithModelRequestCacheInferenceError(idObject(model), idObject(request), cache); ok {
+				return nil
+			}
+			if virtualErr == nil {
+				_, virtualErr = vc.DoMapIOSurfacesWithModelRequestCacheInferenceError(idObject(model), idObject(request), cache)
+			}
+		}
 	}
-	_, err := client.MapIOSurfacesWithModelRequestCacheInferenceError(idObject(model), idObject(request), cacheInference)
-	return fmt.Errorf("map request: mapIOSurfacesWithModel failed: %v", err)
+	if virtualErr != nil {
+		return fmt.Errorf("map request: mapIOSurfacesWithModel failed: %v; virtual client map failed: %v", mapErr, virtualErr)
+	}
+	return fmt.Errorf("map request: mapIOSurfacesWithModel failed: %v", mapErr)
 }
 
 func unmapModelRequest(client appleneuralengine.ANEClient, model, request objc.ID) {
@@ -606,6 +622,29 @@ func (k *Kernel) QueueDepth() (int, bool) {
 	return int(appleneuralengine.ANEModelFromID(k.model).QueueDepth()), true
 }
 
+// VirtualClientConnect reports the attached _ANEVirtualClient connect status.
+//
+// The second return value is false when no attached virtual client is present.
+func (k *Kernel) VirtualClientConnect() (uint32, bool) {
+	if k == nil || k.client == 0 {
+		return 0, false
+	}
+	vc := attachedVirtualClient(appleneuralengine.ANEClientFromID(k.client))
+	if vc == nil {
+		return 0, false
+	}
+	return vc.Connect(), true
+}
+
+// SupportsCompletionEventEval reports whether an attached virtual client is
+// available for completionEvent-based evaluation helpers.
+func (k *Kernel) SupportsCompletionEventEval() bool {
+	if k == nil || k.client == 0 {
+		return false
+	}
+	return attachedVirtualClient(appleneuralengine.ANEClientFromID(k.client)) != nil
+}
+
 // Diagnostics returns best-effort model/client/program diagnostics.
 func (k *Kernel) Diagnostics() Diagnostics {
 	var d Diagnostics
@@ -622,27 +661,24 @@ func (k *Kernel) Diagnostics() Diagnostics {
 			d.VirtualClientClass = className(vc.GetID())
 		}
 	}
+	d.VirtualClientConnectCode, d.VirtualClientConnectKnown = k.VirtualClientConnect()
+	d.SupportsCompletionEventEval = k.SupportsCompletionEventEval()
 	d.IsVirtualClient, d.IsVirtualClientKnown = k.IsVirtualClient()
 	d.ModelQueueDepth, d.ModelQueueDepthKnown = k.QueueDepth()
 
 	program := programForModel(k.model)
-	if program == 0 {
+	if program == nil {
 		return d
 	}
-	d.ProgramClass = className(program)
-
-	if objc.RespondsToSelector(program, objc.Sel("queueDepth")) {
-		d.ProgramQueueDepth = int(objc.Send[int8](program, objc.Sel("queueDepth")))
+	d.ProgramClass = className(program.GetID())
+	if program.GetID() != 0 {
+		d.ProgramQueueDepth = int(program.QueueDepth())
 		d.ProgramQueueDepthKnown = true
-	}
-	if objc.RespondsToSelector(program, objc.Sel("currentAsyncRequestsInFlight")) {
-		d.CurrentAsyncRequestsInFlight = objc.Send[int64](program, objc.Sel("currentAsyncRequestsInFlight"))
+		d.CurrentAsyncRequestsInFlight = program.CurrentAsyncRequestsInFlight()
 		d.CurrentAsyncRequestsInFlightOK = true
-	}
-	if objc.RespondsToSelector(program, objc.Sel("requestsInFlight")) {
-		arr := objc.Send[objc.ID](program, objc.Sel("requestsInFlight"))
-		if arr != 0 && objc.RespondsToSelector(arr, objc.Sel("count")) {
-			d.RequestsInFlightCount = int(objc.Send[uint64](arr, objc.Sel("count")))
+		reqs := program.RequestsInFlight()
+		if reqs.GetID() != 0 {
+			d.RequestsInFlightCount = int(foundation.NSArrayFromID(reqs.GetID()).Count())
 			d.RequestsInFlightCountKnown = true
 		}
 	}
@@ -664,19 +700,20 @@ func className(id objc.ID) string {
 	return objc.IDToString(name)
 }
 
-func programForModel(model objc.ID) objc.ID {
+func programForModel(model objc.ID) *appleneuralengine.ANEProgramForEvaluation {
 	if model == 0 {
-		return 0
+		return nil
 	}
 	m := appleneuralengine.ANEModelFromID(model)
 	if p := m.Program(); p != nil {
-		return p.GetID()
+		return p
 	}
 	for _, selName := range []string{"program", "programForEvaluation"} {
 		sel := objc.Sel(selName)
 		if objc.RespondsToSelector(model, sel) {
 			if program := objc.Send[objc.ID](model, sel); program != 0 {
-				return program
+				p := appleneuralengine.ANEProgramForEvaluationFromID(program)
+				return &p
 			}
 		}
 	}
@@ -685,11 +722,12 @@ func programForModel(model objc.ID) objc.ID {
 		for _, key := range []string{"program", "_program"} {
 			program := objc.Send[objc.ID](model, objc.Sel("valueForKey:"), objc.String(key))
 			if program != 0 {
-				return program
+				p := appleneuralengine.ANEProgramForEvaluationFromID(program)
+				return &p
 			}
 		}
 	}
-	return 0
+	return nil
 }
 
 func (k *Kernel) WriteInput(i int, b []byte) error {
@@ -760,6 +798,23 @@ func (k *Kernel) Eval() error {
 		idObject(k.request),
 		k.qos,
 	); !ok {
+		if vc := attachedVirtualClient(client); vc != nil {
+			if ok, _ := vc.EvaluateWithModelOptionsRequestQosError(
+				idObject(k.model),
+				opts,
+				idObject(k.request),
+				k.qos,
+			); ok {
+				return nil
+			}
+			_, vcErr := vc.EvaluateWithModelOptionsRequestQosError(
+				idObject(k.model),
+				opts,
+				idObject(k.request),
+				k.qos,
+			)
+			return fmt.Errorf("evaluateWithModel failed: %v; virtual client evaluate failed: %v", err, vcErr)
+		}
 		return fmt.Errorf("evaluateWithModel failed: %v", err)
 	}
 	return nil
@@ -838,7 +893,16 @@ func (k *Kernel) evalWithSharedEvents(spec sharedEventSpec, cfg SharedEventEvalO
 		idObject(k.request),
 		k.qos,
 	); !ok {
-		return fmt.Errorf("shared-events eval: doEvaluateDirectWithModel failed: %v", evalErr)
+		if vc := attachedVirtualClient(client); vc != nil {
+			releaseVC, vcErr := startVirtualCompletionEval(vc, k.model, k.request, k.qos, opts, waitDone)
+			if vcErr == nil {
+				defer releaseVC()
+			} else {
+				return fmt.Errorf("shared-events eval: doEvaluateDirectWithModel failed: %v; virtual client completion eval failed: %v", evalErr, vcErr)
+			}
+		} else {
+			return fmt.Errorf("shared-events eval: doEvaluateDirectWithModel failed: %v", evalErr)
+		}
 	}
 
 	select {
@@ -952,6 +1016,53 @@ func setRequestCompletionHandler(requestID objc.ID, done chan<- completionResult
 	return func() {
 		binding.Release()
 	}, nil
+}
+
+func attachedVirtualClient(client appleneuralengine.ANEClient) *appleneuralengine.ANEVirtualClient {
+	if client.GetID() == 0 {
+		return nil
+	}
+	vc := client.VirtualClient()
+	if vc == nil || vc.GetID() == 0 {
+		return nil
+	}
+	return vc
+}
+
+func startVirtualCompletionEval(vc *appleneuralengine.ANEVirtualClient, model, request objc.ID, qos uint32, opts objectivec.Object, done chan<- completionResult) (func(), error) {
+	if vc == nil || vc.GetID() == 0 {
+		return nil, fmt.Errorf("virtual client unavailable")
+	}
+	handler := func(ok bool, err error) {
+		select {
+		case done <- completionResult{ok: ok, err: err}:
+		default:
+		}
+	}
+	ok, release, err := vc.DoEvaluateWithModelOptionsRequestQosCompletionEventHandlerError(
+		idObject(model),
+		opts,
+		idObject(request),
+		qos,
+		handler,
+	)
+	if ok {
+		return release, nil
+	}
+	ok, release, legacyErr := vc.DoEvaluateWithModelLegacyOptionsRequestQosCompletionEventHandlerError(
+		idObject(model),
+		opts,
+		idObject(request),
+		qos,
+		handler,
+	)
+	if ok {
+		return release, nil
+	}
+	if legacyErr != nil {
+		return nil, legacyErr
+	}
+	return nil, err
 }
 
 func (k *Kernel) Close() {
