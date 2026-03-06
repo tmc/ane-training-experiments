@@ -61,6 +61,29 @@ func TestNormalizeOptions(t *testing.T) {
 	if opts.CompileBudget != 0 {
 		t.Fatalf("CompileBudget=%d want 0 when disabled", opts.CompileBudget)
 	}
+
+	opts, err = normalizeOptions(Options{
+		ModelPath:   modelPath,
+		DataPath:    dataPath,
+		InputBytes:  4096,
+		OutputBytes: 4096,
+	})
+	if err != nil {
+		t.Fatalf("normalizeOptions(default backend): %v", err)
+	}
+	if opts.Backend != BackendAuto {
+		t.Fatalf("Backend=%q want %q", opts.Backend, BackendAuto)
+	}
+
+	if _, err := normalizeOptions(Options{
+		ModelPath:   modelPath,
+		DataPath:    dataPath,
+		InputBytes:  4096,
+		OutputBytes: 4096,
+		Backend:     "bad",
+	}); err == nil {
+		t.Fatalf("normalizeOptions invalid backend succeeded; want error")
+	}
 }
 
 func TestClosedTrainerErrors(t *testing.T) {
@@ -86,6 +109,28 @@ func TestBackendExplicit(t *testing.T) {
 	tr := &Trainer{backend: BackendDirect}
 	if got := tr.Backend(); got != BackendDirect {
 		t.Fatalf("Backend()=%q want %q", got, BackendDirect)
+	}
+}
+
+func TestOpenBridgeBackendUnsupported(t *testing.T) {
+	tmp := t.TempDir()
+	modelPath := tmp + "/model.mlmodelc"
+	dataPath := tmp + "/data.bin"
+	if err := os.WriteFile(modelPath, []byte("m"), 0o644); err != nil {
+		t.Fatalf("write model: %v", err)
+	}
+	if err := os.WriteFile(dataPath, []byte("d"), 0o644); err != nil {
+		t.Fatalf("write data: %v", err)
+	}
+	_, err := Open(Options{
+		ModelPath:   modelPath,
+		DataPath:    dataPath,
+		InputBytes:  4096,
+		OutputBytes: 4096,
+		Backend:     BackendBridge,
+	})
+	if err == nil {
+		t.Fatalf("Open with backend=%q succeeded; want error", BackendBridge)
 	}
 }
 

@@ -7,15 +7,17 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
-	"github.com/maderix/ANE/ane/bridge"
 	"github.com/maderix/ANE/ane/clientmodel"
+	"github.com/maderix/ANE/ane/stories"
+	"github.com/maderix/ANE/ane/storiesane"
 )
 
 const (
 	storiesCkptMagic   = uint32(0x53545231) // "STR1"
-	storiesCkptVersion = uint32(1)
+	storiesCkptVersion = uint32(2)
 )
 
 type storiesCkptV1 struct {
@@ -30,15 +32,38 @@ type storiesCkptV1 struct {
 	LastLoss      float32
 }
 
-// Trainer wraps a direct-Go _ANEClient kernel and Stories training state.
+type storiesCkptV2 struct {
+	Magic         uint32
+	Version       uint32
+	Step          uint32
+	TotalSteps    uint32
+	TokenPos      uint64
+	CompileBudget uint32
+	ANEExtras     uint32
+	LR            float32
+	LastLoss      float32
+	CumTrainMS    float64
+	CumWallMS     float64
+	CumSteps      uint32
+	CumBatches    uint32
+	AdamT         uint32
+}
+
+// Trainer wraps the current direct-Go Stories training runtime.
 type Trainer struct {
-	bridgeRuntime *bridge.Runtime
-	bridgeTrainer *bridge.StoriesTrainer
-	backend       string
+	backend string
 
-	k           *clientmodel.Kernel
-	compileOpts clientmodel.CompileOptions
+	// _ANEClient-backed .mlmodelc mode.
+	k             *clientmodel.Kernel
+	compileOpts   clientmodel.CompileOptions
+	inputBuf      []float32
+	inputBytes    []byte
+	outputBytes   []byte
+	outputCount   uint32
+	compileBase   uint32
+	recompileEach bool
 
+	// Common training state.
 	tokens        []uint16
 	tokenPos      uint64
 	step          uint32
@@ -48,27 +73,44 @@ type Trainer struct {
 	lr            float32
 	lastLoss      float32
 	compiles      uint32
-	compileBase   uint32
-	recompileEach bool
+	cumTrainMS    float64
+	cumWallMS     float64
+	cumSteps      uint32
+	cumBatches    uint32
+	adamT         uint32
+	started       time.Time
 
-	inputCount  uint32
-	outputCount uint32
-	inputBuf    []float32
-	inputBytes  []byte
-	outputBytes []byte
+	// Pure-Go .bin mode.
+	cpuMode bool
+	engine  *storiesane.Engine
 }
 
-// Open creates a direct-Go stories trainer over clientmodel.
+// Open creates a direct-Go stories trainer.
 func Open(opts Options) (*Trainer, error) {
 	norm, err := normalizeOptions(opts)
 	if err != nil {
 		return nil, err
 	}
-	if bt, err := openBridgeTrainer(norm); err == nil {
-		return bt, nil
+	switch norm.Backend {
+	case BackendAuto, BackendDirect:
+	case BackendBridge:
+		return nil, fmt.Errorf("stories trainer open: backend %q is not supported in pure-go mode", BackendBridge)
+	default:
+		return nil, fmt.Errorf("stories trainer open: unsupported backend %q", norm.Backend)
 	}
-	baseCompiles := clientmodel.CompileCount()
 
+	tokens, err := loadTokens(norm.DataPath)
+	if err != nil {
+		return nil, fmt.Errorf("stories trainer open: load tokens: %w", err)
+	}
+	if strings.HasSuffix(strings.ToLower(norm.ModelPath), ".bin") {
+		return openBinTrainer(norm, tokens)
+	}
+	return openModelCTrainer(norm, tokens)
+}
+
+func openModelCTrainer(norm Options, tokens []uint16) (*Trainer, error) {
+	baseCompiles := clientmodel.CompileCount()
 	compileOpts := clientmodel.CompileOptions{
 		CompiledModelPath: norm.ModelPath,
 		ModelKey:          norm.ModelKey,
@@ -80,16 +122,7 @@ func Open(opts Options) (*Trainer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stories trainer open: compile client kernel: %w", err)
 	}
-
-	tokens, err := loadTokens(norm.DataPath)
-	if err != nil {
-		if k != nil {
-			k.Close()
-		}
-		return nil, fmt.Errorf("stories trainer open: load tokens: %w", err)
-	}
-
-	t := &Trainer{
+	return &Trainer{
 		backend:       BackendDirect,
 		k:             k,
 		compileOpts:   compileOpts,
@@ -101,13 +134,40 @@ func Open(opts Options) (*Trainer, error) {
 		compiles:      clientmodel.CompileCount() - baseCompiles,
 		compileBase:   baseCompiles,
 		recompileEach: norm.RecompileEachStep,
-		inputCount:    norm.InputBytes / 4,
 		outputCount:   norm.OutputBytes / 4,
 		inputBuf:      make([]float32, norm.InputBytes/4),
 		inputBytes:    make([]byte, norm.InputBytes),
 		outputBytes:   make([]byte, norm.OutputBytes),
+		started:       time.Now(),
+	}, nil
+}
+
+func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
+	seq := int(norm.SequenceLength)
+	if seq <= 0 {
+		seq = stories.SeqDefault
 	}
-	return t, nil
+	engine, err := storiesane.Open(storiesane.Options{
+		ModelPath: norm.ModelPath,
+		Tokens:    tokens,
+		Seq:       seq,
+		LR:        norm.LearningRate,
+		Seed:      42,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("stories trainer open: init storiesane engine: %w", err)
+	}
+	return &Trainer{
+		backend:       BackendDirect,
+		tokens:        tokens,
+		totalSteps:    norm.Steps,
+		compileBudget: norm.CompileBudget,
+		aneExtras:     !norm.DisableANEExtras,
+		lr:            norm.LearningRate,
+		started:       time.Now(),
+		cpuMode:       true,
+		engine:        engine,
+	}, nil
 }
 
 func normalizeOptions(opts Options) (Options, error) {
@@ -125,6 +185,14 @@ func normalizeOptions(opts Options) (Options, error) {
 	}
 	if opts.ModelKey == "" {
 		opts.ModelKey = "s"
+	}
+	if opts.Backend == "" {
+		opts.Backend = BackendAuto
+	}
+	switch opts.Backend {
+	case BackendAuto, BackendBridge, BackendDirect:
+	default:
+		return opts, fmt.Errorf("stories trainer open: backend must be %q, %q, or %q", BackendAuto, BackendBridge, BackendDirect)
 	}
 	if opts.InputBytes == 0 || opts.OutputBytes == 0 {
 		return opts, fmt.Errorf("stories trainer open: input and output bytes must be > 0")
@@ -145,25 +213,17 @@ func normalizeOptions(opts Options) (Options, error) {
 
 // Step runs one training step.
 func (t *Trainer) Step() (StepStats, error) {
-	if t != nil && t.bridgeTrainer != nil {
-		st, err := t.bridgeTrainer.Step()
-		if err != nil {
-			return StepStats{}, err
-		}
-		d := time.Duration(st.StepMS * float64(time.Millisecond))
-		return StepStats{
-			Step:            st.Step,
-			Loss:            st.Loss,
-			StepDuration:    d,
-			CompileDuration: 0,
-			WriteDuration:   0,
-			EvalDuration:    d,
-			ReadDuration:    0,
-			Compiles:        st.Compiles,
-			RestartRequired: st.RestartRequired,
-		}, nil
+	if t == nil {
+		return StepStats{}, fmt.Errorf("stories trainer step: trainer is closed")
 	}
-	if t == nil || t.k == nil {
+	if t.cpuMode {
+		return t.stepCPU()
+	}
+	return t.stepModelC()
+}
+
+func (t *Trainer) stepModelC() (StepStats, error) {
+	if t.k == nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: trainer is closed")
 	}
 	if t.totalSteps > 0 && t.step >= t.totalSteps {
@@ -184,18 +244,22 @@ func (t *Trainer) Step() (StepStats, error) {
 		}
 		t.k = nextKernel
 	}
-	t.fillInput()
+
+	t.fillModelCInput()
 	encodeF32LE(t.inputBuf, t.inputBytes)
+
 	writeStart := time.Now()
 	if err := t.k.WriteInput(0, t.inputBytes); err != nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: write input: %w", err)
 	}
 	writeDur := time.Since(writeStart)
+
 	evalStart := time.Now()
 	if err := t.k.Eval(); err != nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: eval: %w", err)
 	}
 	evalDur := time.Since(evalStart)
+
 	readStart := time.Now()
 	if err := t.k.ReadOutput(0, t.outputBytes); err != nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: read output: %w", err)
@@ -216,8 +280,12 @@ func (t *Trainer) Step() (StepStats, error) {
 	} else {
 		t.lastLoss = 0
 	}
+
 	t.step++
 	t.compiles = clientmodel.CompileCount() - t.compileBase
+	t.cumSteps++
+	t.cumTrainMS += float64(time.Since(start)) / float64(time.Millisecond)
+	t.cumWallMS = float64(time.Since(t.started)) / float64(time.Millisecond)
 
 	totalDur := time.Since(start)
 	restart := t.compileBudget > 0 && t.compiles >= t.compileBudget
@@ -234,18 +302,63 @@ func (t *Trainer) Step() (StepStats, error) {
 	}, nil
 }
 
+func (t *Trainer) stepCPU() (StepStats, error) {
+	if t.engine == nil {
+		return StepStats{}, fmt.Errorf("stories trainer step: trainer is closed")
+	}
+	if t.totalSteps > 0 && t.step >= t.totalSteps {
+		return StepStats{}, fmt.Errorf("stories trainer step: trainer finished")
+	}
+
+	res, err := t.engine.Step()
+	if err != nil {
+		return StepStats{}, fmt.Errorf("stories trainer step: %w", err)
+	}
+	t.lastLoss = res.Loss
+	t.step++
+	st := t.engine.State()
+	t.tokenPos = st.TokenPos
+	t.cumSteps = st.CumSteps
+	t.cumTrainMS = st.CumTrainMS
+	t.cumWallMS = st.CumWallMS
+	t.cumBatches = st.CumBatches
+	t.adamT = st.AdamT
+
+	return StepStats{
+		Step:            t.step,
+		Loss:            t.lastLoss,
+		StepDuration:    res.StepDuration,
+		CompileDuration: 0,
+		WriteDuration:   0,
+		EvalDuration:    res.StepDuration,
+		ReadDuration:    0,
+		Compiles:        0,
+		RestartRequired: false,
+	}, nil
+}
+
 // SaveCheckpoint stores trainer state.
 func (t *Trainer) SaveCheckpoint(path string) error {
-	if t != nil && t.bridgeTrainer != nil {
-		return t.bridgeTrainer.SaveCheckpoint(path)
-	}
-	if t == nil || t.k == nil {
+	if t == nil {
 		return fmt.Errorf("stories trainer save checkpoint: trainer is closed")
 	}
 	if path == "" {
 		return fmt.Errorf("stories trainer save checkpoint: path is empty")
 	}
-	ckpt := storiesCkptV1{
+	if t.cpuMode {
+		if t.engine == nil {
+			return fmt.Errorf("stories trainer save checkpoint: trainer is closed")
+		}
+		return t.engine.SaveCheckpoint(path, stories.TrainMeta{
+			Step:       int(t.step),
+			TotalSteps: int(t.totalSteps),
+		})
+	}
+	if t.k == nil {
+		return fmt.Errorf("stories trainer save checkpoint: trainer is closed")
+	}
+
+	ckpt := storiesCkptV2{
 		Magic:         storiesCkptMagic,
 		Version:       storiesCkptVersion,
 		Step:          t.step,
@@ -255,9 +368,13 @@ func (t *Trainer) SaveCheckpoint(path string) error {
 		ANEExtras:     boolToUint32(t.aneExtras),
 		LR:            t.lr,
 		LastLoss:      t.lastLoss,
+		CumTrainMS:    t.cumTrainMS,
+		CumWallMS:     t.cumWallMS,
+		CumSteps:      t.cumSteps,
+		CumBatches:    t.cumBatches,
+		AdamT:         t.adamT,
 	}
-	b := structToBytes(&ckpt)
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	if err := os.WriteFile(path, structToBytesV2(&ckpt), 0o644); err != nil {
 		return fmt.Errorf("stories trainer save checkpoint: %w", err)
 	}
 	return nil
@@ -265,15 +382,36 @@ func (t *Trainer) SaveCheckpoint(path string) error {
 
 // LoadCheckpoint restores trainer state.
 func (t *Trainer) LoadCheckpoint(path string) error {
-	if t != nil && t.bridgeTrainer != nil {
-		return t.bridgeTrainer.LoadCheckpoint(path)
-	}
-	if t == nil || t.k == nil {
+	if t == nil {
 		return fmt.Errorf("stories trainer load checkpoint: trainer is closed")
 	}
 	if path == "" {
 		return fmt.Errorf("stories trainer load checkpoint: path is empty")
 	}
+	if t.cpuMode {
+		if t.engine == nil {
+			return fmt.Errorf("stories trainer load checkpoint: trainer is closed")
+		}
+		meta, err := t.engine.LoadCheckpoint(path)
+		if err != nil {
+			return fmt.Errorf("stories trainer load checkpoint: %w", err)
+		}
+		t.step = uint32(meta.Step)
+		t.totalSteps = uint32(meta.TotalSteps)
+		t.lr = meta.LR
+		t.lastLoss = meta.Loss
+		t.cumTrainMS = meta.CumTrain
+		t.cumWallMS = meta.CumWall
+		t.cumSteps = uint32(meta.CumSteps)
+		t.cumBatches = uint32(meta.CumBatches)
+		t.adamT = uint32(meta.AdamT)
+		t.tokenPos = t.engine.State().TokenPos
+		return nil
+	}
+	if t.k == nil {
+		return fmt.Errorf("stories trainer load checkpoint: trainer is closed")
+	}
+
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("stories trainer load checkpoint: %w", err)
@@ -281,12 +419,34 @@ func (t *Trainer) LoadCheckpoint(path string) error {
 	if len(b) < binary.Size(storiesCkptV1{}) {
 		return fmt.Errorf("stories trainer load checkpoint: short checkpoint")
 	}
-	var ckpt storiesCkptV1
-	if err := bytesToStruct(b, &ckpt); err != nil {
-		return fmt.Errorf("stories trainer load checkpoint: %w", err)
-	}
-	if ckpt.Magic != storiesCkptMagic || ckpt.Version != storiesCkptVersion {
+	magic := binary.LittleEndian.Uint32(b[0:])
+	ver := binary.LittleEndian.Uint32(b[4:])
+	if magic != storiesCkptMagic {
 		return fmt.Errorf("stories trainer load checkpoint: bad checkpoint header")
+	}
+	if ver == 1 {
+		var ckpt storiesCkptV1
+		if err := bytesToStructV1(b, &ckpt); err != nil {
+			return fmt.Errorf("stories trainer load checkpoint: %w", err)
+		}
+		t.step = ckpt.Step
+		t.totalSteps = ckpt.TotalSteps
+		t.tokenPos = ckpt.TokenPos
+		t.compileBudget = ckpt.CompileBudget
+		t.aneExtras = ckpt.ANEExtras != 0
+		t.lr = ckpt.LR
+		t.lastLoss = ckpt.LastLoss
+		return nil
+	}
+	if ver != storiesCkptVersion {
+		return fmt.Errorf("stories trainer load checkpoint: bad checkpoint header")
+	}
+	if len(b) < binary.Size(storiesCkptV2{}) {
+		return fmt.Errorf("stories trainer load checkpoint: short checkpoint")
+	}
+	var ckpt storiesCkptV2
+	if err := bytesToStructV2(b, &ckpt); err != nil {
+		return fmt.Errorf("stories trainer load checkpoint: %w", err)
 	}
 	t.step = ckpt.Step
 	t.totalSteps = ckpt.TotalSteps
@@ -295,6 +455,11 @@ func (t *Trainer) LoadCheckpoint(path string) error {
 	t.aneExtras = ckpt.ANEExtras != 0
 	t.lr = ckpt.LR
 	t.lastLoss = ckpt.LastLoss
+	t.cumTrainMS = ckpt.CumTrainMS
+	t.cumWallMS = ckpt.CumWallMS
+	t.cumSteps = ckpt.CumSteps
+	t.cumBatches = ckpt.CumBatches
+	t.adamT = ckpt.AdamT
 	return nil
 }
 
@@ -303,14 +468,13 @@ func (t *Trainer) Close() error {
 	if t == nil {
 		return nil
 	}
-	if t.bridgeTrainer != nil {
-		_ = t.bridgeTrainer.Close()
-		t.bridgeTrainer = nil
-	}
-	t.bridgeRuntime = nil
 	if t.k != nil {
 		t.k.Close()
 		t.k = nil
+	}
+	if t.engine != nil {
+		t.engine.Close()
+		t.engine = nil
 	}
 	return nil
 }
@@ -319,9 +483,6 @@ func (t *Trainer) Close() error {
 func (t *Trainer) Diagnostics() Diagnostics {
 	if t == nil {
 		return Diagnostics{}
-	}
-	if t.bridgeTrainer != nil {
-		return Diagnostics{Backend: BackendBridge}
 	}
 	if t.k == nil {
 		return Diagnostics{Backend: t.backend}
@@ -347,7 +508,7 @@ func (t *Trainer) Diagnostics() Diagnostics {
 	}
 }
 
-// Backend reports which implementation is active: bridge or direct.
+// Backend reports which implementation is active.
 func (t *Trainer) Backend() string {
 	if t == nil {
 		return ""
@@ -355,10 +516,7 @@ func (t *Trainer) Backend() string {
 	if t.backend != "" {
 		return t.backend
 	}
-	if t.bridgeTrainer != nil {
-		return BackendBridge
-	}
-	if t.k == nil {
+	if t.k == nil && !t.cpuMode {
 		return ""
 	}
 	return BackendDirect
@@ -380,33 +538,7 @@ func loadTokens(path string) ([]uint16, error) {
 	return out, nil
 }
 
-func openBridgeTrainer(opts Options) (*Trainer, error) {
-	rt, err := bridge.Load(bridge.LoadOptions{})
-	if err != nil {
-		return nil, err
-	}
-	bt, err := rt.OpenStoriesTrainer(bridge.StoriesTrainerOptions{
-		ModelPath:     opts.ModelPath,
-		ModelKey:      opts.ModelKey,
-		DataPath:      opts.DataPath,
-		InputBytes:    opts.InputBytes,
-		OutputBytes:   opts.OutputBytes,
-		TotalSteps:    opts.Steps,
-		LR:            opts.LearningRate,
-		ANEExtras:     !opts.DisableANEExtras,
-		CompileBudget: opts.CompileBudget,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &Trainer{
-		bridgeRuntime: rt,
-		bridgeTrainer: bt,
-		backend:       BackendBridge,
-	}, nil
-}
-
-func (t *Trainer) fillInput() {
+func (t *Trainer) fillModelCInput() {
 	if len(t.inputBuf) == 0 {
 		return
 	}
@@ -438,7 +570,7 @@ func boolToUint32(v bool) uint32 {
 	return 0
 }
 
-func structToBytes(v *storiesCkptV1) []byte {
+func structToBytesV2(v *storiesCkptV2) []byte {
 	b := make([]byte, binary.Size(*v))
 	binary.LittleEndian.PutUint32(b[0:], v.Magic)
 	binary.LittleEndian.PutUint32(b[4:], v.Version)
@@ -449,10 +581,15 @@ func structToBytes(v *storiesCkptV1) []byte {
 	binary.LittleEndian.PutUint32(b[28:], v.ANEExtras)
 	binary.LittleEndian.PutUint32(b[32:], math.Float32bits(v.LR))
 	binary.LittleEndian.PutUint32(b[36:], math.Float32bits(v.LastLoss))
+	binary.LittleEndian.PutUint64(b[40:], math.Float64bits(v.CumTrainMS))
+	binary.LittleEndian.PutUint64(b[48:], math.Float64bits(v.CumWallMS))
+	binary.LittleEndian.PutUint32(b[56:], v.CumSteps)
+	binary.LittleEndian.PutUint32(b[60:], v.CumBatches)
+	binary.LittleEndian.PutUint32(b[64:], v.AdamT)
 	return b
 }
 
-func bytesToStruct(b []byte, v *storiesCkptV1) error {
+func bytesToStructV1(b []byte, v *storiesCkptV1) error {
 	if len(b) < binary.Size(*v) {
 		return fmt.Errorf("short data")
 	}
@@ -465,5 +602,26 @@ func bytesToStruct(b []byte, v *storiesCkptV1) error {
 	v.ANEExtras = binary.LittleEndian.Uint32(b[28:])
 	v.LR = math.Float32frombits(binary.LittleEndian.Uint32(b[32:]))
 	v.LastLoss = math.Float32frombits(binary.LittleEndian.Uint32(b[36:]))
+	return nil
+}
+
+func bytesToStructV2(b []byte, v *storiesCkptV2) error {
+	if len(b) < binary.Size(*v) {
+		return fmt.Errorf("short data")
+	}
+	v.Magic = binary.LittleEndian.Uint32(b[0:])
+	v.Version = binary.LittleEndian.Uint32(b[4:])
+	v.Step = binary.LittleEndian.Uint32(b[8:])
+	v.TotalSteps = binary.LittleEndian.Uint32(b[12:])
+	v.TokenPos = binary.LittleEndian.Uint64(b[16:])
+	v.CompileBudget = binary.LittleEndian.Uint32(b[24:])
+	v.ANEExtras = binary.LittleEndian.Uint32(b[28:])
+	v.LR = math.Float32frombits(binary.LittleEndian.Uint32(b[32:]))
+	v.LastLoss = math.Float32frombits(binary.LittleEndian.Uint32(b[36:]))
+	v.CumTrainMS = math.Float64frombits(binary.LittleEndian.Uint64(b[40:]))
+	v.CumWallMS = math.Float64frombits(binary.LittleEndian.Uint64(b[48:]))
+	v.CumSteps = binary.LittleEndian.Uint32(b[56:])
+	v.CumBatches = binary.LittleEndian.Uint32(b[60:])
+	v.AdamT = binary.LittleEndian.Uint32(b[64:])
 	return nil
 }

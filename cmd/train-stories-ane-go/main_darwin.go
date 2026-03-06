@@ -86,11 +86,11 @@ func main() {
 		disableBudget  = flag.Bool("disable-compile-budget", false, "disable compile-budget restart signaling")
 		autoRestart    = flag.Bool("auto-restart", true, "auto-restart via exec on compile-budget checkpoint boundary")
 		maxRestarts    = flag.Int("max-restarts", 32, "max exec() restarts when auto-restart is enabled")
+		trainerBackend = flag.String("trainer-backend", storiestrainer.BackendAuto, "storiestrainer backend for direct ane path: auto|bridge|direct")
 		inputBytes     = flag.Uint("input-bytes", 4096, "input tensor bytes")
 		outputBytes    = flag.Uint("output-bytes", 4096, "output tensor bytes")
 		recompileEach  = flag.Bool("recompile-every-step", false, "recompile ANE kernel at each step (parity experiment)")
 		diagnostics    = flag.Bool("diagnostics", false, "print model/client diagnostics at startup")
-		allowExpDirect = flag.Bool("allow-experimental-ane-trainer", false, "allow direct Go ane trainer path (forward-only/experimental; not full train_large_ane parity)")
 		parityMode     = flag.Bool("parity-mode", false, "enforce full train_large_ane parity profile (backend=full, seq=384, full-accum=80, veclib=6, dw=3)")
 	)
 	flag.Parse()
@@ -132,13 +132,13 @@ func main() {
 			fatalf("parity-mode requires ANE extras enabled (remove -no-ane-extras)")
 		}
 	}
-	runFullWorkload := selectedBackend == "full" || (selectedBackend == "ane" && strings.HasSuffix(strings.ToLower(model), ".bin"))
+	runFullWorkload := selectedBackend == "full"
 	runDynamicWorkload := selectedBackend == "ane-dynamic"
-	if selectedBackend == "ane" && !runFullWorkload && !*allowExpDirect {
-		fatalf("backend=ane with non-.bin model uses the experimental direct Go trainer (not full train_large_ane parity); use -backend full or -backend ane-dynamic for full training, or pass -allow-experimental-ane-trainer=true")
-	}
 	if *inputBytes == 0 || *outputBytes == 0 {
 		fatalf("input-bytes and output-bytes must be > 0")
+	}
+	if *trainerBackend != storiestrainer.BackendAuto && *trainerBackend != storiestrainer.BackendBridge && *trainerBackend != storiestrainer.BackendDirect {
+		fatalf("trainer-backend must be one of: %s, %s, %s", storiestrainer.BackendAuto, storiestrainer.BackendBridge, storiestrainer.BackendDirect)
 	}
 	if *steps == 0 {
 		fmt.Println("steps=0, nothing to run")
@@ -164,6 +164,7 @@ func main() {
 		fatalf("save-final requires -ckpt")
 	}
 	if runFullWorkload {
+		fmt.Printf("go_impl_backend=full_c_exec\n")
 		if err := runFullTraining(fullRunOptions{
 			binPath:       *fullBin,
 			seqOverride:   int(*seqOverride),
@@ -184,6 +185,7 @@ func main() {
 		return
 	}
 	if runDynamicWorkload {
+		fmt.Printf("go_impl_backend=dynamic_c_exec\n")
 		if err := runDynamicTraining(dynamicRunOptions{
 			binPath:       *dynamicBin,
 			seqOverride:   int(*seqOverride),
@@ -204,6 +206,7 @@ func main() {
 	}
 
 	if selectedBackend == "cpu" {
+		fmt.Printf("go_impl_backend=cpu\n")
 		runCPUReference(cpuRunOptions{
 			modelPath:  model,
 			dataPath:   data,
@@ -231,6 +234,7 @@ func main() {
 		DataPath:             data,
 		InputBytes:           uint32(*inputBytes),
 		OutputBytes:          uint32(*outputBytes),
+		SequenceLength:       uint32(*seqOverride),
 		Steps:                uint32(*steps),
 		LearningRate:         float32(*learningRate),
 		DisableANEExtras:     *noANEExtras,
@@ -238,6 +242,7 @@ func main() {
 		DisableCompileBudget: *disableBudget,
 		RecompileEachStep:    *recompileEach,
 		QoS:                  storiestrainer.DefaultQoS,
+		Backend:              *trainerBackend,
 	})
 	if err != nil {
 		fatalf("open trainer: %v", err)
@@ -252,6 +257,15 @@ func main() {
 	}
 
 	fmt.Printf("=== ANE Stories Training (Go, backend=%s) ===\n", trainer.Backend())
+	goImplBackend := trainer.Backend()
+	if selectedBackend == "ane" {
+		if strings.HasSuffix(strings.ToLower(model), ".bin") {
+			goImplBackend = "direct_bin_cpu"
+		} else {
+			goImplBackend = "direct_modelc"
+		}
+	}
+	fmt.Printf("go_impl_backend=%s\n", goImplBackend)
 	fmt.Printf("model=%s data=%s steps=%d lr=%.6f input_bytes=%d output_bytes=%d ane_extras=%v compile_budget=%d restart_count=%d auto_restart=%v\n",
 		model, data, *steps, *learningRate, *inputBytes, *outputBytes, !*noANEExtras, budget, restartCount, *autoRestart)
 	if *diagnostics {
@@ -386,8 +400,8 @@ func main() {
 					*outputBytes,
 					*recompileEach,
 					*diagnostics,
-					*allowExpDirect,
 					*parityMode,
+					*trainerBackend,
 					*fullBin,
 					*fullAccumSteps,
 					*veclibThreads,
@@ -462,7 +476,8 @@ func buildRestartArgs(
 	disableBudget, autoRestart bool,
 	maxRestarts int,
 	inputBytes, outputBytes uint,
-	recompileEach, diagnostics, allowExpDirect, parityMode bool,
+	recompileEach, diagnostics, parityMode bool,
+	trainerBackend string,
 	fullBin string,
 	fullAccumSteps uint,
 	veclibThreads, dwConcurrency int,
@@ -516,8 +531,8 @@ func buildRestartArgs(
 	if diagnostics {
 		args = append(args, "-diagnostics=true")
 	}
-	if allowExpDirect {
-		args = append(args, "-allow-experimental-ane-trainer=true")
+	if trainerBackend != "" {
+		args = append(args, "-trainer-backend", trainerBackend)
 	}
 	if parityMode {
 		args = append(args, "-parity-mode=true")

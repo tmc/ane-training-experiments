@@ -10,11 +10,14 @@ const (
 	// DefaultCompileBudget matches the default compile-budget restart threshold.
 	DefaultCompileBudget uint32 = 100
 
-	// BackendBridge indicates the bridge-backed trainer implementation.
+	// BackendBridge is reserved for compatibility, but currently unsupported in pure-Go mode.
 	BackendBridge = "bridge"
 
 	// BackendDirect indicates the direct Go _ANEClient implementation.
 	BackendDirect = "direct"
+
+	// BackendAuto selects the direct-Go implementation.
+	BackendAuto = "auto"
 )
 
 // Options configures an ANE Stories trainer.
@@ -31,6 +34,10 @@ type Options struct {
 	// InputBytes and OutputBytes define mapped tensor byte sizes.
 	InputBytes  uint32
 	OutputBytes uint32
+
+	// SequenceLength sets the token window for direct .bin training.
+	// Zero uses the runtime default.
+	SequenceLength uint32
 
 	// Steps limits the number of training steps. Zero means unbounded.
 	Steps uint32
@@ -55,6 +62,11 @@ type Options struct {
 
 	// QoS is currently reserved and defaults to DefaultQoS.
 	QoS uint32
+
+	// Backend selects trainer implementation: auto, bridge, or direct.
+	//
+	// auto maps to direct-Go; bridge returns an explicit unsupported error.
+	Backend string
 }
 
 // StepStats reports one trainer step.
