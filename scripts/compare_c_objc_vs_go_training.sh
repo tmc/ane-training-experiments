@@ -529,6 +529,11 @@ else
 		-json=false
 		-save-every 0
 	)
+	if [[ "$GO_BACKEND" == "ane" && "$GO_MODEL_LOWER" == *.bin ]]; then
+		if [[ "$FULL_ACCUM" -gt 0 ]]; then
+			go_flags+=(-accum-steps "$FULL_ACCUM")
+		fi
+	fi
 	if [[ "$GO_BACKEND" == "ane-dynamic" ]]; then
 		go_flags+=(-dynamic-bin "$GO_DYNAMIC_BIN" -accum-steps "$DYNAMIC_ACCUM")
 	fi
