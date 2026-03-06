@@ -251,12 +251,13 @@ func main() {
 		fmt.Printf("[RESUMED from %s]\n", *ckptPath)
 	}
 
-	fmt.Println("=== ANE Stories Training (Go direct) ===")
+	fmt.Printf("=== ANE Stories Training (Go, backend=%s) ===\n", trainer.Backend())
 	fmt.Printf("model=%s data=%s steps=%d lr=%.6f input_bytes=%d output_bytes=%d ane_extras=%v compile_budget=%d restart_count=%d auto_restart=%v\n",
 		model, data, *steps, *learningRate, *inputBytes, *outputBytes, !*noANEExtras, budget, restartCount, *autoRestart)
 	if *diagnostics {
 		d := trainer.Diagnostics()
-		fmt.Printf("diagnostics: restricted_access=%v known=%v virtual_client=%v known=%v vc_class=%q model_qd=%d qd_known=%v program_class=%q program_qd=%d program_qd_known=%v async_inflight=%d async_known=%v requests_inflight=%d requests_known=%v\n",
+		fmt.Printf("diagnostics: backend=%s restricted_access=%v known=%v virtual_client=%v known=%v vc_class=%q model_qd=%d qd_known=%v program_class=%q program_qd=%d program_qd_known=%v async_inflight=%d async_known=%v requests_inflight=%d requests_known=%v\n",
+			d.Backend,
 			d.AllowRestrictedAccess, d.AllowRestrictedAccessKnown,
 			d.IsVirtualClient, d.IsVirtualClientKnown, d.VirtualClientClass,
 			d.ModelQueueDepth, d.ModelQueueDepthKnown,
@@ -372,6 +373,7 @@ func main() {
 					*steps,
 					*learningRate,
 					*noANEExtras,
+					*aneClsBwd,
 					*jsonOut,
 					*accumSteps,
 					*saveEvery,
@@ -384,6 +386,16 @@ func main() {
 					*outputBytes,
 					*recompileEach,
 					*diagnostics,
+					*allowExpDirect,
+					*parityMode,
+					*fullBin,
+					*fullAccumSteps,
+					*veclibThreads,
+					*dwConcurrency,
+					*dynamicBin,
+					*seqOverride,
+					*dynamicANECls,
+					*dynamicClsTile,
 				)
 				if err := restartSelf(args, restartCount+1); err != nil {
 					fatalf("exec restart failed at step %d: %v", st.Step, err)
@@ -439,7 +451,26 @@ func restartSelf(args []string, restartCount int) error {
 	return nil
 }
 
-func buildRestartArgs(bin, model, modelKey, data, ckpt, backend string, steps uint, lr float64, noANEExtras, jsonOut bool, accumSteps, saveEvery uint, saveFinal bool, compileBudget uint, disableBudget, autoRestart bool, maxRestarts int, inputBytes, outputBytes uint, recompileEach, diagnostics bool) []string {
+func buildRestartArgs(
+	bin, model, modelKey, data, ckpt, backend string,
+	steps uint,
+	lr float64,
+	noANEExtras, aneClsBwd, jsonOut bool,
+	accumSteps, saveEvery uint,
+	saveFinal bool,
+	compileBudget uint,
+	disableBudget, autoRestart bool,
+	maxRestarts int,
+	inputBytes, outputBytes uint,
+	recompileEach, diagnostics, allowExpDirect, parityMode bool,
+	fullBin string,
+	fullAccumSteps uint,
+	veclibThreads, dwConcurrency int,
+	dynamicBin string,
+	seqOverride uint,
+	dynamicANECls bool,
+	dynamicClsTile int,
+) []string {
 	args := []string{
 		bin,
 		"-model", model,
@@ -459,6 +490,9 @@ func buildRestartArgs(bin, model, modelKey, data, ckpt, backend string, steps ui
 	}
 	if noANEExtras {
 		args = append(args, "-no-ane-extras")
+	}
+	if aneClsBwd {
+		args = append(args, "-ane-cls-bwd=true")
 	}
 	if jsonOut {
 		args = append(args, "-json=true")
@@ -481,6 +515,36 @@ func buildRestartArgs(bin, model, modelKey, data, ckpt, backend string, steps ui
 	}
 	if diagnostics {
 		args = append(args, "-diagnostics=true")
+	}
+	if allowExpDirect {
+		args = append(args, "-allow-experimental-ane-trainer=true")
+	}
+	if parityMode {
+		args = append(args, "-parity-mode=true")
+	}
+	if fullBin != "" {
+		args = append(args, "-full-bin", fullBin)
+	}
+	if fullAccumSteps > 0 {
+		args = append(args, "-full-accum-steps", strconv.FormatUint(uint64(fullAccumSteps), 10))
+	}
+	if veclibThreads > 0 {
+		args = append(args, "-veclib-threads", strconv.Itoa(veclibThreads))
+	}
+	if dwConcurrency > 0 {
+		args = append(args, "-dw-concurrency", strconv.Itoa(dwConcurrency))
+	}
+	if dynamicBin != "" {
+		args = append(args, "-dynamic-bin", dynamicBin)
+	}
+	if seqOverride > 0 {
+		args = append(args, "-seq-override", strconv.FormatUint(uint64(seqOverride), 10))
+	}
+	if dynamicANECls {
+		args = append(args, "-dynamic-ane-cls=true")
+	}
+	if dynamicClsTile > 0 {
+		args = append(args, "-dynamic-ane-cls-tile", strconv.Itoa(dynamicClsTile))
 	}
 	return args
 }
