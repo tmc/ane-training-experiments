@@ -39,6 +39,10 @@ type Options struct {
 	// Zero uses the runtime default.
 	SequenceLength uint32
 
+	// AccumSteps controls optimizer update batching for direct .bin training.
+	// Zero uses the runtime default.
+	AccumSteps uint32
+
 	// Steps limits the number of training steps. Zero means unbounded.
 	Steps uint32
 

@@ -148,11 +148,12 @@ func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 		seq = stories.SeqDefault
 	}
 	engine, err := storiesane.Open(storiesane.Options{
-		ModelPath: norm.ModelPath,
-		Tokens:    tokens,
-		Seq:       seq,
-		LR:        norm.LearningRate,
-		Seed:      42,
+		ModelPath:  norm.ModelPath,
+		Tokens:     tokens,
+		Seq:        seq,
+		AccumSteps: int(norm.AccumSteps),
+		LR:         norm.LearningRate,
+		Seed:       42,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stories trainer open: init storiesane engine: %w", err)
@@ -316,6 +317,11 @@ func (t *Trainer) stepCPU() (StepStats, error) {
 	}
 	t.lastLoss = res.Loss
 	t.step++
+	if t.totalSteps > 0 && t.step >= t.totalSteps {
+		if err := t.engine.Flush(); err != nil {
+			return StepStats{}, fmt.Errorf("stories trainer step: flush pending: %w", err)
+		}
+	}
 	st := t.engine.State()
 	t.tokenPos = st.TokenPos
 	t.cumSteps = st.CumSteps

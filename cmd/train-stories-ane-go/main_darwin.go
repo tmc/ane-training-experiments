@@ -235,6 +235,7 @@ func main() {
 		InputBytes:           uint32(*inputBytes),
 		OutputBytes:          uint32(*outputBytes),
 		SequenceLength:       uint32(*seqOverride),
+		AccumSteps:           uint32(*accumSteps),
 		Steps:                uint32(*steps),
 		LearningRate:         float32(*learningRate),
 		DisableANEExtras:     *noANEExtras,
