@@ -11,6 +11,7 @@ DEFAULT_GO_ANE_MODEL="$DEFAULT_STORIES_MODEL"
 C_MODEL="$DEFAULT_STORIES_MODEL"
 GO_MODEL=""
 GO_BACKEND="ane"
+TRAINER_BACKEND="auto"
 C_MODE="ane"
 FULL_BIN="$ROOT/training/train_large_ane"
 DYNAMIC_BIN="$ROOT/training/training_dynamic/train"
@@ -41,6 +42,7 @@ Flags:
   --c-model PATH        stories110M .bin path for C/ObjC run
   --go-model PATH       model path for Go run (.mlmodelc or .bin for ane, .bin for ane-dynamic/full/cpu)
   --go-backend MODE     Go backend: ane|ane-dynamic|full|cpu (default: ane)
+  --trainer-backend M   direct trainer selector for go ane path: auto|bridge|direct (default: auto)
   --c-mode MODE         C mode: ane|ane-dynamic|cpu (default: ane)
   --full-bin PATH       full trainer binary path (default: ./training/train_large_ane)
   --dynamic-bin PATH    dynamic trainer binary path (default: ./training/training_dynamic/train)
@@ -98,6 +100,10 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--go-backend)
 		GO_BACKEND="$2"
+		shift 2
+		;;
+	--trainer-backend)
+		TRAINER_BACKEND="$2"
 		shift 2
 		;;
 		--c-mode)
@@ -250,6 +256,10 @@ if [[ "$GO_BACKEND" != "full" && "$GO_BACKEND" != "ane" && "$GO_BACKEND" != "ane
 	echo "go backend must be 'full', 'ane', 'ane-dynamic', or 'cpu': $GO_BACKEND" >&2
 	exit 1
 fi
+if [[ "$TRAINER_BACKEND" != "auto" && "$TRAINER_BACKEND" != "bridge" && "$TRAINER_BACKEND" != "direct" ]]; then
+	echo "trainer-backend must be one of: auto, bridge, direct: $TRAINER_BACKEND" >&2
+	exit 1
+fi
 if ! [[ "$WARMUP_STEPS" =~ ^[0-9]+$ ]]; then
 	echo "warmup-steps must be a non-negative integer: $WARMUP_STEPS" >&2
 	exit 1
@@ -332,7 +342,9 @@ if [[ "$C_MODE" == "ane" && "$GO_BACKEND" == "full" ]]; then
 fi
 if [[ "$C_MODE" == "ane" && "$GO_BACKEND" == "ane" ]]; then
 	backend_pair=1
-	if [[ "$GO_MODEL_LOWER" == *.bin ]]; then
+	# .bin on go-backend=ane currently uses direct pure-Go trainer mode,
+	# which is not yet strict workload-equivalent to C train_large_ane.
+	if [[ "$GO_MODEL_LOWER" != *.bin ]]; then
 		strict_pair=1
 	fi
 fi
@@ -508,6 +520,7 @@ if [[ "$C_MODE" == "cpu" && "$GO_BACKEND" == "cpu" ]]; then
 else
 	go_flags=(
 		-backend "$GO_BACKEND"
+		-trainer-backend "$TRAINER_BACKEND"
 		-model "$GO_MODEL"
 		-data "$DATA"
 		-ckpt "$GO_CKPT"
@@ -519,7 +532,7 @@ else
 	if [[ "$GO_BACKEND" == "ane-dynamic" ]]; then
 		go_flags+=(-dynamic-bin "$GO_DYNAMIC_BIN" -accum-steps "$DYNAMIC_ACCUM")
 	fi
-	if [[ "$GO_BACKEND" == "full" || ( "$GO_BACKEND" == "ane" && "$GO_MODEL_LOWER" == *.bin ) ]]; then
+	if [[ "$GO_BACKEND" == "full" ]]; then
 		go_flags+=(-full-bin "$GO_FULL_BIN")
 		if [[ "$FULL_ACCUM" -gt 0 ]]; then
 			go_flags+=(-full-accum-steps "$FULL_ACCUM")
@@ -534,7 +547,7 @@ else
 	if [[ "$NO_ANE_EXTRAS" -eq 1 ]]; then
 		go_flags+=(-no-ane-extras)
 	fi
-	if [[ "$ANE_CLS_BWD" -eq 1 && ( "$GO_BACKEND" == "full" || ( "$GO_BACKEND" == "ane" && "$GO_MODEL_LOWER" == *.bin ) ) ]]; then
+	if [[ "$ANE_CLS_BWD" -eq 1 && "$GO_BACKEND" == "full" ]]; then
 		go_flags+=(-ane-cls-bwd)
 	fi
 fi
@@ -790,6 +803,30 @@ NR > 1 {
 
 detect_go_mode() {
 	local log="$1"
+	local impl
+	impl="$(grep -E '^go_impl_backend=' "$log" | tail -n1 | sed -E 's/^go_impl_backend=//' || true)"
+	case "$impl" in
+	direct_bin_cpu)
+		echo "cpu_reference"
+		return
+		;;
+	direct_modelc|direct)
+		echo "ane_clientmodel"
+		return
+		;;
+	full_c_exec)
+		echo "ane_offloaded"
+		return
+		;;
+	dynamic_c_exec)
+		echo "ane_dynamic"
+		return
+		;;
+	cpu)
+		echo "cpu_reference"
+		return
+		;;
+	esac
 	if grep -q "=== ANE Training: Stories110M (ANE-offloaded) ===" "$log"; then
 		echo "ane_offloaded"
 		return
@@ -820,12 +857,17 @@ detect_go_mode() {
 detect_go_impl_backend() {
 	local log="$1"
 	local line
-	line="$(grep -E "=== ANE Stories Training \(Go, backend=" "$log" | tail -n1 || true)"
-	if [[ -z "$line" ]]; then
-		echo "n/a"
+	line="$(grep -E "^go_impl_backend=" "$log" | tail -n1 || true)"
+	if [[ -n "$line" ]]; then
+		echo "${line#go_impl_backend=}"
 		return
 	fi
-	echo "$line" | sed -E 's/.*backend=([^)]*).*/\1/'
+	line="$(grep -E "=== ANE Stories Training \(Go, backend=" "$log" | tail -n1 || true)"
+	if [[ -n "$line" ]]; then
+		echo "$line" | sed -E 's/.*backend=([^)]*).*/\1/'
+		return
+	fi
+	echo "n/a"
 }
 
 detect_c_mode() {
@@ -882,6 +924,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "c_exit_code=$C_RC"
 	echo "go_exit_code=$GO_RC"
 	echo "go_backend_flag=$GO_BACKEND"
+	echo "trainer_backend_flag=$TRAINER_BACKEND"
 	echo "dynamic_accum=$DYNAMIC_ACCUM"
 	echo "full_accum=$FULL_ACCUM"
 	echo "parity_mode=$PARITY_MODE"
@@ -1036,8 +1079,8 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	fi
 	if [[ "$GO_BACKEND" == "ane" ]]; then
 		if [[ "$GO_MODEL_LOWER" == *.bin ]]; then
-			if [[ "$GO_MODE" != "ane_offloaded" ]]; then
-				echo "warning=go backend flag was ane(.bin) but runtime mode was $GO_MODE"
+			if [[ "$GO_MODE" != "cpu_reference" ]]; then
+				echo "warning=go backend flag was ane(.bin direct mode) but runtime mode was $GO_MODE"
 			fi
 		elif [[ "$GO_MODE" != "ane_clientmodel" ]]; then
 			echo "warning=go backend flag was ane(.mlmodelc) but runtime mode was $GO_MODE"

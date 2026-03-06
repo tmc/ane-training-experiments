@@ -71,8 +71,8 @@ median_from_list() {
 
 run_group() {
 	local order="$1"
-	local out ratio delta
-	local ratios="" deltas=""
+	local out ratio delta loss impl strict
+	local ratios="" deltas="" losses="" impls="" stricts=""
 	local i=1
 	while [[ "$i" -le "$REPEATS" ]]; do
 		echo "== compare run-order=$order (run $i/$REPEATS) ==" >&2
@@ -80,25 +80,50 @@ run_group() {
 		printf '%s\n' "$out" >&2
 		ratio="$(extract_field "go_vs_c_train_step_ratio" "$out")"
 		delta="$(extract_field "avg_delta_step_ms(go-c)" "$out")"
+		loss="$(extract_field "avg_delta_loss(go-c)" "$out")"
+		impl="$(extract_field "go_impl_backend" "$out")"
+		strict="$(extract_field "strict_workload_pairing" "$out")"
 		if [[ -n "$ratio" ]]; then
 			ratios+="$ratio"$'\n'
 		fi
 		if [[ -n "$delta" ]]; then
 			deltas+="$delta"$'\n'
 		fi
+		if [[ -n "$loss" ]]; then
+			losses+="$loss"$'\n'
+		fi
+		if [[ -n "$impl" ]]; then
+			impls+="$impl"$'\n'
+		fi
+		if [[ -n "$strict" ]]; then
+			stricts+="$strict"$'\n'
+		fi
 		echo >&2
 		i=$((i + 1))
 	done
-	echo "$ratios"$'\x1f'"$deltas"
+	echo "$ratios"$'\x1f'"$deltas"$'\x1f'"$losses"$'\x1f'"$impls"$'\x1f'"$stricts"
 }
 
 CGO_GROUP="$(run_group c-go)"
 GOC_GROUP="$(run_group go-c)"
 
 RATIO_CGO_LIST="${CGO_GROUP%%$'\x1f'*}"
-DELTA_CGO_LIST="${CGO_GROUP#*$'\x1f'}"
+REST_CGO="${CGO_GROUP#*$'\x1f'}"
+DELTA_CGO_LIST="${REST_CGO%%$'\x1f'*}"
+REST_CGO="${REST_CGO#*$'\x1f'}"
+LOSS_CGO_LIST="${REST_CGO%%$'\x1f'*}"
+REST_CGO="${REST_CGO#*$'\x1f'}"
+IMPL_CGO_LIST="${REST_CGO%%$'\x1f'*}"
+STRICT_CGO_LIST="${REST_CGO#*$'\x1f'}"
+
 RATIO_GOC_LIST="${GOC_GROUP%%$'\x1f'*}"
-DELTA_GOC_LIST="${GOC_GROUP#*$'\x1f'}"
+REST_GOC="${GOC_GROUP#*$'\x1f'}"
+DELTA_GOC_LIST="${REST_GOC%%$'\x1f'*}"
+REST_GOC="${REST_GOC#*$'\x1f'}"
+LOSS_GOC_LIST="${REST_GOC%%$'\x1f'*}"
+REST_GOC="${REST_GOC#*$'\x1f'}"
+IMPL_GOC_LIST="${REST_GOC%%$'\x1f'*}"
+STRICT_GOC_LIST="${REST_GOC#*$'\x1f'}"
 
 RATIO_CGO_MEAN="$(mean_from_list "$RATIO_CGO_LIST")"
 RATIO_CGO_MEDIAN="$(median_from_list "$RATIO_CGO_LIST")"
@@ -108,13 +133,30 @@ DELTA_CGO_MEAN="$(mean_from_list "$DELTA_CGO_LIST")"
 DELTA_CGO_MEDIAN="$(median_from_list "$DELTA_CGO_LIST")"
 DELTA_GOC_MEAN="$(mean_from_list "$DELTA_GOC_LIST")"
 DELTA_GOC_MEDIAN="$(median_from_list "$DELTA_GOC_LIST")"
+LOSS_CGO_MEAN="$(mean_from_list "$LOSS_CGO_LIST")"
+LOSS_CGO_MEDIAN="$(median_from_list "$LOSS_CGO_LIST")"
+LOSS_GOC_MEAN="$(mean_from_list "$LOSS_GOC_LIST")"
+LOSS_GOC_MEDIAN="$(median_from_list "$LOSS_GOC_LIST")"
 
 ALL_RATIO_LIST="$RATIO_CGO_LIST"$'\n'"$RATIO_GOC_LIST"
 ALL_DELTA_LIST="$DELTA_CGO_LIST"$'\n'"$DELTA_GOC_LIST"
+ALL_LOSS_LIST="$LOSS_CGO_LIST"$'\n'"$LOSS_GOC_LIST"
 RATIO_ALL_MEAN="$(mean_from_list "$ALL_RATIO_LIST")"
 RATIO_ALL_MEDIAN="$(median_from_list "$ALL_RATIO_LIST")"
 DELTA_ALL_MEAN="$(mean_from_list "$ALL_DELTA_LIST")"
 DELTA_ALL_MEDIAN="$(median_from_list "$ALL_DELTA_LIST")"
+LOSS_ALL_MEAN="$(mean_from_list "$ALL_LOSS_LIST")"
+LOSS_ALL_MEDIAN="$(median_from_list "$ALL_LOSS_LIST")"
+ALL_IMPL_LIST="$IMPL_CGO_LIST"$'\n'"$IMPL_GOC_LIST"
+ALL_STRICT_LIST="$STRICT_CGO_LIST"$'\n'"$STRICT_GOC_LIST"
+ALL_STRICT_OK=1
+while IFS= read -r s; do
+	[[ -z "$s" ]] && continue
+	if [[ "$s" != "1" ]]; then
+		ALL_STRICT_OK=0
+		break
+	fi
+done < <(printf '%s\n' "$ALL_STRICT_LIST" | awk 'NF{print $1}')
 
 echo "== aggregate parity summary =="
 echo "repeats=$REPEATS"
@@ -130,3 +172,11 @@ echo "go_c_delta_step_ms_mean=$DELTA_GOC_MEAN"
 echo "go_c_delta_step_ms_median=$DELTA_GOC_MEDIAN"
 echo "all_delta_step_ms_mean=$DELTA_ALL_MEAN"
 echo "all_delta_step_ms_median=$DELTA_ALL_MEDIAN"
+echo "c_go_delta_loss_mean=$LOSS_CGO_MEAN"
+echo "c_go_delta_loss_median=$LOSS_CGO_MEDIAN"
+echo "go_c_delta_loss_mean=$LOSS_GOC_MEAN"
+echo "go_c_delta_loss_median=$LOSS_GOC_MEDIAN"
+echo "all_delta_loss_mean=$LOSS_ALL_MEAN"
+echo "all_delta_loss_median=$LOSS_ALL_MEDIAN"
+echo "all_go_impl_backends=$(printf '%s\n' "$ALL_IMPL_LIST" | awk 'NF{print $1}' | paste -sd, -)"
+echo "all_strict_workload_pairing=$ALL_STRICT_OK"
