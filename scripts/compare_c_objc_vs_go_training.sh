@@ -18,7 +18,7 @@ DYNAMIC_ACCUM=20
 FULL_ACCUM=0
 VECLIB_THREADS=0
 DW_CONCURRENCY=0
-PROFILE="default"
+PROFILE="c-match"
 PARITY_MODE=0
 SEQ_OVERRIDE=""
 OUT_DIR="/tmp/ane_compare"
@@ -48,7 +48,7 @@ Flags:
   --full-accum N        accumulation steps for full C/ObjC trainer (default: trainer default)
   --veclib-threads N    set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer paths (default: process default)
   --dw-concurrency N    set dW async task concurrency for full C/ObjC trainer paths (default: trainer default)
-  --profile NAME        preset workload profile: default|high-util
+  --profile NAME        preset workload profile: default|high-util|c-match (default: c-match)
   --parity-mode         enforce strict full-training parity profile (ane/ane, seq=384, full-accum=80, veclib=6, dw=3)
   --seq-override N      rebuild trainer binaries with SEQ=N for higher work per dispatch
   --allow-mismatch      allow non-equivalent workload pairings (default: false)
@@ -180,11 +180,25 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-if [[ "$PROFILE" != "default" && "$PROFILE" != "high-util" ]]; then
-	echo "profile must be one of: default, high-util" >&2
+if [[ "$PROFILE" != "default" && "$PROFILE" != "high-util" && "$PROFILE" != "c-match" ]]; then
+	echo "profile must be one of: default, high-util, c-match" >&2
 	exit 1
 fi
 if [[ "$PROFILE" == "high-util" ]]; then
+	if [[ "$FULL_ACCUM" -eq 0 ]]; then
+		FULL_ACCUM=80
+	fi
+	if [[ -z "$SEQ_OVERRIDE" ]]; then
+		SEQ_OVERRIDE=384
+	fi
+	if [[ "$VECLIB_THREADS" -eq 0 ]]; then
+		VECLIB_THREADS=6
+	fi
+	if [[ "$DW_CONCURRENCY" -eq 0 ]]; then
+		DW_CONCURRENCY=3
+	fi
+fi
+if [[ "$PROFILE" == "c-match" ]]; then
 	if [[ "$FULL_ACCUM" -eq 0 ]]; then
 		FULL_ACCUM=80
 	fi
@@ -784,6 +798,14 @@ detect_go_mode() {
 		echo "ane_dynamic"
 		return
 	fi
+	if grep -q "=== ANE Stories Training (Go, backend=bridge) ===" "$log"; then
+		echo "ane_bridge"
+		return
+	fi
+	if grep -q "=== ANE Stories Training (Go, backend=direct) ===" "$log"; then
+		echo "ane_clientmodel"
+		return
+	fi
 	if grep -q "=== ANE Stories Training (Go direct) ===" "$log"; then
 		echo "ane_clientmodel"
 		return
@@ -793,6 +815,17 @@ detect_go_mode() {
 		return
 	fi
 	echo "unknown"
+}
+
+detect_go_impl_backend() {
+	local log="$1"
+	local line
+	line="$(grep -E "=== ANE Stories Training \(Go, backend=" "$log" | tail -n1 || true)"
+	if [[ -z "$line" ]]; then
+		echo "n/a"
+		return
+	fi
+	echo "$line" | sed -E 's/.*backend=([^)]*).*/\1/'
 }
 
 detect_c_mode() {
@@ -839,6 +872,7 @@ extract_compile_pct() {
 
 GO_MODE="$(detect_go_mode "$GO_LOG")"
 C_RUNTIME_MODE="$(detect_c_mode "$C_LOG")"
+GO_IMPL_BACKEND="$(detect_go_impl_backend "$GO_LOG")"
 GO_ANE_UTIL="$(extract_ane_util "$GO_LOG")"
 C_ANE_UTIL="$(extract_ane_util "$C_LOG")"
 GO_COMPILE_PCT="$(extract_compile_pct "$GO_LOG")"
@@ -869,6 +903,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "c_mode_flag=$C_MODE"
 	echo "c_mode=$C_RUNTIME_MODE"
 	echo "go_mode=$GO_MODE"
+	echo "go_impl_backend=$GO_IMPL_BACKEND"
 	echo "c_ane_util_pct=$C_ANE_UTIL"
 	echo "go_ane_util_pct=$GO_ANE_UTIL"
 	echo "c_compile_pct=$C_COMPILE_PCT"
