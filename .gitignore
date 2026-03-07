@@ -1,1 +1,25 @@
+# Local envs and tool state
 .venv
+.venv-coreml/
+.claude/
+
+# Local artifacts and scratch
+bridgepoc/
+ane_stories110M_ckpt.bin
+training/ane_stories110M_ckpt.bin
+training/tinystories_data00.bin
+
+# ObjC training binaries (keep source files)
+training/test_*
+!training/*.m
+!training/*.md
+!training/*.py
+!training/*.sh
+
+training/train_large
+training/train_large_ane
+training/train_large_ane_seq*
+training/train_large_ane_seq*_a*
+
+training/training_dynamic/train
+training/training_dynamic/train_seq*
