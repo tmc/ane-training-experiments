@@ -1,0 +1,58 @@
+=== /System/Library/PrivateFrameworks/AppleNeuralEngine.framework/XPCServices/ANECompilerService.xpc/Contents/Info.plist ===
+{
+  "CFBundleIdentifier" => "com.apple.ANECompilerService"
+  "CFBundleVersion" => "1"
+  "DTPlatformBuild" => ""
+  "DTXcode" => "2600"
+  "BuildMachineOSBuild" => "23A344017"
+  "CFBundleInfoDictionaryVersion" => "6.0"
+  "DTCompiler" => "com.apple.compilers.llvm.clang.1_0"
+  "DTPlatformVersion" => "26.3"
+  "DTSDKBuild" => "25D110"
+  "CFBundleExecutable" => "ANECompilerService"
+  "CFBundleName" => "ANECompilerService"
+  "DTPlatformName" => "macosx"
+  "DTSDKName" => "macosx26.3.internal"
+  "LSMinimumSystemVersion" => "26.3"
+  "CFBundleDisplayName" => "ANECompilerService"
+  "CFBundlePackageType" => "XPC!"
+  "CFBundleSupportedPlatforms" => [
+    0 => "MacOSX"
+  ]
+  "DTXcodeBuild" => "17A6264l"
+  "XPCService" => {
+    "ServiceType" => "Application"
+    "_MultipleInstances" => true
+  }
+  "CFBundleDevelopmentRegion" => "en"
+}
+
+=== /System/Library/PrivateFrameworks/AppleNeuralEngine.framework/XPCServices/ANEStorageMaintainer.xpc/Contents/Info.plist ===
+{
+  "CFBundleName" => "ANEStorageMaintainer"
+  "DTCompiler" => "com.apple.compilers.llvm.clang.1_0"
+  "DTXcode" => "2600"
+  "NSHumanReadableCopyright" => "Copyright © 2021 Apple. All rights reserved."
+  "XPCService" => {
+    "ServiceType" => "Application"
+  }
+  "BuildMachineOSBuild" => "23A344017"
+  "CFBundlePackageType" => "XPC!"
+  "DTPlatformBuild" => ""
+  "DTPlatformVersion" => "26.3"
+  "DTSDKBuild" => "25D110"
+  "CFBundleInfoDictionaryVersion" => "6.0"
+  "CFBundleSupportedPlatforms" => [
+    0 => "MacOSX"
+  ]
+  "CFBundleVersion" => "1"
+  "LSMinimumSystemVersion" => "26.3"
+  "CFBundleDisplayName" => "ANEStorageMaintainer"
+  "CFBundleIdentifier" => "com.apple.private.ANEStorageMaintainer"
+  "DTPlatformName" => "macosx"
+  "DTSDKName" => "macosx26.3.internal"
+  "DTXcodeBuild" => "17A6264l"
+  "CFBundleDevelopmentRegion" => "en"
+  "CFBundleExecutable" => "ANEStorageMaintainer"
+}
+

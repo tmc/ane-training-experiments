@@ -4,6 +4,7 @@ package espressoio
 
 import (
 	"fmt"
+	"unsafe"
 
 	aneruntime "github.com/maderix/ANE/ane/runtime"
 	"github.com/tmc/apple/coregraphics"
@@ -11,6 +12,42 @@ import (
 	"github.com/tmc/apple/metal"
 	"github.com/tmc/apple/private/espresso"
 )
+
+/*
+#cgo darwin LDFLAGS: -framework IOSurface -framework CoreFoundation
+#include <IOSurface/IOSurface.h>
+#include <string.h>
+#include <stdint.h>
+
+static int espressoio_surface_write(uintptr_t ref, const void* p, size_t n) {
+	IOSurfaceRef s = (IOSurfaceRef)ref;
+	if (s == NULL || p == NULL) return -1;
+	if (IOSurfaceLock(s, 0, NULL) != kIOReturnSuccess) return -2;
+	void* base = IOSurfaceGetBaseAddress(s);
+	if (base == NULL) {
+		IOSurfaceUnlock(s, 0, NULL);
+		return -3;
+	}
+	memcpy(base, p, n);
+	IOSurfaceUnlock(s, 0, NULL);
+	return 0;
+}
+
+static int espressoio_surface_read(uintptr_t ref, void* p, size_t n) {
+	IOSurfaceRef s = (IOSurfaceRef)ref;
+	if (s == NULL || p == NULL) return -1;
+	if (IOSurfaceLock(s, kIOSurfaceLockReadOnly, NULL) != kIOReturnSuccess) return -2;
+	void* base = IOSurfaceGetBaseAddress(s);
+	if (base == NULL) {
+		IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
+		return -3;
+	}
+	memcpy(p, base, n);
+	IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
+	return 0;
+}
+*/
+import "C"
 
 // Pool manages EspressoANEIOSurface multi-buffer frames.
 type Pool struct {
@@ -126,6 +163,44 @@ func (p *Pool) MetalBufferForFrame(device metal.MTLDevice, frame uint64) (metal.
 	return buf, nil
 }
 
+// WriteFrame writes bytes into the frame IOSurface.
+func (p *Pool) WriteFrame(frame uint64, b []byte) error {
+	ref, err := p.IOSurfaceForFrame(frame)
+	if err != nil {
+		return err
+	}
+	if len(b) != p.bytes {
+		return fmt.Errorf("espressoio write frame: got %d bytes, want %d", len(b), p.bytes)
+	}
+	if len(b) == 0 {
+		return nil
+	}
+	st := C.espressoio_surface_write(C.uintptr_t(ref), unsafe.Pointer(&b[0]), C.size_t(len(b)))
+	if st != 0 {
+		return fmt.Errorf("espressoio write frame: status=%d", int(st))
+	}
+	return nil
+}
+
+// ReadFrame reads bytes from the frame IOSurface.
+func (p *Pool) ReadFrame(frame uint64, b []byte) error {
+	ref, err := p.IOSurfaceForFrame(frame)
+	if err != nil {
+		return err
+	}
+	if len(b) != p.bytes {
+		return fmt.Errorf("espressoio read frame: got %d bytes, want %d", len(b), p.bytes)
+	}
+	if len(b) == 0 {
+		return nil
+	}
+	st := C.espressoio_surface_read(C.uintptr_t(ref), unsafe.Pointer(&b[0]), C.size_t(len(b)))
+	if st != 0 {
+		return fmt.Errorf("espressoio read frame: status=%d", int(st))
+	}
+	return nil
+}
+
 func newIOSurfaceProps(bytes uint64) foundation.NSMutableDictionary {
 	num := foundation.GetNSNumberClass()
 	props := foundation.NewNSMutableDictionary()
@@ -140,5 +215,5 @@ func newIOSurfaceProps(bytes uint64) foundation.NSMutableDictionary {
 
 func newPixelFormatsSet() foundation.NSSet {
 	num := foundation.GetNSNumberClass()
-	return foundation.GetNSSetClass().SetWithObject(num.NumberWithUnsignedInt(0))
+	return foundation.GetNSSetClass().SetWithObjects(num.NumberWithUnsignedInt(0))
 }

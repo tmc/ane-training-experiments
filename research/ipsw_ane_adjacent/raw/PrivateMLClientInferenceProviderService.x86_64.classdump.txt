@@ -1,0 +1,8 @@
+@interface _TtCV39PrivateMLClientInferenceProviderService24InferenceProviderAdapter13StreamAdapter : _TtCs12_SwiftObject {
+    /* instance variables */
+    com.apple.privatemlclient $defaultActor;
+    com.apple.privatemlclient underlyingIterator;
+}
+
+@end
+

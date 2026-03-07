@@ -1,0 +1,221 @@
+@protocol NSObject
+
+@required
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* required instance methods */
+-[NSObject isEqual:];
+-[NSObject class];
+-[NSObject self];
+-[NSObject performSelector:];
+-[NSObject performSelector:withObject:];
+-[NSObject performSelector:withObject:withObject:];
+-[NSObject isProxy];
+-[NSObject isKindOfClass:];
+-[NSObject isMemberOfClass:];
+-[NSObject conformsToProtocol:];
+-[NSObject respondsToSelector:];
+-[NSObject retain];
+-[NSObject release];
+-[NSObject autorelease];
+-[NSObject retainCount];
+-[NSObject zone];
+-[NSObject hash];
+-[NSObject superclass];
+-[NSObject description];
+
+@optional
+
+/* optional instance methods */
+-[NSObject debugDescription];
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject>
+
+@required
+
+@optional
+
+/* optional instance methods */
+-[NSXPCListenerDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@protocol _ANEStorageMaintainerProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEStorageMaintainerProtocol purgeDanglingModelsAt:withReply:];
+
+@optional
+
+@end
+
+@interface ServiceDelegate : NSObject <NSXPCListenerDelegate>
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[ServiceDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@interface _ANEStorageHelper : NSObject
+
+/* class methods */
++[_ANEStorageHelper initialize];
++[_ANEStorageHelper removeDirectoryAtPath:];
++[_ANEStorageHelper removeShapesDirectoryAtPath:];
++[_ANEStorageHelper memoryMapModelAtPath:modelAttributes:];
++[_ANEStorageHelper memoryMapModelAtPath:isPrecompiled:modelAttributes:];
++[_ANEStorageHelper memoryMapWeightAtPath:];
++[_ANEStorageHelper setAccessTime:forModelFilePath:];
++[_ANEStorageHelper getAccessTimeForFilePath:];
++[_ANEStorageHelper updateAccessTimeForFilePath:];
++[_ANEStorageHelper removeFilePath:ifDate:olderThanSecond:];
++[_ANEStorageHelper garbageCollectDanglingModelsAtPath:];
++[_ANEStorageHelper uniqueFirstLevelSubdirectories:];
++[_ANEStorageHelper sizeOfDirectoryAtPath:recursionLevel:];
++[_ANEStorageHelper addSubdirectoryDetails:directoryPath:size:];
++[_ANEStorageHelper createModelCacheDictionary];
++[_ANEStorageHelper sizeOfModelCacheAtPath:purgeSubdirectories:];
++[_ANEStorageHelper mergeModelCacheStorageInformation:with:];
++[_ANEStorageHelper _markPurgeablePath:error:];
++[_ANEStorageHelper markPathAndDirectParentPurgeable:error:];
++[_ANEStorageHelper enableApfsPurging];
+
+@end
+
+@interface _ANEStorageMaintainer : NSObject <_ANEStorageMaintainerProtocol>
+
+/* class methods */
++[_ANEStorageMaintainer initialize];
+
+/* instance methods */
+-[_ANEStorageMaintainer purgeDanglingModelsAt:withReply:];
+
+@end
+
+
+@protocol refs
+0x0010000c398 => 0x00100010780: _ANEStorageMaintainerProtocol
+0x0010000c378 => 0x00100010780: _ANEStorageMaintainerProtocol
+0x0010000c380 => 0x001000107e0: NSObject
+0x0010000c388 => 0x00100010840: NSXPCListenerDelegate
+
+@class refs
+
+@super refs
+
+@selectors refs
+0x00100010630 => 0x00000007869: isMemberOfClass:
+0x001000103a8 => 0x000000075c6: attributesOfItemAtPath:error:
+0x00100010410 => 0x00000007756: errorWithDomain:code:userInfo:
+0x00100010498 => 0x000000079ae: mutableCopy
+0x001000104d8 => 0x00000007ae3: removeItemAtPath:error:
+0x001000104e0 => 0x00000007afb: removeItemAtURL:error:
+0x00100010540 => 0x00000007c32: storageMaintainerAccessEntitlement
+0x001000105b8 => 0x00000007945: memoryMapWeightAtPath:
+0x00100010418 => 0x00000007775: fileExistsAtPath:isDirectory:
+0x00100010478 => 0x000000078eb: memoryMapModelAtPath:isPrecompiled:modelAttributes:
+0x001000104e8 => 0x00000007b43: resume
+0x00100010650 => 0x0000000750a: release
+0x00100010670 => 0x000000077e6: hash
+0x001000103d0 => 0x00000007628: countByEnumeratingWithState:objects:count:
+0x00100010470 => 0x000000078b7: maintenance
+0x001000104b8 => 0x00000007a0a: path
+0x00100010520 => 0x00000007ba2: setExportedObject:
+0x001000105a8 => 0x00000007b12: removeShapesDirectoryAtPath:
+0x00100010688 => 0x000000076b2: debugDescription
+0x001000103f0 => 0x00000007694: dateWithTimeIntervalSinceNow:
+0x001000104f0 => 0x00000007463: serviceListener
+0x00100010538 => 0x00000007be0: sizeOfDirectoryAtPath:recursionLevel:
+0x00100010618 => 0x00000007a4b: performSelector:withObject:withObject:
+0x00100010638 => 0x0000000760f: conformsToProtocol:
+0x00100010658 => 0x000000075e4: autorelease
+0x00100010378 => 0x000000074b2: _markPurgeablePath:error:
+0x001000103e0 => 0x0000000766e: daemon
+0x001000103e8 => 0x00000007675: dateWithTimeIntervalSince1970:
+0x00100010500 => 0x00000007492: setAccessTime:forModelFilePath:
+0x00100010518 => 0x00000007b8c: setExportedInterface:
+0x00100010548 => 0x0000000753e: stringByAppendingPathComponent:
+0x00100010398 => 0x00000007433: allKeys
+0x001000103c8 => 0x00000007623: copy
+0x00100010438 => 0x000000077cc: getAccessTimeForFilePath:
+0x00100010450 => 0x00000007835: invalidate
+0x00100010560 => 0x00000007c9f: subpathsOfDirectoryAtPath:error:
+0x001000105b0 => 0x0000000791f: memoryMapModelAtPath:modelAttributes:
+0x001000105d0 => 0x0000000795c: mergeModelCacheStorageInformation:with:
+0x001000105d8 => 0x000000078c3: markPathAndDirectParentPurgeable:error:
+0x00100010388 => 0x00000007578: addObject:
+0x001000103a0 => 0x000000075ae: arrayWithObjects:count:
+0x001000104d0 => 0x00000007aa5: removeDirectoryAtPath:
+0x00100010550 => 0x00000007c55: stringByDeletingLastPathComponent
+0x00100010608 => 0x00000007a1e: performSelector:
+0x00100010370 => 0x00000007533: UTF8String
+0x00100010408 => 0x00000007715: enumeratorAtURL:includingPropertiesForKeys:options:errorHandler:
+0x00100010428 => 0x0000000779c: firstObject
+0x001000104b0 => 0x000000079f1: objectForKeyedSubscript:
+0x00100010528 => 0x00000007bb5: setObject:forKeyedSubscript:
+0x00100010568 => 0x00000007ccb: timeIntervalSince1970
+0x001000105c0 => 0x00000007abc: removeFilePath:ifDate:olderThanSecond:
+0x00100010648 => 0x00000007b4a: retain
+0x00100010368 => 0x00000007473: URLByDeletingLastPathComponent
+0x00100010430 => 0x000000077a8: garbageCollectDanglingModelsAtPath:
+0x00100010440 => 0x000000077eb: initWithBytesNoCopy:length:deallocator:
+0x00100010448 => 0x0000000781e: interfaceWithProtocol:
+0x00100010458 => 0x00000007849: isEqualToString:
+0x001000104a8 => 0x000000079d5: numberWithUnsignedLongLong:
+0x00100010558 => 0x00000007c77: stringWithContentsOfURL:encoding:error:
+0x001000105f0 => 0x00000007840: isEqual:
+0x00100010380 => 0x0000000755e: addEntriesFromDictionary:
+0x001000104a0 => 0x000000079ba: numberWithUnsignedInteger:
+0x00100010588 => 0x00000007d0c: updateAccessTimeForFilePath:
+0x001000105f8 => 0x00000007600: class
+0x00100010610 => 0x00000007a2f: performSelector:withObject:
+0x00100010640 => 0x00000007b2f: respondsToSelector:
+0x00100010480 => 0x0000000744e: modelBinaryName
+0x001000104c0 => 0x00000007a0f: pathComponents
+0x00100010510 => 0x00000007b7f: setDelegate:
+0x00100010530 => 0x00000007bd2: setWithArray:
+0x00100010590 => 0x00000007d29: valueForEntitlement:
+0x001000105e0 => 0x00000007703: enableApfsPurging
+0x001000105e8 => 0x00000007a84: purgeDanglingModelsAt:withReply:
+0x00100010600 => 0x00000007b5d: self
+0x00100010360 => 0x00000007512: URLByAppendingPathComponent:
+0x00100010390 => 0x00000007583: addSubdirectoryDetails:directoryPath:size:
+0x001000103f8 => 0x000000076c3: defaultManager
+0x00100010490 => 0x00000007999: modelSourceStoreName
+0x00100010508 => 0x00000007b62: setByAddingObjectsFromArray:
+0x00100010660 => 0x00000007b51: retainCount
+0x00100010400 => 0x000000076de: dictionaryWithObjects:forKeys:count:
+0x00100010570 => 0x000000074cc: uniqueFirstLevelSubdirectories:
+0x00100010578 => 0x00000007ce1: unsignedIntegerValue
+0x00100010628 => 0x0000000785a: isKindOfClass:
+0x00100010668 => 0x00000007d3e: zone
+0x001000103b0 => 0x000000075f0: boolValue
+0x001000103b8 => 0x000000075fa: bytes
+0x00100010420 => 0x00000007793: fileSize
+0x00100010598 => 0x00000007893: listener:shouldAcceptNewConnection:
+0x00100010678 => 0x00000007cc0: superclass
+0x001000103c0 => 0x00000007606: compare:
+0x00100010468 => 0x0000000788c: length
+0x00100010488 => 0x00000007984: modelCacheRetainName
+0x001000105a0 => 0x00000007813: initialize
+0x001000105c8 => 0x00000007c06: sizeOfModelCacheAtPath:purgeSubdirectories:
+0x00100010620 => 0x000000074f1: isProxy
+0x00100010680 => 0x000000076d2: description
+0x001000103d8 => 0x00000007653: createModelCacheDictionary
+0x00100010460 => 0x0000000787a: lastPathComponent
+0x001000104c8 => 0x00000007a72: processIdentifier
+0x001000104f8 => 0x0000000752f: set
+0x00100010580 => 0x00000007cf6: unsignedLongLongValue

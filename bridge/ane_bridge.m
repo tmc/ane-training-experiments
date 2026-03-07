@@ -6,6 +6,9 @@
 #import <objc/message.h>
 #import <dlfcn.h>
 #import <IOSurface/IOSurface.h>
+#import <Metal/Metal.h>
+#import <dispatch/dispatch.h>
+#include <unistd.h>
 #include "ane_bridge.h"
 
 // --- Private class references ---
@@ -13,8 +16,16 @@ static Class g_ANEDesc = nil;
 static Class g_ANEInMem = nil;
 static Class g_ANEReq = nil;
 static Class g_ANEIO = nil;
+static Class g_ANEClient = nil;
+static Class g_ANEModel = nil;
+static Class g_ANEWaitEvent = nil;
+static Class g_ANESignalEvent = nil;
+static Class g_ANESharedEvents = nil;
+static Class g_NSURL = nil;
+static void *g_ane_framework_handle = NULL;
 static bool g_initialized = false;
 static int g_compile_count = 0;
+static const void *g_completion_handler_assoc_key = &g_completion_handler_assoc_key;
 
 // --- Kernel handle struct ---
 struct ANEKernelHandle {
@@ -28,15 +39,26 @@ struct ANEKernelHandle {
     size_t *outputBytes;
 };
 
+struct ANEClientHandle {
+    id client;      // _ANEClient.sharedConnection
+    id model;       // _ANEModel
+    IOSurfaceRef inSurf;
+    IOSurfaceRef outSurf;
+    id inObj;       // _ANEIOSurfaceObject
+    id outObj;      // _ANEIOSurfaceObject
+    size_t inBytes;
+    size_t outBytes;
+};
+
 // --- Public API ---
 
 int ane_bridge_init(void) {
     if (g_initialized) return 0;
 
-    void *handle = dlopen(
+    g_ane_framework_handle = dlopen(
         "/System/Library/PrivateFrameworks/AppleNeuralEngine.framework/AppleNeuralEngine",
         RTLD_NOW);
-    if (!handle) {
+    if (!g_ane_framework_handle) {
         fprintf(stderr, "ane_bridge: Failed to load AppleNeuralEngine.framework\n");
         return -1;
     }
@@ -45,6 +67,12 @@ int ane_bridge_init(void) {
     g_ANEInMem = NSClassFromString(@"_ANEInMemoryModel");
     g_ANEReq   = NSClassFromString(@"_ANERequest");
     g_ANEIO    = NSClassFromString(@"_ANEIOSurfaceObject");
+    g_ANEClient = NSClassFromString(@"_ANEClient");
+    g_ANEModel = NSClassFromString(@"_ANEModel");
+    g_ANEWaitEvent = NSClassFromString(@"_ANESharedWaitEvent");
+    g_ANESignalEvent = NSClassFromString(@"_ANESharedSignalEvent");
+    g_ANESharedEvents = NSClassFromString(@"_ANESharedEvents");
+    g_NSURL = NSClassFromString(@"NSURL");
 
     if (!g_ANEDesc || !g_ANEInMem || !g_ANEReq || !g_ANEIO) {
         fprintf(stderr, "ane_bridge: Failed to resolve ANE private classes\n");
@@ -368,4 +396,759 @@ uint8_t *ane_bridge_build_weight_blob_quantized(const float *src, int rows, int 
     free(qdata);
     *out_scale = scale;
     return blob;
+}
+
+void ane_bridge_free_blob(void *ptr) {
+    free(ptr);
+}
+
+static id ane_const_obj(const char *symbol) {
+    if (!g_ane_framework_handle || !symbol || !symbol[0]) {
+        return nil;
+    }
+    void *sym = dlsym(g_ane_framework_handle, symbol);
+    if (!sym && symbol[0] != '_') {
+        char buf[128] = {0};
+        snprintf(buf, sizeof(buf), "_%s", symbol);
+        sym = dlsym(g_ane_framework_handle, buf);
+    }
+    return sym ? *((__unsafe_unretained id *)sym) : nil;
+}
+
+static void ane_attach_request_completion_handler(id request) {
+    if (!request || ![request respondsToSelector:@selector(setCompletionHandler:)]) {
+        return;
+    }
+    id completionHandler = ^(BOOL success, NSError *error) {
+        (void)success;
+        (void)error;
+    };
+    ((void(*)(id, SEL, id))objc_msgSend)(request, @selector(setCompletionHandler:), completionHandler);
+    objc_setAssociatedObject(request, g_completion_handler_assoc_key, completionHandler, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+ANEClientHandle *ane_bridge_client_open(const char *model_path, const char *model_key,
+                                        size_t input_bytes, size_t output_bytes) {
+    @autoreleasepool {
+        if (ane_bridge_init() != 0) {
+            return NULL;
+        }
+        if (!g_ANEClient || !g_ANEModel || !g_NSURL || !g_ANEReq || !g_ANEIO) {
+            fprintf(stderr, "ane_bridge: _ANEClient path unavailable\n");
+            return NULL;
+        }
+        if (!model_path || model_path[0] == '\0') {
+            fprintf(stderr, "ane_bridge: model_path is empty\n");
+            return NULL;
+        }
+
+        id client = ((id(*)(Class, SEL))objc_msgSend)(g_ANEClient, @selector(sharedConnection));
+        if (!client) {
+            fprintf(stderr, "ane_bridge: sharedConnection returned nil\n");
+            return NULL;
+        }
+        NSString *path = [NSString stringWithUTF8String:model_path];
+        NSString *key = (model_key && model_key[0]) ? [NSString stringWithUTF8String:model_key] : @"s";
+        id url = ((id(*)(Class, SEL, id))objc_msgSend)(g_NSURL, @selector(fileURLWithPath:), path);
+        id model = ((id(*)(Class, SEL, id, id))objc_msgSend)(g_ANEModel, @selector(modelAtURL:key:), url, key);
+        if (!model) {
+            fprintf(stderr, "ane_bridge: modelAtURL:key: failed\n");
+            return NULL;
+        }
+
+        NSError *e = nil;
+        BOOL ok = ((BOOL(*)(id, SEL, id, id, unsigned int, NSError **))objc_msgSend)(
+            client, @selector(compileModel:options:qos:error:), model, @{}, 21, &e);
+        if (!ok) {
+            fprintf(stderr, "ane_bridge: compileModel failed: %s\n", e ? [[e description] UTF8String] : "unknown");
+            return NULL;
+        }
+        e = nil;
+        ok = ((BOOL(*)(id, SEL, id, id, unsigned int, NSError **))objc_msgSend)(
+            client, @selector(loadModel:options:qos:error:), model, @{}, 21, &e);
+        if (!ok) {
+            usleep(100000);
+            e = nil;
+            ok = ((BOOL(*)(id, SEL, id, id, unsigned int, NSError **))objc_msgSend)(
+                client, @selector(loadModel:options:qos:error:), model, @{}, 21, &e);
+        }
+        if (!ok) {
+            fprintf(stderr, "ane_bridge: loadModel failed: %s\n", e ? [[e description] UTF8String] : "unknown");
+            return NULL;
+        }
+
+        ANEClientHandle *h = (ANEClientHandle *)calloc(1, sizeof(ANEClientHandle));
+        h->client = client;
+        h->model = model;
+        h->inBytes = input_bytes;
+        h->outBytes = output_bytes;
+        h->inSurf = create_surface(input_bytes);
+        h->outSurf = create_surface(output_bytes);
+        if (!h->inSurf || !h->outSurf) {
+            ane_bridge_client_close(h);
+            return NULL;
+        }
+        h->inObj = ((id(*)(Class, SEL, IOSurfaceRef))objc_msgSend)(g_ANEIO, @selector(objectWithIOSurface:), h->inSurf);
+        h->outObj = ((id(*)(Class, SEL, IOSurfaceRef))objc_msgSend)(g_ANEIO, @selector(objectWithIOSurface:), h->outSurf);
+        if (!h->inObj || !h->outObj) {
+            ane_bridge_client_close(h);
+            return NULL;
+        }
+        return h;
+    }
+}
+
+void ane_bridge_client_close(ANEClientHandle *h) {
+    @autoreleasepool {
+        if (!h) {
+            return;
+        }
+        NSError *e = nil;
+        if (h->client && h->model) {
+            ((BOOL(*)(id, SEL, id, id, unsigned int, NSError **))objc_msgSend)(
+                h->client, @selector(unloadModel:options:qos:error:), h->model, @{}, 21, &e);
+        }
+        if (h->inSurf) {
+            CFRelease(h->inSurf);
+        }
+        if (h->outSurf) {
+            CFRelease(h->outSurf);
+        }
+        h->client = nil;
+        h->model = nil;
+        h->inObj = nil;
+        h->outObj = nil;
+        free(h);
+    }
+}
+
+IOSurfaceRef ane_bridge_client_input_surface(ANEClientHandle *h) {
+    return h ? h->inSurf : NULL;
+}
+
+IOSurfaceRef ane_bridge_client_output_surface(ANEClientHandle *h) {
+    return h ? h->outSurf : NULL;
+}
+
+void ane_bridge_client_write_input(ANEClientHandle *h, const float *data, int count) {
+    if (!h || !h->inSurf || !data || count <= 0) {
+        return;
+    }
+    size_t want = (size_t)count * sizeof(float);
+    size_t n = want < h->inBytes ? want : h->inBytes;
+    IOSurfaceLock(h->inSurf, 0, NULL);
+    memcpy(IOSurfaceGetBaseAddress(h->inSurf), data, n);
+    IOSurfaceUnlock(h->inSurf, 0, NULL);
+}
+
+void ane_bridge_client_read_output(ANEClientHandle *h, float *data, int count) {
+    if (!h || !h->outSurf || !data || count <= 0) {
+        return;
+    }
+    size_t want = (size_t)count * sizeof(float);
+    size_t n = want < h->outBytes ? want : h->outBytes;
+    IOSurfaceLock(h->outSurf, kIOSurfaceLockReadOnly, NULL);
+    memcpy(data, IOSurfaceGetBaseAddress(h->outSurf), n);
+    IOSurfaceUnlock(h->outSurf, kIOSurfaceLockReadOnly, NULL);
+}
+
+bool ane_bridge_client_eval(ANEClientHandle *h) {
+    @autoreleasepool {
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !g_ANEReq) {
+            return false;
+        }
+        id req = ((id(*)(Class, SEL, id, id, id, id, id, id, id))objc_msgSend)(
+            g_ANEReq,
+            @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
+            @[h->inObj], @[@0], @[h->outObj], @[@0], nil, nil, @0);
+        if (!req) {
+            return false;
+        }
+        NSError *e = nil;
+        BOOL mapped = ((BOOL(*)(id, SEL, id, id, BOOL, NSError **))objc_msgSend)(
+            h->client, @selector(mapIOSurfacesWithModel:request:cacheInference:error:), h->model, req, YES, &e);
+        if (!mapped) {
+            return false;
+        }
+        SEL evalSel = @selector(evaluateWithModel:options:request:qos:error:);
+        if (![h->client respondsToSelector:evalSel]) {
+            return false;
+        }
+        e = nil;
+        BOOL ok = ((BOOL(*)(id, SEL, id, id, id, unsigned int, NSError **))objc_msgSend)(
+            h->client, evalSel, h->model, @{}, req, 21, &e);
+        ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+        return ok ? true : false;
+    }
+}
+
+int ane_bridge_eval_loopback(ane_bridge_client_t client,
+                             const float *initial_input, uint32_t input_count,
+                             float *output_logits, uint32_t output_count,
+                             int num_tokens,
+                             ane_bridge_token_callback_t token_callback,
+                             void *callback_ctx) {
+    @autoreleasepool {
+        ANEClientHandle *h = client;
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !g_ANEReq) {
+            return -1;
+        }
+        if (num_tokens <= 0) {
+            return -1;
+        }
+        if (!initial_input || input_count == 0 || !output_logits || output_count == 0) {
+            return -1;
+        }
+        if ((size_t)input_count * sizeof(float) > h->inBytes || (size_t)output_count * sizeof(float) > h->outBytes) {
+            return -1;
+        }
+
+        ane_bridge_client_write_input(h, initial_input, (int)input_count);
+
+        id req = ((id(*)(Class, SEL, id, id, id, id, id, id, id))objc_msgSend)(
+            g_ANEReq,
+            @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
+            @[h->inObj], @[@0], @[h->outObj], @[@0], nil, nil, @0);
+        if (!req) {
+            return -2;
+        }
+
+        NSError *e = nil;
+        BOOL mapped = ((BOOL(*)(id, SEL, id, id, BOOL, NSError **))objc_msgSend)(
+            h->client, @selector(mapIOSurfacesWithModel:request:cacheInference:error:), h->model, req, YES, &e);
+        if (!mapped) {
+            return -3;
+        }
+
+        SEL evalSel = @selector(evaluateWithModel:options:request:qos:error:);
+        if (![h->client respondsToSelector:evalSel]) {
+            ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+            return -4;
+        }
+
+        float *nextInput = (float *)calloc((size_t)input_count, sizeof(float));
+        if (!nextInput) {
+            ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+            return -5;
+        }
+
+        int rc = 0;
+        for (int i = 0; i < num_tokens; i++) {
+            e = nil;
+            BOOL ok = ((BOOL(*)(id, SEL, id, id, id, unsigned int, NSError **))objc_msgSend)(
+                h->client, evalSel, h->model, @{}, req, 21, &e);
+            if (!ok) {
+                rc = -6;
+                break;
+            }
+
+            ane_bridge_client_read_output(h, output_logits, (int)output_count);
+            if (i + 1 >= num_tokens) {
+                continue;
+            }
+
+            if (token_callback) {
+                token_callback(output_logits, output_count, nextInput, input_count, callback_ctx);
+            } else {
+                size_t copyCount = input_count < output_count ? input_count : output_count;
+                memcpy(nextInput, output_logits, copyCount * sizeof(float));
+            }
+            ane_bridge_client_write_input(h, nextInput, (int)input_count);
+        }
+
+        free(nextInput);
+        ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+        return rc;
+    }
+}
+
+void *ane_bridge_create_shared_event(void) {
+    @autoreleasepool {
+        Class cls = NSClassFromString(@"IOSurfaceSharedEvent");
+        if (!cls) {
+            return NULL;
+        }
+        id ev = ((id(*)(Class, SEL))objc_msgSend)(cls, @selector(alloc));
+        if ([ev respondsToSelector:@selector(initWithOptions:)]) {
+            ev = ((id(*)(id, SEL, unsigned long long))objc_msgSend)(ev, @selector(initWithOptions:), 0ULL);
+        } else {
+            ev = ((id(*)(id, SEL))objc_msgSend)(ev, @selector(init));
+        }
+        if (!ev) {
+            return NULL;
+        }
+        return (__bridge_retained void *)ev;
+    }
+}
+
+void ane_bridge_release_objc(void *obj) {
+    if (!obj) {
+        return;
+    }
+    CFBridgingRelease(obj);
+}
+
+unsigned int ane_bridge_shared_event_port(void *shared_event_obj) {
+    id ev = (__bridge id)shared_event_obj;
+    if (!ev || ![ev respondsToSelector:@selector(eventPort)]) {
+        return 0;
+    }
+    return ((unsigned int(*)(id, SEL))objc_msgSend)(ev, @selector(eventPort));
+}
+
+bool ane_bridge_eval_with_wait_event(ANEClientHandle *h,
+                                     void *wait_shared_event_obj,
+                                     uint64_t wait_value,
+                                     bool disable_fences_use_shared_events,
+                                     bool enable_fw_to_fw_signal) {
+    @autoreleasepool {
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !wait_shared_event_obj) {
+            return false;
+        }
+        if (!g_ANEWaitEvent || !g_ANESharedEvents || !g_ANEReq) {
+            return false;
+        }
+        id waitShared = (__bridge id)wait_shared_event_obj;
+        id waitEvent = ((id(*)(Class, SEL, unsigned long long, id))objc_msgSend)(
+            g_ANEWaitEvent, @selector(waitEventWithValue:sharedEvent:), wait_value, waitShared);
+        if (!waitEvent) {
+            return false;
+        }
+        id sharedEvents = ((id(*)(Class, SEL, id, id))objc_msgSend)(
+            g_ANESharedEvents, @selector(sharedEventsWithSignalEvents:waitEvents:), @[], @[waitEvent]);
+        if (!sharedEvents) {
+            return false;
+        }
+        id req = ((id(*)(Class, SEL, id, id, id, id, id, id, id, id, id))objc_msgSend)(
+            g_ANEReq,
+            @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:),
+            @[h->inObj], @[@0], @[h->outObj], @[@0], nil, nil, @0, sharedEvents, @1);
+        if (!req) {
+            return false;
+        }
+        ane_attach_request_completion_handler(req);
+
+        NSError *e = nil;
+        BOOL mapped = ((BOOL(*)(id, SEL, id, id, BOOL, NSError **))objc_msgSend)(
+            h->client, @selector(mapIOSurfacesWithModel:request:cacheInference:error:), h->model, req, YES, &e);
+        if (!mapped) {
+            return false;
+        }
+
+        NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+        if (disable_fences_use_shared_events) {
+            id k = ane_const_obj("kANEFDisableIOFencesUseSharedEventsKey");
+            if (!k) k = @"kANEFDisableIOFencesUseSharedEventsKey";
+            opts[k] = @YES;
+        }
+        if (enable_fw_to_fw_signal) {
+            id k = ane_const_obj("kANEFEnableFWToFWSignal");
+            if (!k) k = @"kANEFEnableFWToFWSignal";
+            opts[k] = @YES;
+        }
+
+        SEL evalSel = @selector(doEvaluateDirectWithModel:options:request:qos:error:);
+        if (![h->client respondsToSelector:evalSel]) {
+            evalSel = @selector(evaluateWithModel:options:request:qos:error:);
+        }
+        e = nil;
+        BOOL ok = ((BOOL(*)(id, SEL, id, id, id, unsigned int, NSError **))objc_msgSend)(
+            h->client, evalSel, h->model, opts, req, 21, &e);
+        bool doUnmap = false;
+        const char *ru = getenv("ANE_BRIDGE_UNMAP");
+        if (ru && ru[0] == '1') {
+            doUnmap = true;
+        }
+        if (doUnmap) {
+            ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+        }
+        return ok ? true : false;
+    }
+}
+
+bool ane_bridge_eval_with_signal_event_obj(ANEClientHandle *h,
+                                           void *signal_shared_event_obj,
+                                           uint64_t signal_value,
+                                           bool disable_fences_use_shared_events,
+                                           bool enable_fw_to_fw_signal) {
+    @autoreleasepool {
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !signal_shared_event_obj) {
+            return false;
+        }
+        if (!g_ANESignalEvent || !g_ANESharedEvents || !g_ANEReq) {
+            return false;
+        }
+        id signalShared = (__bridge id)signal_shared_event_obj;
+        id signalEvent = ((id(*)(Class, SEL, unsigned long long, unsigned int, long long, id))objc_msgSend)(
+            g_ANESignalEvent, @selector(signalEventWithValue:symbolIndex:eventType:sharedEvent:), signal_value, 0u, 5ll, signalShared);
+        if (!signalEvent) {
+            return false;
+        }
+        id sharedEvents = ((id(*)(Class, SEL, id, id))objc_msgSend)(
+            g_ANESharedEvents, @selector(sharedEventsWithSignalEvents:waitEvents:), @[signalEvent], @[]);
+        if (!sharedEvents) {
+            return false;
+        }
+        id req = ((id(*)(Class, SEL, id, id, id, id, id, id, id, id, id))objc_msgSend)(
+            g_ANEReq,
+            @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:),
+            @[h->inObj], @[@0], @[h->outObj], @[@0], nil, nil, @0, sharedEvents, @1);
+        if (!req) {
+            return false;
+        }
+        ane_attach_request_completion_handler(req);
+
+        NSError *e = nil;
+        BOOL mapped = ((BOOL(*)(id, SEL, id, id, BOOL, NSError **))objc_msgSend)(
+            h->client, @selector(mapIOSurfacesWithModel:request:cacheInference:error:), h->model, req, YES, &e);
+        if (!mapped) {
+            return false;
+        }
+
+        NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+        if (disable_fences_use_shared_events) {
+            id k = ane_const_obj("kANEFDisableIOFencesUseSharedEventsKey");
+            if (!k) k = @"kANEFDisableIOFencesUseSharedEventsKey";
+            opts[k] = @YES;
+        }
+        if (enable_fw_to_fw_signal) {
+            id k = ane_const_obj("kANEFEnableFWToFWSignal");
+            if (!k) k = @"kANEFEnableFWToFWSignal";
+            opts[k] = @YES;
+        }
+
+        SEL evalSel = @selector(doEvaluateDirectWithModel:options:request:qos:error:);
+        if (![h->client respondsToSelector:evalSel]) {
+            evalSel = @selector(evaluateWithModel:options:request:qos:error:);
+        }
+        e = nil;
+        BOOL ok = ((BOOL(*)(id, SEL, id, id, id, unsigned int, NSError **))objc_msgSend)(
+            h->client, evalSel, h->model, opts, req, 21, &e);
+        bool doUnmap = false;
+        const char *ru = getenv("ANE_BRIDGE_UNMAP");
+        if (ru && ru[0] == '1') {
+            doUnmap = true;
+        }
+        if (doUnmap) {
+            ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+        }
+        return ok ? true : false;
+    }
+}
+
+static id ane_iosurface_shared_event_from_port(mach_port_t port) {
+    if (port == MACH_PORT_NULL) {
+        return nil;
+    }
+    Class cls = NSClassFromString(@"IOSurfaceSharedEvent");
+    if (!cls) {
+        return nil;
+    }
+    SEL classSel = NSSelectorFromString(@"sharedEventWithMachPort:");
+    if ([cls respondsToSelector:classSel]) {
+        return ((id(*)(Class, SEL, mach_port_t))objc_msgSend)(cls, classSel, port);
+    }
+    id ev = ((id(*)(Class, SEL))objc_msgSend)(cls, @selector(alloc));
+    if (!ev) {
+        return nil;
+    }
+    SEL initSel = NSSelectorFromString(@"initWithMachPort:");
+    if ([ev respondsToSelector:initSel]) {
+        return ((id(*)(id, SEL, mach_port_t))objc_msgSend)(ev, initSel, port);
+    }
+    SEL initWithOptsSel = NSSelectorFromString(@"initWithMachPort:options:");
+    if ([ev respondsToSelector:initWithOptsSel]) {
+        return ((id(*)(id, SEL, mach_port_t, unsigned long long))objc_msgSend)(ev, initWithOptsSel, port, 0ULL);
+    }
+    return nil;
+}
+
+static id ane_build_shared_request(ANEClientHandle *h, id sharedEvents) {
+    if (!h || !h->inObj || !h->outObj || !g_ANEReq) {
+        return nil;
+    }
+    return ((id(*)(Class, SEL, id, id, id, id, id, id, id, id, id))objc_msgSend)(
+        g_ANEReq,
+        @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:),
+        @[h->inObj], @[@0], @[h->outObj], @[@0], nil, nil, @0, sharedEvents, @1);
+}
+
+static NSMutableDictionary *ane_shared_event_options(bool disable_fences_use_shared_events,
+                                                     bool enable_fw_to_fw_signal) {
+    NSMutableDictionary *opts = [NSMutableDictionary dictionary];
+    if (disable_fences_use_shared_events) {
+        id k = ane_const_obj("kANEFDisableIOFencesUseSharedEventsKey");
+        if (!k) {
+            k = @"kANEFDisableIOFencesUseSharedEventsKey";
+        }
+        opts[k] = @YES;
+    }
+    id fwKey = ane_const_obj("kANEFEnableFWToFWSignal");
+    if (!fwKey) {
+        fwKey = @"kANEFEnableFWToFWSignal";
+    }
+    opts[fwKey] = enable_fw_to_fw_signal ? @YES : @NO;
+    return opts;
+}
+
+static BOOL ane_eval_direct_request(ANEClientHandle *h, id req, NSDictionary *opts, NSError **err) {
+    SEL evalSel = @selector(doEvaluateDirectWithModel:options:request:qos:error:);
+    if (![h->client respondsToSelector:evalSel]) {
+        evalSel = @selector(evaluateWithModel:options:request:qos:error:);
+    }
+    return ((BOOL(*)(id, SEL, id, id, id, unsigned int, NSError **))objc_msgSend)(
+        h->client, evalSel, h->model, opts ?: @{}, req, 21, err);
+}
+
+static int ane_eval_shared_events_request(ANEClientHandle *h,
+                                          id req,
+                                          NSDictionary *opts,
+                                          float *output,
+                                          uint32_t output_count) {
+    if (!h || !req) {
+        return -1;
+    }
+    SEL setCompletionSel = NSSelectorFromString(@"setCompletionHandler:");
+    if (![req respondsToSelector:setCompletionSel]) {
+        return -2;
+    }
+    dispatch_semaphore_t completionSem = dispatch_semaphore_create(0);
+    __block BOOL completionFired = NO;
+    __block BOOL completionSuccess = NO;
+    __block NSError *completionError = nil;
+    void (^handler)(BOOL, NSError *) = ^(BOOL success, NSError *error) {
+        completionFired = YES;
+        completionSuccess = success;
+        completionError = error;
+        dispatch_semaphore_signal(completionSem);
+    };
+    id copiedHandler = [handler copy];
+    ((void(*)(id, SEL, id))objc_msgSend)(req, setCompletionSel, copiedHandler);
+    objc_setAssociatedObject(req, g_completion_handler_assoc_key, copiedHandler, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    NSError *e = nil;
+    BOOL mapped = ((BOOL(*)(id, SEL, id, id, BOOL, NSError **))objc_msgSend)(
+        h->client, @selector(mapIOSurfacesWithModel:request:cacheInference:error:), h->model, req, YES, &e);
+    if (!mapped) {
+        return -3;
+    }
+
+    e = nil;
+    BOOL ok = ane_eval_direct_request(h, req, opts, &e);
+    long waited = -1;
+    if (ok) {
+        waited = dispatch_semaphore_wait(
+            completionSem,
+            dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5 * NSEC_PER_SEC)));
+    }
+    ((void(*)(id, SEL, id, id))objc_msgSend)(h->client, @selector(unmapIOSurfacesWithModel:request:), h->model, req);
+    if (!ok) {
+        return -4;
+    }
+    if (waited != 0 || !completionFired || !completionSuccess || completionError != nil) {
+        return -5;
+    }
+    if (output && output_count > 0) {
+        ane_bridge_client_read_output(h, output, (int)output_count);
+    }
+    return 0;
+}
+
+int ane_bridge_eval_with_signal_event(ane_bridge_client_t client,
+                                      const float *input, uint32_t input_count,
+                                      float *output, uint32_t output_count,
+                                      mach_port_t signal_event_port,
+                                      uint64_t signal_value) {
+    @autoreleasepool {
+        ANEClientHandle *h = client;
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !g_ANESignalEvent || !g_ANESharedEvents || !g_ANEReq) {
+            return -1;
+        }
+        if (input_count > 0 && input == NULL) {
+            return -1;
+        }
+        if (output_count > 0 && output == NULL) {
+            return -1;
+        }
+        if ((size_t)input_count * sizeof(float) > h->inBytes || (size_t)output_count * sizeof(float) > h->outBytes) {
+            return -1;
+        }
+        if (input && input_count > 0) {
+            ane_bridge_client_write_input(h, input, (int)input_count);
+        }
+        id signalShared = ane_iosurface_shared_event_from_port(signal_event_port);
+        if (!signalShared) {
+            return -2;
+        }
+        id signalEvent = ((id(*)(Class, SEL, unsigned long long, unsigned int, long long, id))objc_msgSend)(
+            g_ANESignalEvent,
+            @selector(signalEventWithValue:symbolIndex:eventType:sharedEvent:),
+            signal_value, 0u, 5ll, signalShared);
+        if (!signalEvent) {
+            return -2;
+        }
+        id sharedEvents = ((id(*)(Class, SEL, id, id))objc_msgSend)(
+            g_ANESharedEvents, @selector(sharedEventsWithSignalEvents:waitEvents:), @[signalEvent], @[]);
+        if (!sharedEvents) {
+            return -2;
+        }
+        id req = ane_build_shared_request(h, sharedEvents);
+        if (!req) {
+            return -2;
+        }
+        NSDictionary *opts = ane_shared_event_options(true, false);
+        return ane_eval_shared_events_request(h, req, opts, output, output_count);
+    }
+}
+
+int ane_bridge_eval_bidirectional(ane_bridge_client_t client,
+                                  const float *input, uint32_t input_count,
+                                  float *output, uint32_t output_count,
+                                  mach_port_t wait_event_port,
+                                  uint64_t wait_value,
+                                  mach_port_t signal_event_port,
+                                  uint64_t signal_value) {
+    @autoreleasepool {
+        ANEClientHandle *h = client;
+        if (!h || !h->client || !h->model || !h->inObj || !h->outObj || !g_ANEWaitEvent || !g_ANESignalEvent || !g_ANESharedEvents || !g_ANEReq) {
+            return -1;
+        }
+        if (input_count > 0 && input == NULL) {
+            return -1;
+        }
+        if (output_count > 0 && output == NULL) {
+            return -1;
+        }
+        if ((size_t)input_count * sizeof(float) > h->inBytes || (size_t)output_count * sizeof(float) > h->outBytes) {
+            return -1;
+        }
+        if (input && input_count > 0) {
+            ane_bridge_client_write_input(h, input, (int)input_count);
+        }
+
+        id waitShared = ane_iosurface_shared_event_from_port(wait_event_port);
+        id signalShared = ane_iosurface_shared_event_from_port(signal_event_port);
+        if (!waitShared || !signalShared) {
+            return -2;
+        }
+        id waitEvent = ((id(*)(Class, SEL, unsigned long long, id))objc_msgSend)(
+            g_ANEWaitEvent, @selector(waitEventWithValue:sharedEvent:), wait_value, waitShared);
+        id signalEvent = ((id(*)(Class, SEL, unsigned long long, unsigned int, long long, id))objc_msgSend)(
+            g_ANESignalEvent,
+            @selector(signalEventWithValue:symbolIndex:eventType:sharedEvent:),
+            signal_value, 0u, 5ll, signalShared);
+        if (!waitEvent || !signalEvent) {
+            return -2;
+        }
+        id sharedEvents = ((id(*)(Class, SEL, id, id))objc_msgSend)(
+            g_ANESharedEvents, @selector(sharedEventsWithSignalEvents:waitEvents:), @[signalEvent], @[waitEvent]);
+        if (!sharedEvents) {
+            return -2;
+        }
+        id req = ane_build_shared_request(h, sharedEvents);
+        if (!req) {
+            return -2;
+        }
+        NSDictionary *opts = ane_shared_event_options(true, false);
+        return ane_eval_shared_events_request(h, req, opts, output, output_count);
+    }
+}
+
+int ane_bridge_signal_event_cpu(mach_port_t event_port, uint64_t value) {
+    @autoreleasepool {
+        id ev = ane_iosurface_shared_event_from_port(event_port);
+        if (!ev) {
+            return -1;
+        }
+        SEL setSel = @selector(setSignaledValue:);
+        if (![ev respondsToSelector:setSel]) {
+            return -2;
+        }
+        ((void(*)(id, SEL, unsigned long long))objc_msgSend)(ev, setSel, value);
+        return 0;
+    }
+}
+
+int ane_bridge_wait_event_cpu(mach_port_t event_port, uint64_t value, uint32_t timeout_ms) {
+    @autoreleasepool {
+        id ev = ane_iosurface_shared_event_from_port(event_port);
+        if (!ev) {
+            return -1;
+        }
+        SEL getSel = @selector(signaledValue);
+        if (![ev respondsToSelector:getSel]) {
+            return -2;
+        }
+        unsigned long long cur = ((unsigned long long(*)(id, SEL))objc_msgSend)(ev, getSel);
+        if (cur >= value) {
+            return 0;
+        }
+        uint64_t waitedUs = 0;
+        const uint32_t sleepUs = 50;
+        const uint64_t timeoutUs = (uint64_t)timeout_ms * 1000ULL;
+        while (waitedUs < timeoutUs) {
+            usleep(sleepUs);
+            waitedUs += sleepUs;
+            cur = ((unsigned long long(*)(id, SEL))objc_msgSend)(ev, getSel);
+            if (cur >= value) {
+                return 0;
+            }
+        }
+        return 1;
+    }
+}
+
+void *ane_bridge_zero_copy_buffer(IOSurfaceRef surface, size_t bytes) {
+    @autoreleasepool {
+        if (!surface || bytes == 0) {
+            return NULL;
+        }
+        id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
+        if (!dev) {
+            return NULL;
+        }
+        void *base = IOSurfaceGetBaseAddress(surface);
+        id<MTLBuffer> buf = nil;
+        if (base) {
+            buf = [dev newBufferWithBytesNoCopy:base length:bytes options:MTLResourceStorageModeShared deallocator:nil];
+        }
+        return buf ? (__bridge_retained void *)buf : NULL;
+    }
+}
+
+bool ane_bridge_gcd_overlap(ANEClientHandle *h,
+                            void *wait_shared_event_obj,
+                            uint64_t wait_value,
+                            bool disable_fences_use_shared_events,
+                            bool enable_fw_to_fw_signal,
+                            uint32_t cpu_rounds,
+                            double *out_total_ms) {
+    @autoreleasepool {
+        if (!h || !wait_shared_event_obj) {
+            return false;
+        }
+        dispatch_queue_t q = dispatch_queue_create("ane.bridge.overlap", DISPATCH_QUEUE_SERIAL);
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        __block bool evalOK = false;
+        volatile double sink = 0.0;
+        double t0 = (double)CFAbsoluteTimeGetCurrent() * 1000.0;
+        dispatch_async(q, ^{
+            evalOK = ane_bridge_eval_with_wait_event(
+                h, wait_shared_event_obj, wait_value,
+                disable_fences_use_shared_events,
+                enable_fw_to_fw_signal);
+            dispatch_semaphore_signal(sem);
+        });
+        for (uint32_t i = 0; i < cpu_rounds; i++) {
+            double x = (double)(i + 1);
+            sink += sqrt(x) * 0.000001;
+        }
+        (void)sink;
+        dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+        double t1 = (double)CFAbsoluteTimeGetCurrent() * 1000.0;
+        if (out_total_ms) {
+            *out_total_ms = t1 - t0;
+        }
+        return evalOK;
+    }
 }

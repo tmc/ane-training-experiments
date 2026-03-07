@@ -1,0 +1,665 @@
+Flags = DyldCategoriesOptimized, OptimizedByDyld, SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 16
+  __objc_nlclslist  = 0
+  __objc_catlist    = 3
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 11
+  __objc_classrefs  = 0
+  __objc_superrefs  = 12
+  __objc_selrefs    = 205
+
+@protocol MLRExtensionHostProtocol <NSObject> // 0x296a87538
+
+@required
+
+@optional
+
+@end
+
+@protocol MLRExtensionRemoteProtocol <NSObject> // 0x296a87598
+
+@required
+
+@optional
+
+@end
+
+@protocol MLROnDemandRemoteProtocol <NSObject> // 0x296a873b8
+
+@required
+
+/* required instance methods */
+- (void)performTask:(id)task completionHandler:(id /* block */)handler;
+
+@optional
+
+@end
+
+@protocol MLROnDemandTaskPerforming <NSObject> // 0x296a87358
+
+@required
+
+/* required instance methods */
+- (id)performTask:(id)task error:(id *)error;
+
+@optional
+
+@end
+
+@protocol NSCoding // 0x296a87298
+
+@required
+
+/* required instance methods */
+- (id)initWithCoder:(id)coder;
+- (void)encodeWithCoder:(id)coder;
+
+@optional
+
+@end
+
+@protocol NSExtensionRequestHandling <NSObject> // 0x296a874d8
+
+@required
+
+/* required instance methods */
+- (void)beginRequestWithExtensionContext:(id)context;
+
+@optional
+
+@end
+
+@protocol NSObject // 0x296a871d8
+
+@required
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+
+/* required instance methods */
+- (unsigned long long)retainCount;
+- (id)autorelease;
+- (_Bool)conformsToProtocol:(id)protocol;
+- (id)retain;
+- (_Bool)isMemberOfClass:(Class)_class;
+- (id)description;
+- (_Bool)isKindOfClass:(Class)_class;
+- (_Bool)isProxy;
+- (struct _NSZone *)zone;
+- (_Bool)isEqual:(id)equal;
+- (unsigned long long)hash;
+- (_Bool)respondsToSelector:(SEL)selector;
+- (oneway void)release;
+- (Class)class;
+- (id)performSelector:(SEL)selector;
+- (id)performSelector:(SEL)selector withObject:(id)object;
+- (id)performSelector:(SEL)selector withObject:(id)object withObject:(id)object;
+- (id)self;
+- (Class)superclass;
+
+@optional
+
+@property (readonly, copy) NSString *debugDescription;
+
+/* optional instance methods */
+- (id)debugDescription;
+
+@end
+
+@protocol NSSecureCoding <NSCoding> // 0x296a872f8
+
+@required
+
+@property (class, readonly) _Bool supportsSecureCoding;
+
+/* class methods */
++ (_Bool)supportsSecureCoding;
+
+@optional
+
+@end
+
+@protocol PKModularService <NSObject> // 0x296a87238
+
+@required
+
+@optional
+
+/* optional instance methods */
+- (void)beginUsing:(id)_using withBundle:(id)bundle;
+- (void)endUsing:(id)_using;
+- (void)communicationsFailed:(id)failed;
+
+@end
+
+@protocol _EXConnectionHandler // 0x296a87418
+
+@required
+
+/* required instance methods */
+- (_Bool)shouldAcceptXPCConnection:(id)xpcconnection;
+
+@optional
+
+@end
+
+@protocol _EXMainConnectionHandler <_EXConnectionHandler> // 0x296a87478
+
+@required
+
+@property (readonly) id principalObject;
+
+/* required instance methods */
+- (id)principalObject;
+- (id)initWithPrincipalObject:(id)object;
+
+@optional
+
+@end
+
+@interface MLRDonationManager : NSObject { // 0x29a060c70
+    /* instance variables */             // +size   offset
+    NSObject<OS_dispatch_queue> *_queue; // +0x8    0x8
+}
+
+@property (retain, nonatomic) NSObject<OS_dispatch_queue> *queue;
+
+/* class methods */
+// 0x25563be08
++ (id)defaultManager;
+
+/* instance methods */
+// 0x25563be8c
+- (id)init;
+// 0x25563c7a8
+- (void).cxx_destruct;
+// 0x25563c79c
+- (void)setQueue:(id)queue;
+// 0x25563c794
+- (id)queue;
+// 0x25563c4a8
+- (_Bool)record:(id)record data:(id)data encodingSchema:(id)schema metadata:(id)metadata errorOut:(id *)out;
+// 0x25563bf48
+- (void)encodeAndUploadToDediscoWithIdentifier:(id)identifier measurements:(id)measurements withEncodingSchemas:(id)schemas metadata:(id)metadata completion:(id /* block */)completion;
+
+@end
+
+@interface MLRExtensionPrincipalClass : NSObject <NSExtensionRequestHandling> // 0x29a060e78
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* instance methods */
+// 0x25563ff6c
+- (void)beginRequestWithExtensionContext:(id)context;
+
+@end
+
+@interface MLRExtensionRemoteContext : NSExtensionContext <MLRExtensionRemoteProtocol> { // 0x29a060ea0
+    /* instance variables */                          // +size   offset
+    NSObject<OS_dispatch_queue> *_taskExecutionQueue; // +0x8    0x18
+    NSObject<OS_dispatch_queue> *_stopQueue;          // +0x8    0x20
+}
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* class methods */
+// 0x2556413b8
++ (id)_extensionAuxiliaryHostProtocol;
+// 0x25564144c
++ (id)_extensionAuxiliaryVendorProtocol;
+
+/* instance methods */
+// 0x255641194
+- (id)initWithInputItems:(id)items listenerEndpoint:(id)endpoint contextUUID:(id)uuid;
+// 0x2556414e0
+- (void).cxx_destruct;
+// 0x25564119c
+- (id)initWithInputItems:(id)items listenerEndpoint:(id)endpoint contextUUID:(id)uuid plugin:(id)plugin;
+
+@end
+
+@interface MLRExtensionService_Subsystem : NSObject <PKModularService> // 0x29a060c20
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* class methods */
+// 0x25563bd10
++ (id)sharedInstance;
+// 0x25563bdec
++ (id)initForPlugInKit;
+
+/* instance methods */
+// 0x25563bdf8
+- (void)beginUsing:(id)_using withBundle:(id)bundle;
+
+@end
+
+@interface MLROnDemandConnectionHandler : NSObject <_EXMainConnectionHandler, MLROnDemandRemoteProtocol> { // 0x2992ec320
+    /* instance variables */                         // +size   offset
+    NSXPCConnection *_xpcConnection;                 // +0x8    0x8
+    id <MLROnDemandTaskPerforming> _pluginPrincipal; // +0x8    0x10
+}
+
+@property (weak, nonatomic) NSXPCConnection *xpcConnection;
+@property (retain, nonatomic) id <MLROnDemandTaskPerforming> pluginPrincipal;
+@property (readonly) id principalObject;
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* instance methods */
+// 0x25563fee0
+- (id)xpcConnection;
+// 0x25563f804
+- (id)principalObject;
+// 0x25563ff0c
+- (void)setXpcConnection:(id)connection;
+// 0x25563f80c
+- (_Bool)shouldAcceptXPCConnection:(id)xpcconnection;
+// 0x25563f9f8
+- (id)description;
+// 0x25563ff2c
+- (void).cxx_destruct;
+// 0x25563f71c
+- (id)initWithPrincipalObject:(id)object;
+// 0x25563ff18
+- (id)pluginPrincipal;
+// 0x25563faa0
+- (void)performTask:(id)task completionHandler:(id /* block */)handler;
+// 0x25563fcb0
+- (void)performTaskInternal:(id)internal completionHandler:(id /* block */)handler;
+// 0x25563ff20
+- (void)setPluginPrincipal:(id)principal;
+
+@end
+
+@interface MLROnDemandPlugin : NSObject // 0x2992ec3e8
+
+/* class methods */
+// 0x255640cec
++ (void)performTask:(id)task forPluginID:(id)id completionHandler:(id /* block */)handler;
+// 0x255640584
++ (id)_createXPCConnection:(id)xpcconnection error:(id *)error;
+// 0x2556403d4
++ (id)_locateWithExtensionID:(id)id;
+// 0x2556406f8
++ (void)_performTask:(id)task forPluginID:(id)id isSynchronous:(_Bool)synchronous completionHandler:(id /* block */)handler;
+// 0x255640fdc
++ (id)onDemandPluginIDs;
+// 0x255640cf8
++ (id)synchronouslyPerformTask:(id)task forPluginID:(id)id error:(id *)error;
+
+@end
+
+@interface MLRSandboxExtensionRequest : NSObject { // 0x29a060d60
+    /* instance variables */ // +size   offset
+    _Bool _requireWrite;     // +0x1    0x8
+    NSArray *_URLs;          // +0x8    0x10
+}
+
+@property (readonly, copy, nonatomic) NSArray *URLs;
+@property (readonly, nonatomic) _Bool requireWrite;
+
+/* instance methods */
+// 0x25563d3a0
+- (id)description;
+// 0x25563d404
+- (void).cxx_destruct;
+// 0x25563d3f4
+- (id)URLs;
+// 0x25563d31c
+- (id)initWithURLs:(id)urls requireWrite:(_Bool)write;
+// 0x25563d3fc
+- (_Bool)requireWrite;
+
+@end
+
+@interface MLRServiceClient : NSObject { // 0x29a060bd0
+    /* instance variables */      // +size   offset
+    NSXPCConnection *_connection; // +0x8    0x8
+}
+
+/* class methods */
+// 0x25563b1a4
++ (id)sharedConnection;
+
+/* instance methods */
+// 0x25563b068
+- (id)initWithConnection:(id)connection;
+// 0x25563b8c8
+- (void).cxx_destruct;
+// 0x25563b14c
+- (void)dealloc;
+// 0x25563b508
+- (void)donateJSONResult:(id)jsonresult identifier:(id)identifier completion:(id /* block */)completion;
+// 0x25563b4f0
+- (void)performOnRemoteObjectWithBlock:(id /* block */)block errorHandler:(id /* block */)handler;
+// 0x25563b26c
+- (void)performOnRemoteObjectWithBlock:(id /* block */)block isSynchronous:(_Bool)synchronous errorHandler:(id /* block */)handler;
+// 0x25563b4fc
+- (void)performSynchronouslyOnRemoteObjectWithBlock:(id /* block */)block errorHandler:(id /* block */)handler;
+
+@end
+
+@interface MLRTask : NSObject <NSSecureCoding> { // 0x2992ec410
+    /* instance variables */          // +size   offset
+    MLRTaskParameters *_parameters;   // +0x8    0x8
+    MLRTaskAttachments *_attachments; // +0x8    0x10
+}
+
+@property (readonly, nonatomic) MLRTaskParameters *parameters;
+@property (readonly, copy, nonatomic) MLRTaskAttachments *attachments;
+
+/* class methods */
+// 0x255641708
++ (_Bool)supportsSecureCoding;
+
+/* instance methods */
+// 0x255641848
+- (id)attachments;
+// 0x255641678
+- (id)description;
+// 0x255641850
+- (void).cxx_destruct;
+// 0x255641780
+- (id)initWithCoder:(id)coder;
+// 0x255641710
+- (void)encodeWithCoder:(id)coder;
+// 0x255641840
+- (id)parameters;
+// 0x2556415dc
+- (id)initWithParametersDict:(id)dict;
+// 0x255641534
+- (id)initWithParameters:(id)parameters attachments:(id)attachments;
+
+@end
+
+@interface MLRTaskAttachments : NSObject <NSSecureCoding> { // 0x2992ec280
+    /* instance variables */   // +size   offset
+    unsigned long long _count; // +0x8    0x8
+    NSArray *_attachmentURLs;  // +0x8    0x10
+}
+
+@property (readonly, nonatomic) unsigned long long count;
+@property (readonly, copy, nonatomic) NSArray *attachmentURLs;
+
+/* class methods */
+// 0x25563da74
++ (_Bool)supportsSecureCoding;
+
+/* instance methods */
+// 0x25563db60
+- (unsigned long long)count;
+// 0x25563d828
+- (id)description;
+// 0x25563db70
+- (void).cxx_destruct;
+// 0x25563da94
+- (id)initWithCoder:(id)coder;
+// 0x25563d50c
+- (id)initWithContentsOfURL:(id)url error:(id *)error;
+// 0x25563da7c
+- (void)encodeWithCoder:(id)coder;
+// 0x25563d420
+- (id)initWithURLs:(id)urls;
+// 0x25563db68
+- (id)attachmentURLs;
+// 0x25563d8b4
+- (id)attachmentURLsForBasename:(id)basename;
+// 0x25563d49c
+- (id)initWithDESRecipe:(id)desrecipe;
+
+@end
+
+@interface MLRTaskParameters : NSObject <NSSecureCoding> { // 0x2992ec2d0
+    /* instance variables */       // +size   offset
+    unsigned long long _count;     // +0x8    0x8
+    NSDictionary *_recipeUserInfo; // +0x8    0x10
+}
+
+@property (readonly, copy, nonatomic) NSDictionary *recipeUserInfo;
+@property (readonly, nonatomic) unsigned long long count;
+@property (readonly, copy, nonatomic) NSDictionary *dictionaryRepresentation;
+
+/* class methods */
+// 0x25563de70
++ (_Bool)supportsSecureCoding;
+
+/* instance methods */
+// 0x25563dfc4
+- (unsigned long long)count;
+// 0x25563de44
+- (id)dictionaryRepresentation;
+// 0x25563dd80
+- (id)description;
+// 0x25563de3c
+- (id)objectForKeyedSubscript:(id)subscript;
+// 0x25563dc68
+- (id)initWithURL:(id)url error:(id *)error;
+// 0x25563dfd4
+- (void).cxx_destruct;
+// 0x25563de1c
+- (_Bool)boolValueForKey:(id)key defaultValue:(_Bool)value;
+// 0x25563de90
+- (id)initWithCoder:(id)coder;
+// 0x25563de78
+- (void)encodeWithCoder:(id)coder;
+// 0x25563de14
+- (double)doubleValueForKey:(id)key defaultValue:(double)value;
+// 0x25563de34
+- (id)stringValueForKey:(id)key defaultValue:(id)value;
+// 0x25563de0c
+- (float)floatValueForKey:(id)key defaultValue:(float)value;
+// 0x25563de24
+- (long long)integerValueForKey:(id)key defaultValue:(long long)value;
+// 0x25563de2c
+- (unsigned long long)unsignedIntegerValueForKey:(id)key defaultValue:(unsigned long long)value;
+// 0x25563db7c
+- (id)initWithParametersDict:(id)dict;
+// 0x25563dfcc
+- (id)recipeUserInfo;
+// 0x25563dbf8
+- (id)initWithDESRecipe:(id)desrecipe;
+
+@end
+
+@interface MLRTaskResult : NSObject <NSSecureCoding> { // 0x2992ec370
+    /* instance variables */   // +size   offset
+    NSDictionary *_JSONResult; // +0x8    0x8
+    NSData *_vector;           // +0x8    0x10
+}
+
+@property (readonly, nonatomic) NSDictionary *JSONResult;
+@property (readonly, nonatomic) NSData *vector;
+
+/* class methods */
+// 0x2556401bc
++ (_Bool)supportsSecureCoding;
+
+/* instance methods */
+// 0x255640130
+- (id)description;
+// 0x255640390
+- (void).cxx_destruct;
+// 0x255640234
+- (id)initWithCoder:(id)coder;
+// 0x2556401c4
+- (void)encodeWithCoder:(id)coder;
+// 0x255640388
+- (id)vector;
+// 0x255640380
+- (id)JSONResult;
+// 0x25563fff4
+- (id)initWithJSONResult:(id)jsonresult unprivatizedVector:(id)vector;
+
+@end
+
+@interface MLRTrialDediscoRecipe : NSObject { // 0x29a060d10
+    /* instance variables */          // +size   offset
+    NSString *_baseKeyFormat;         // +0x8    0x8
+    NSDictionary *_encodingSchema;    // +0x8    0x10
+    NSDictionary *_dpConfig;          // +0x8    0x18
+    NSDictionary *_dediscoTaskConfig; // +0x8    0x20
+}
+
+@property (readonly, nonatomic) NSString *baseKeyFormat;
+@property (readonly, nonatomic) NSDictionary *encodingSchema;
+@property (readonly, nonatomic) NSDictionary *dpConfig;
+@property (readonly, nonatomic) NSDictionary *dediscoTaskConfig;
+
+/* instance methods */
+// 0x25563d0a4
+- (id)description;
+// 0x25563d2c0
+- (void).cxx_destruct;
+// 0x25563d2a0
+- (id)baseKeyFormat;
+// 0x25563d2b8
+- (id)dediscoTaskConfig;
+// 0x25563d2b0
+- (id)dpConfig;
+// 0x25563d2a8
+- (id)encodingSchema;
+// 0x25563c978
+- (id)initWithAssetURL:(id)url configOverride:(id)override error:(id *)error;
+// 0x25563d1ac
+- (id)mlrDediscoMetadata;
+
+@end
+
+@interface MLRTrialDediscoTaskResult : MLRTrialTaskResult { // 0x29a060e00
+    /* instance variables */               // +size   offset
+    NSString *_namespaceName;              // +0x8    0x10
+    NSString *_recipeFactorName;           // +0x8    0x18
+    NSDictionary *_additionalKeyVariables; // +0x8    0x20
+}
+
+@property (readonly, copy, nonatomic) NSString *namespaceName;
+@property (readonly, copy, nonatomic) NSString *recipeFactorName;
+@property (readonly, copy, nonatomic) NSDictionary *additionalKeyVariables;
+
+/* class methods */
+// 0x25563e440
++ (id)baseKeyFromFormat:(id)format variables:(id)variables;
+
+/* instance methods */
+// 0x25563f63c
+- (id)namespaceName;
+// 0x25563eb80
+- (id)description;
+// 0x25563f66c
+- (void).cxx_destruct;
+// 0x25563edb4
+- (_Bool)record:(id)record data:(id)data encodingSchema:(id)schema metadata:(id)metadata errorOut:(id *)out;
+// 0x25563f65c
+- (id)additionalKeyVariables;
+// 0x25563eaec
+- (id)initWithJSONResult:(id)jsonresult identifier:(id)identifier;
+// 0x25563e93c
+- (id)initWithJSONResult:(id)jsonresult namespaceName:(id)name factorName:(id)name additionalKeyVariables:(id)variables;
+// 0x25563f64c
+- (id)recipeFactorName;
+// 0x25563f5dc
+- (_Bool)submitForTask:(id)task error:(id *)error;
+// 0x25563eec8
+- (_Bool)submitWithTRIClient:(id)triclient error:(id *)error;
+// 0x25563ec48
+- (id)variablesFromTrialClient:(id)client;
+
+@end
+
+@interface MLRTrialTask : NSObject { // 0x29a060dd8
+    /* instance variables */ // +size   offset
+    TRIClient *_triClient;   // +0x8    0x8
+}
+
+@property (readonly, nonatomic) TRIClient *triClient;
+
+/* instance methods */
+// 0x25563e42c
+- (id)triClient;
+// 0x25563e3a0
+- (id)description;
+// 0x25563e434
+- (void).cxx_destruct;
+// 0x25563e33c
+- (id)initWithTriClient:(id)client;
+
+@end
+
+@interface MLRTrialTaskResult : NSObject { // 0x29a060cc0
+    /* instance variables */   // +size   offset
+    NSDictionary *_JSONResult; // +0x8    0x8
+}
+
+@property (readonly, nonatomic) NSDictionary *JSONResult;
+
+/* instance methods */
+// 0x25563c8d8
+- (id)description;
+// 0x25563c96c
+- (void).cxx_destruct;
+// 0x25563c964
+- (id)JSONResult;
+// 0x25563c7c0
+- (id)initWithJSONResult:(id)jsonresult;
+// 0x25563c8d0
+- (_Bool)submitForTask:(id)task error:(id *)error;
+
+@end
+
+@interface DESRecordSet (MLRTask) // 0x29ce35428
+
+/* class methods */
+// 0x25563b060
++ (id)recordSetForTask:(id)task;
+
+@end
+
+@interface TRIClient (MLRTask) // 0x29ce35b78
+
+/* class methods */
+// 0x25563d410
++ (id)mlr_clientWithMLRTask:(id)mlrtask;
+// 0x25563d418
++ (id)mlr_namespaceNameWithMLRTask:(id)mlrtask;
+
+@end
+
+@interface NSDictionary (MLRuntime) // 0x29ce35520
+
+/* instance methods */
+// 0x25563b8d4
+- (id)_numberValueForKey:(id)key;
+// 0x25563ba54
+- (_Bool)mlr_boolValueForKey:(id)key defaultValue:(_Bool)value;
+// 0x25563bc38
+- (id)mlr_dictionaryValueForKey:(id)key;
+// 0x25563ba00
+- (double)mlr_doubleValueForKey:(id)key defaultValue:(double)value;
+// 0x25563b9ac
+- (float)mlr_floatValueForKey:(id)key defaultValue:(float)value;
+// 0x25563baa0
+- (long long)mlr_integerValueForKey:(id)key defaultValue:(long long)value;
+// 0x25563bb38
+- (id)mlr_stringValueForKey:(id)key defaultValue:(id)value;
+// 0x25563baec
+- (unsigned long long)mlr_unsignedIntegerValueForKey:(id)key defaultValue:(unsigned long long)value;
+
+@end
+

@@ -1,0 +1,2131 @@
+@protocol NSCoding
+
+@required
+
+/* required instance methods */
+-[NSCoding initWithCoder:];
+-[NSCoding encodeWithCoder:];
+
+@optional
+
+@end
+
+@protocol NSCopying
+
+@required
+
+/* required instance methods */
+-[NSCopying copyWithZone:];
+
+@optional
+
+@end
+
+@protocol NSSecureCoding <NSCoding>
+
+@required
+
+@property (class, TB,R) supportsSecureCoding;
+
+/* class methods */
++[NSSecureCoding supportsSecureCoding];
+
+@optional
+
+@end
+
+@protocol _ANEDaemonProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEDaemonProtocol compileModel:sandboxExtension:options:qos:withReply:];
+-[_ANEDaemonProtocol compiledModelExistsFor:withReply:];
+-[_ANEDaemonProtocol compiledModelExistsMatchingHash:withReply:];
+-[_ANEDaemonProtocol loadModel:sandboxExtension:options:qos:withReply:];
+-[_ANEDaemonProtocol loadModelNewInstance:options:modelInstParams:qos:withReply:];
+-[_ANEDaemonProtocol prepareChainingWithModel:options:chainingReq:qos:withReply:];
+-[_ANEDaemonProtocol purgeCompiledModel:withReply:];
+-[_ANEDaemonProtocol purgeCompiledModelMatchingHash:withReply:];
+-[_ANEDaemonProtocol reportTelemetryToPPS:playload:];
+-[_ANEDaemonProtocol unloadModel:options:qos:withReply:];
+
+@optional
+
+@end
+
+@protocol _ANEDaemonProtocol_Private <_ANEDaemonProtocol>
+
+@required
+
+/* required instance methods */
+-[_ANEDaemonProtocol_Private echo:withReply:];
+-[_ANEDaemonProtocol_Private beginRealTimeTaskWithReply:];
+-[_ANEDaemonProtocol_Private endRealTimeTaskWithReply:];
+
+@optional
+
+@end
+
+@interface _ANEBuffer : NSObject <NSSecureCoding> {
+    /* instance variables */
+    @"_ANEIOSurfaceObject" _ioSurfaceObject;
+    @"NSNumber" _symbolIndex;
+    q _source;
+}
+
+@property (T@"_ANEIOSurfaceObject",R,N,V_ioSurfaceObject) ioSurfaceObject;
+@property (T@"NSNumber",R,N,V_symbolIndex) symbolIndex;
+@property (Tq,R,N,V_source) source;
+
+/* class methods */
++[_ANEBuffer new];
++[_ANEBuffer supportsSecureCoding];
++[_ANEBuffer bufferWithIOSurfaceObject:symbolIndex:source:];
+
+/* instance methods */
+-[_ANEBuffer description];
+-[_ANEBuffer source];
+-[_ANEBuffer init];
+-[_ANEBuffer initWithCoder:];
+-[_ANEBuffer encodeWithCoder:];
+-[_ANEBuffer ioSurfaceObject];
+-[_ANEBuffer initWithIOSurfaceObject:symbolIndex:source:];
+-[_ANEBuffer symbolIndex];
+
+@end
+
+@interface _ANEChainingRequest : NSObject <NSSecureCoding> {
+    /* instance variables */
+    @"NSArray" _inputBuffer;
+    @"NSArray" _outputSets;
+    @"NSArray" _loopbackInputSymbolIndex;
+    @"NSArray" _loopbackOutputSymbolIndex;
+    @"NSArray" _signalEvents;
+    @"NSNumber" _transactionHandle;
+    @"NSNumber" _procedureIndex;
+    @"NSNumber" _fwEnqueueDelay;
+    @"NSNumber" _memoryPoolId;
+}
+
+@property (T@"NSArray",R,N,V_inputBuffer) inputBuffer;
+@property (T@"NSArray",R,N,V_outputSets) outputSets;
+@property (T@"NSArray",R,N,V_loopbackInputSymbolIndex) loopbackInputSymbolIndex;
+@property (T@"NSArray",R,N,V_loopbackOutputSymbolIndex) loopbackOutputSymbolIndex;
+@property (T@"NSArray",R,N,V_signalEvents) signalEvents;
+@property (T@"NSNumber",R,N,V_transactionHandle) transactionHandle;
+@property (T@"NSNumber",R,N,V_procedureIndex) procedureIndex;
+@property (T@"NSNumber",R,N,V_fwEnqueueDelay) fwEnqueueDelay;
+@property (T@"NSNumber",R,N,V_memoryPoolId) memoryPoolId;
+
+/* class methods */
++[_ANEChainingRequest supportsSecureCoding];
++[_ANEChainingRequest chainingRequestWithInputs:outputSets:lbInputSymbolId:lbOutputSymbolId:procedureIndex:signalEvents:transactionHandle:fwEnqueueDelay:memoryPoolId:];
+
+/* instance methods */
+-[_ANEChainingRequest validate];
+-[_ANEChainingRequest description];
+-[_ANEChainingRequest memoryPoolId];
+-[_ANEChainingRequest initWithCoder:];
+-[_ANEChainingRequest encodeWithCoder:];
+-[_ANEChainingRequest procedureIndex];
+-[_ANEChainingRequest fwEnqueueDelay];
+-[_ANEChainingRequest initWithInputs:outputs:lbInputSymbolId:lbOutputSymbolId:procedureIndex:signalEvents:transactionHandle:fwEnqueueDelay:memoryPoolId:];
+-[_ANEChainingRequest inputBuffer];
+-[_ANEChainingRequest loopbackInputSymbolIndex];
+-[_ANEChainingRequest loopbackOutputSymbolIndex];
+-[_ANEChainingRequest outputSets];
+-[_ANEChainingRequest signalEvents];
+-[_ANEChainingRequest transactionHandle];
+
+@end
+
+@interface _ANEClient : NSObject {
+    /* instance variables */
+    {os_unfair_lock_s="_os_unfair_lock_opaque"I} _lock;
+    @"_ANEDaemonConnection" _fastConn;
+    B _allowRestrictedAccess;
+    B _isRootDaemon;
+    @"_ANEDaemonConnection" _conn;
+    @"NSArray" _priorityQ;
+    @"_ANEVirtualClient" _virtualClient;
+    @"NSMutableDictionary" _connectionsUsedForLoadingModels;
+    @"NSMutableDictionary" _connections;
+}
+
+@property (T@"_ANEDaemonConnection",R,N,V_conn) conn;
+@property (TB,R,N,V_allowRestrictedAccess) allowRestrictedAccess;
+@property (T@"_ANEDaemonConnection",R,N) fastConn;
+@property (T@"NSArray",R,N,V_priorityQ) priorityQ;
+@property (T@"_ANEVirtualClient",R,N,V_virtualClient) virtualClient;
+@property (T@"NSMutableDictionary",R,N,V_connectionsUsedForLoadingModels) connectionsUsedForLoadingModels;
+@property (T@"NSMutableDictionary",R,N,V_connections) connections;
+@property (TB,R,N,V_isRootDaemon) isRootDaemon;
+
+/* class methods */
++[_ANEClient new];
++[_ANEClient initialize];
++[_ANEClient sharedConnection];
++[_ANEClient sharedPrivateConnection];
+
+/* instance methods */
+-[_ANEClient conn];
+-[_ANEClient compiledModelExistsFor:];
+-[_ANEClient loadModelNewInstance:options:modelInstParams:qos:error:];
+-[_ANEClient connections];
+-[_ANEClient unloadModel:options:qos:error:];
+-[_ANEClient evaluateWithModel:options:request:qos:error:];
+-[_ANEClient mapIOSurfacesWithModel:request:cacheInference:error:];
+-[_ANEClient compileModel:options:qos:error:];
+-[_ANEClient init];
+-[_ANEClient beginRealTimeTask];
+-[_ANEClient endRealTimeTask];
+-[_ANEClient loadModel:options:qos:error:];
+-[_ANEClient purgeCompiledModelMatchingHash:];
+-[_ANEClient echo:];
+-[_ANEClient dealloc];
+-[_ANEClient compiledModelExistsMatchingHash:];
+-[_ANEClient purgeCompiledModel:];
+-[_ANEClient sessionHintWithModel:hint:options:report:error:];
+-[_ANEClient evaluateRealTimeWithModel:options:request:error:];
+-[_ANEClient loadRealTimeModel:options:qos:error:];
+-[_ANEClient unloadRealTimeModel:options:qos:error:];
+-[_ANEClient unmapIOSurfacesWithModel:request:];
+-[_ANEClient connectionsUsedForLoadingModels];
+-[_ANEClient isVirtualClient];
+-[_ANEClient allowRestrictedAccess];
+-[_ANEClient buffersReadyWithModel:inputBuffers:options:qos:error:];
+-[_ANEClient connectionForLoadingModel:options:];
+-[_ANEClient connectionUsedForLoadingModel:];
+-[_ANEClient doBuffersReadyWithModel:inputBuffers:options:qos:error:];
+-[_ANEClient doEnqueueSetsWithModel:outputSet:options:qos:error:];
+-[_ANEClient doEvaluateDirectWithModel:options:request:qos:error:];
+-[_ANEClient doLoadModel:options:qos:error:];
+-[_ANEClient doLoadModelNewInstance:options:modelInstParams:qos:error:];
+-[_ANEClient doPrepareChainingWithModel:options:chainingReq:qos:error:];
+-[_ANEClient doUnloadModel:options:qos:error:];
+-[_ANEClient enqueueSetsWithModel:outputSet:options:qos:error:];
+-[_ANEClient fastConn];
+-[_ANEClient fastConnWithoutLock];
+-[_ANEClient initWithRestrictedAccessAllowed:];
+-[_ANEClient isAnetoolRootDaemonConnection];
+-[_ANEClient isRootDaemon];
+-[_ANEClient prepareChainingWithModel:options:chainingReq:qos:error:];
+-[_ANEClient priorityQ];
+-[_ANEClient reportEvaluateFailure:failureReason:qIdx:];
+-[_ANEClient virtualClient];
+
+@end
+
+@interface _ANECloneHelper : NSObject
+
+/* class methods */
++[_ANECloneHelper cloneIfWritable:isEncryptedModel:cloneDirectory:];
++[_ANECloneHelper shouldSkipCloneFor:isEncryptedModel:];
+
+@end
+
+@interface _ANEDaemonConnection : NSObject <_ANEDaemonProtocol> {
+    /* instance variables */
+    B _restricted;
+    @"NSXPCConnection" _daemonConnection;
+}
+
+@property (T@"NSXPCConnection",R,N,V_daemonConnection) daemonConnection;
+@property (TB,R,N,V_restricted) restricted;
+
+/* class methods */
++[_ANEDaemonConnection daemonConnection];
++[_ANEDaemonConnection daemonConnectionRestricted];
++[_ANEDaemonConnection userDaemonConnection];
+
+/* instance methods */
+-[_ANEDaemonConnection daemonConnection];
+-[_ANEDaemonConnection restricted];
+-[_ANEDaemonConnection init];
+-[_ANEDaemonConnection dealloc];
+-[_ANEDaemonConnection echo:withReply:];
+-[_ANEDaemonConnection beginRealTimeTaskWithReply:];
+-[_ANEDaemonConnection compileModel:sandboxExtension:options:qos:withReply:];
+-[_ANEDaemonConnection compiledModelExistsFor:withReply:];
+-[_ANEDaemonConnection compiledModelExistsMatchingHash:withReply:];
+-[_ANEDaemonConnection endRealTimeTaskWithReply:];
+-[_ANEDaemonConnection initWithMachServiceName:restricted:];
+-[_ANEDaemonConnection loadModel:sandboxExtension:options:qos:withReply:];
+-[_ANEDaemonConnection loadModelNewInstance:options:modelInstParams:qos:withReply:];
+-[_ANEDaemonConnection prepareChainingWithModel:options:chainingReq:qos:withReply:];
+-[_ANEDaemonConnection purgeCompiledModel:withReply:];
+-[_ANEDaemonConnection purgeCompiledModelMatchingHash:withReply:];
+-[_ANEDaemonConnection reportTelemetryToPPS:playload:];
+-[_ANEDaemonConnection unloadModel:options:qos:withReply:];
+
+@end
+
+@interface _ANEDataReporter : NSObject
+
+/* class methods */
++[_ANEDataReporter addValue:forScalarKey:];
++[_ANEDataReporter analyticsKey:];
++[_ANEDataReporter reportClient:modelName:];
++[_ANEDataReporter reportErrorMsg:status:];
++[_ANEDataReporter reportTelemetryToPPS:playload:];
+
+@end
+
+@interface _ANEDeviceController : NSObject {
+    /* instance variables */
+    B _isPrivileged;
+    q _usecount;
+    ^{ANEDeviceStruct=^v^v^vCiQ} _device;
+    Q _programHandle;
+}
+
+@property (Tq,N,V_usecount) usecount;
+@property (TB,R,N,V_isPrivileged) isPrivileged;
+@property (T^{ANEDeviceStruct=^v^v^vCiQ},N,V_device) device;
+@property (TQ,R,N,V_programHandle) programHandle;
+
+/* class methods */
++[_ANEDeviceController new];
++[_ANEDeviceController initialize];
++[_ANEDeviceController controllerWithPrivilegedVM:];
++[_ANEDeviceController controllerWithProgramHandle:];
++[_ANEDeviceController sharedPrivilegedConnection];
+
+/* instance methods */
+-[_ANEDeviceController setDevice:];
+-[_ANEDeviceController device];
+-[_ANEDeviceController start];
+-[_ANEDeviceController stop];
+-[_ANEDeviceController init];
+-[_ANEDeviceController programHandle];
+-[_ANEDeviceController initWithANEPrivilegedVM:];
+-[_ANEDeviceController initWithProgramHandle:priviledged:];
+-[_ANEDeviceController isPrivileged];
+-[_ANEDeviceController setUsecount:];
+-[_ANEDeviceController usecount];
+
+@end
+
+@interface _ANEDeviceInfo : NSObject
+
+/* class methods */
++[_ANEDeviceInfo bootArgs];
++[_ANEDeviceInfo hasANE];
++[_ANEDeviceInfo buildVersion];
++[_ANEDeviceInfo productName];
++[_ANEDeviceInfo aneArchitectureType];
++[_ANEDeviceInfo aneSubType];
++[_ANEDeviceInfo isExcessivePowerDrainWhenIdle];
++[_ANEDeviceInfo aneSubTypeProductVariant];
++[_ANEDeviceInfo aneSubTypeVariant];
++[_ANEDeviceInfo precompiledModelChecksDisabled];
++[_ANEDeviceInfo isVirtualMachine];
++[_ANEDeviceInfo numANEs];
++[_ANEDeviceInfo isInternalBuild];
++[_ANEDeviceInfo isBoolBootArgSetTrue:];
++[_ANEDeviceInfo numANECores];
++[_ANEDeviceInfo isBootArgPresent:];
++[_ANEDeviceInfo aneBoardType];
+
+@end
+
+@interface _ANEErrors : NSObject
+
+/* class methods */
++[_ANEErrors createErrorWithCode:description:];
++[_ANEErrors programLoadErrorForMethod:code:];
++[_ANEErrors badArgumentForMethod:];
++[_ANEErrors baseModelIdentifierNotFoundForNewInstanceMethod:];
++[_ANEErrors dataNotFoundForMethod:];
++[_ANEErrors entitlementErrorForMethod:];
++[_ANEErrors fileAccessErrorForMethod:];
++[_ANEErrors fileNotFoundErrorForMethod:];
++[_ANEErrors guestToHostInterfaceTooOld:];
++[_ANEErrors hostTooOld:];
++[_ANEErrors invalidModelErrorForMethod:];
++[_ANEErrors invalidModelInstanceErrorForMethod:];
++[_ANEErrors invalidModelKeyErrorForMethod:];
++[_ANEErrors missingCodeSigningErrorForMethod:];
++[_ANEErrors modelIdentifierNotFoundForMethod:];
++[_ANEErrors modelNewInstanceCacheIdentifierNotNilMethod:];
++[_ANEErrors notSupportedErrorForMethod:];
++[_ANEErrors priorityErrorForMethod:];
++[_ANEErrors programChainingPrepareErrorForMethod:];
++[_ANEErrors programCreationErrorForMethod:];
++[_ANEErrors programIOSurfacesMapErrorForMethod:code:];
++[_ANEErrors programIOSurfacesUnmapErrorForMethod:code:];
++[_ANEErrors programInferenceOtherErrorForMethod:];
++[_ANEErrors programInferenceOverflowErrorForMethod:];
++[_ANEErrors programInferenceProgramNotFoundForMethod:];
++[_ANEErrors programLoadErrorForMethod:];
++[_ANEErrors programLoadNewInstanceErrorForMethod:];
++[_ANEErrors programLoadNewInstanceErrorForMethod:code:];
++[_ANEErrors systemModelPurgeNotAllowedForMethod:];
++[_ANEErrors timeoutErrorForMethod:];
++[_ANEErrors virtualizationDataError:];
++[_ANEErrors virtualizationHostError:];
++[_ANEErrors virtualizationHostError:error:];
++[_ANEErrors virtualizationKernelError:kernelErrorCode:];
+
+@end
+
+@interface _ANEHashEncoding : NSObject
+
+/* class methods */
++[_ANEHashEncoding hexStringForData:];
++[_ANEHashEncoding convertToHexString:length:];
++[_ANEHashEncoding copySHA256For:toBuffer:];
++[_ANEHashEncoding hashForString:seed:];
++[_ANEHashEncoding hexStringForBytes:length:];
++[_ANEHashEncoding hexStringForDataArray:];
++[_ANEHashEncoding hexStringForString:];
+
+@end
+
+@interface _ANEIOSurfaceObject : NSObject <NSSecureCoding> {
+    /* instance variables */
+    ^{__IOSurface=} _ioSurface;
+    @"NSNumber" _startOffset;
+}
+
+@property (T^{__IOSurface=},R,N,V_ioSurface) ioSurface;
+@property (T@"NSNumber",R,N,V_startOffset) startOffset;
+
+/* class methods */
++[_ANEIOSurfaceObject new];
++[_ANEIOSurfaceObject supportsSecureCoding];
++[_ANEIOSurfaceObject objectWithIOSurface:];
++[_ANEIOSurfaceObject createIOSurfaceWithWidth:pixel_size:height:];
++[_ANEIOSurfaceObject createIOSurfaceWithWidth:pixel_size:height:bytesPerElement:];
++[_ANEIOSurfaceObject objectWithIOSurface:startOffset:];
++[_ANEIOSurfaceObject objectWithIOSurfaceNoRetain:startOffset:];
+
+/* instance methods */
+-[_ANEIOSurfaceObject description];
+-[_ANEIOSurfaceObject init];
+-[_ANEIOSurfaceObject initWithCoder:];
+-[_ANEIOSurfaceObject dealloc];
+-[_ANEIOSurfaceObject ioSurface];
+-[_ANEIOSurfaceObject startOffset];
+-[_ANEIOSurfaceObject encodeWithCoder:];
+-[_ANEIOSurfaceObject initWithIOSurface:startOffset:shouldRetain:];
+
+@end
+
+@interface _ANEIOSurfaceOutputSets : NSObject <NSSecureCoding> {
+    /* instance variables */
+    ^{__IOSurface=} _statsSurRef;
+    @"NSArray" _outputBuffer;
+}
+
+@property (T^{__IOSurface=},R,N,V_statsSurRef) statsSurRef;
+@property (T@"NSArray",R,N,V_outputBuffer) outputBuffer;
+
+/* class methods */
++[_ANEIOSurfaceOutputSets new];
++[_ANEIOSurfaceOutputSets supportsSecureCoding];
++[_ANEIOSurfaceOutputSets objectWithstatsSurRef:outputBuffer:];
+
+/* instance methods */
+-[_ANEIOSurfaceOutputSets description];
+-[_ANEIOSurfaceOutputSets init];
+-[_ANEIOSurfaceOutputSets initWithCoder:];
+-[_ANEIOSurfaceOutputSets dealloc];
+-[_ANEIOSurfaceOutputSets encodeWithCoder:];
+-[_ANEIOSurfaceOutputSets initWithstatsSurRef:outputBuffer:];
+-[_ANEIOSurfaceOutputSets outputBuffer];
+-[_ANEIOSurfaceOutputSets statsSurRef];
+
+@end
+
+@interface _ANEInMemoryModel : NSObject {
+    /* instance variables */
+    c _queueDepth;
+    B _isMILModel;
+    I _perfStatsMask;
+    @"NSDictionary" _modelAttributes;
+    @"NSString" _hexStringIdentifier;
+    Q _intermediateBufferHandle;
+    @"_ANEClient" _sharedConnection;
+    @"NSURL" _modelURL;
+    @"NSString" _compilerOptionsFileName;
+    @"_ANEModel" _model;
+    Q _string_id;
+    Q _programHandle;
+    @"_ANEProgramForEvaluation" _program;
+    Q _state;
+    @"_ANEInMemoryModelDescriptor" _descriptor;
+}
+
+@property (T@"_ANEClient",R,N,V_sharedConnection) sharedConnection;
+@property (T@"NSDictionary",&,N,V_modelAttributes) modelAttributes;
+@property (T@"NSURL",&,N,V_modelURL) modelURL;
+@property (TB,R,N,V_isMILModel) isMILModel;
+@property (T@"NSString",C,N,V_compilerOptionsFileName) compilerOptionsFileName;
+@property (T@"_ANEModel",&,N,V_model) model;
+@property (TQ,R,N,V_string_id) string_id;
+@property (TQ,N,V_programHandle) programHandle;
+@property (Tc,N,V_queueDepth) queueDepth;
+@property (TQ,N,V_intermediateBufferHandle) intermediateBufferHandle;
+@property (T@"_ANEProgramForEvaluation",&,N,V_program) program;
+@property (TI,N,V_perfStatsMask) perfStatsMask;
+@property (TQ,N,V_state) state;
+@property (T@"_ANEInMemoryModelDescriptor",&,N,V_descriptor) descriptor;
+@property (T@"NSString",R,C,N,V_hexStringIdentifier) hexStringIdentifier;
+
+/* class methods */
++[_ANEInMemoryModel new];
++[_ANEInMemoryModel initialize];
++[_ANEInMemoryModel inMemoryModelWithDescriptor:];
+
+/* instance methods */
+-[_ANEInMemoryModel modelURL];
+-[_ANEInMemoryModel setModelURL:];
+-[_ANEInMemoryModel setDescriptor:];
+-[_ANEInMemoryModel setModel:];
+-[_ANEInMemoryModel descriptor];
+-[_ANEInMemoryModel init];
+-[_ANEInMemoryModel state];
+-[_ANEInMemoryModel model];
+-[_ANEInMemoryModel dealloc];
+-[_ANEInMemoryModel program];
+-[_ANEInMemoryModel sharedConnection];
+-[_ANEInMemoryModel setState:];
+-[_ANEInMemoryModel queueDepth];
+-[_ANEInMemoryModel setQueueDepth:];
+-[_ANEInMemoryModel setProgram:];
+-[_ANEInMemoryModel modelAttributes];
+-[_ANEInMemoryModel evaluateWithQoS:options:request:error:];
+-[_ANEInMemoryModel loadWithQoS:options:error:];
+-[_ANEInMemoryModel unloadWithQoS:error:];
+-[_ANEInMemoryModel hexStringIdentifier];
+-[_ANEInMemoryModel intermediateBufferHandle];
+-[_ANEInMemoryModel programHandle];
+-[_ANEInMemoryModel purgeCompiledModel];
+-[_ANEInMemoryModel compileWithQoS:options:error:];
+-[_ANEInMemoryModel compiledModelExists];
+-[_ANEInMemoryModel compilerOptionsFileName];
+-[_ANEInMemoryModel compilerOptionsWithOptions:isCompiledModelCached:];
+-[_ANEInMemoryModel initWithDesctiptor:];
+-[_ANEInMemoryModel isMILModel];
+-[_ANEInMemoryModel localModelPath];
+-[_ANEInMemoryModel mapIOSurfacesWithRequest:cacheInference:error:];
+-[_ANEInMemoryModel perfStatsMask];
+-[_ANEInMemoryModel saveModelFiles];
+-[_ANEInMemoryModel setCompilerOptionsFileName:];
+-[_ANEInMemoryModel setIntermediateBufferHandle:];
+-[_ANEInMemoryModel setModelAttributes:];
+-[_ANEInMemoryModel setPerfStatsMask:];
+-[_ANEInMemoryModel setProgramHandle:];
+-[_ANEInMemoryModel string_id];
+-[_ANEInMemoryModel unmapIOSurfacesWithRequest:];
+
+@end
+
+@interface _ANEInMemoryModelDescriptor : NSObject {
+    /* instance variables */
+    B _isMILModel;
+    @"NSString" _networkTextHash;
+    @"NSString" _weightsHash;
+    @"NSString" _optionsPlistHash;
+    @"NSData" _networkText;
+    @"NSDictionary" _weights;
+    @"NSData" _optionsPlist;
+}
+
+@property (T@"NSString",R,C,N,V_networkTextHash) networkTextHash;
+@property (T@"NSString",R,C,N,V_weightsHash) weightsHash;
+@property (T@"NSString",R,N,V_optionsPlistHash) optionsPlistHash;
+@property (T@"NSData",R,C,N,V_networkText) networkText;
+@property (T@"NSDictionary",R,N,V_weights) weights;
+@property (T@"NSData",R,N,V_optionsPlist) optionsPlist;
+@property (TB,R,N,V_isMILModel) isMILModel;
+
+/* class methods */
++[_ANEInMemoryModelDescriptor new];
++[_ANEInMemoryModelDescriptor modelWithNetworkDescription:weights:optionsPlist:];
++[_ANEInMemoryModelDescriptor modelWithMILText:weights:optionsPlist:];
+
+/* instance methods */
+-[_ANEInMemoryModelDescriptor weights];
+-[_ANEInMemoryModelDescriptor init];
+-[_ANEInMemoryModelDescriptor isEqual:];
+-[_ANEInMemoryModelDescriptor hash];
+-[_ANEInMemoryModelDescriptor hexStringIdentifier];
+-[_ANEInMemoryModelDescriptor networkTextHash];
+-[_ANEInMemoryModelDescriptor initWithNetworkText:weights:optionsPlist:isMILModel:];
+-[_ANEInMemoryModelDescriptor isEqualToInMemoryModelDescriptor:];
+-[_ANEInMemoryModelDescriptor isMILModel];
+-[_ANEInMemoryModelDescriptor networkText];
+-[_ANEInMemoryModelDescriptor optionsPlist];
+-[_ANEInMemoryModelDescriptor optionsPlistHash];
+-[_ANEInMemoryModelDescriptor weightsHash];
+
+@end
+
+@interface _ANEInputBuffersReady : NSObject {
+    /* instance variables */
+    I _procedureIndex;
+    @"NSArray" _inputBufferInfoIndex;
+    @"NSArray" _inputFreeValue;
+    Q _executionDelay;
+}
+
+@property (TI,R,N,V_procedureIndex) procedureIndex;
+@property (T@"NSArray",R,N,V_inputBufferInfoIndex) inputBufferInfoIndex;
+@property (T@"NSArray",R,N,V_inputFreeValue) inputFreeValue;
+@property (TQ,R,N,V_executionDelay) executionDelay;
+
+/* class methods */
++[_ANEInputBuffersReady new];
++[_ANEInputBuffersReady inputBuffersWithProcedureIndex:inputBufferInfoIndex:inputFreeValue:executionDelay:];
+
+/* instance methods */
+-[_ANEInputBuffersReady validate];
+-[_ANEInputBuffersReady init];
+-[_ANEInputBuffersReady procedureIndex];
+-[_ANEInputBuffersReady executionDelay];
+-[_ANEInputBuffersReady initInputsProcedureIndex:inputBufferInfoIndex:inputFreeValue:executionDelay:];
+-[_ANEInputBuffersReady inputBufferInfoIndex];
+-[_ANEInputBuffersReady inputFreeValue];
+
+@end
+
+@interface _ANELog : NSObject
+
+/* class methods */
++[_ANELog daemon];
++[_ANELog compiler];
++[_ANELog tool];
++[_ANELog framework];
++[_ANELog tests];
++[_ANELog common];
++[_ANELog maintenance];
+
+@end
+
+@interface _ANEModel : NSObject <NSCopying, NSSecureCoding> {
+    /* instance variables */
+    c _queueDepth;
+    I _perfStatsMask;
+    {os_unfair_lock_s="_os_unfair_lock_opaque"I} _l;
+    @"NSURL" _sourceURL;
+    @"NSURL" _modelURL;
+    @"NSString" _key;
+    @"NSUUID" _UUID;
+    q _identifierSource;
+    Q _string_id;
+    Q _programHandle;
+    Q _intermediateBufferHandle;
+    @"NSDictionary" _modelAttributes;
+    @"NSDictionary" _mpsConstants;
+    @"_ANEProgramForEvaluation" _program;
+    Q _state;
+    @"_ANEProgramIOSurfacesMapper" _mapper;
+    @"NSString" _cacheURLIdentifier;
+}
+
+@property (T@"NSDictionary",&,N,V_modelAttributes) modelAttributes;
+@property (TQ,N,V_programHandle) programHandle;
+@property (Tc,N,V_queueDepth) queueDepth;
+@property (TQ,N,V_intermediateBufferHandle) intermediateBufferHandle;
+@property (T{os_unfair_lock_s=I},N,V_l) l;
+@property (T@"_ANEProgramForEvaluation",&,N,V_program) program;
+@property (TI,N,V_perfStatsMask) perfStatsMask;
+@property (TQ,N,V_state) state;
+@property (T@"_ANEProgramIOSurfacesMapper",&,N,V_mapper) mapper;
+@property (TQ,N,V_string_id) string_id;
+@property (T@"NSString",C,N,V_cacheURLIdentifier) cacheURLIdentifier;
+@property (T@"NSURL",R,N,V_sourceURL) sourceURL;
+@property (T@"NSURL",R,N,V_modelURL) modelURL;
+@property (T@"NSString",R,C,N,V_key) key;
+@property (T@"NSUUID",R,N,V_UUID) UUID;
+@property (Tq,R,N,V_identifierSource) identifierSource;
+@property (T@"NSDictionary",R,N,V_mpsConstants) mpsConstants;
+
+/* class methods */
++[_ANEModel new];
++[_ANEModel supportsSecureCoding];
++[_ANEModel modelAtURL:key:];
++[_ANEModel modelAtURLWithSourceURL:sourceURL:key:cacheURLIdentifier:];
++[_ANEModel modelWithCacheURLIdentifier:];
++[_ANEModel modelAtURL:key:modelAttributes:];
++[_ANEModel correctFileURLFormat:];
++[_ANEModel modelAtURL:key:mpsConstants:];
++[_ANEModel modelAtURLWithCacheURLIdentifier:key:cacheURLIdentifier:];
++[_ANEModel modelAtURLWithSourceURL:sourceURL:key:identifierSource:cacheURLIdentifier:];
++[_ANEModel modelAtURLWithSourceURL:sourceURL:key:identifierSource:cacheURLIdentifier:UUID:];
++[_ANEModel modelWithCacheURLIdentifier:UUID:];
+
+/* instance methods */
+-[_ANEModel modelURL];
+-[_ANEModel UUID];
+-[_ANEModel key];
+-[_ANEModel description];
+-[_ANEModel init];
+-[_ANEModel state];
+-[_ANEModel initWithCoder:];
+-[_ANEModel dealloc];
+-[_ANEModel program];
+-[_ANEModel copyWithZone:];
+-[_ANEModel isEqual:];
+-[_ANEModel hash];
+-[_ANEModel shallowCopy];
+-[_ANEModel sourceURL];
+-[_ANEModel encodeWithCoder:];
+-[_ANEModel mapper];
+-[_ANEModel setState:];
+-[_ANEModel getUUID];
+-[_ANEModel queueDepth];
+-[_ANEModel setQueueDepth:];
+-[_ANEModel setProgram:];
+-[_ANEModel l];
+-[_ANEModel modelAttributes];
+-[_ANEModel setL:];
+-[_ANEModel getCacheURLIdentifier];
+-[_ANEModel intermediateBufferHandle];
+-[_ANEModel programHandle];
+-[_ANEModel isEqualToModel:];
+-[_ANEModel procedureInfoForProcedureIndex:];
+-[_ANEModel cacheURLIdentifier];
+-[_ANEModel identifierSource];
+-[_ANEModel initWithModelAtURL:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:];
+-[_ANEModel initWithModelAtURL:sourceURL:UUID:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:string_id:generateNewStringId:];
+-[_ANEModel initWithModelAtURL:sourceURL:UUID:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:string_id:generateNewStringId:mpsConstants:];
+-[_ANEModel initWithModelIdentifier:];
+-[_ANEModel inputSymbolIndicesForProcedureIndex:];
+-[_ANEModel mpsConstants];
+-[_ANEModel outputSymbolIndicesForProcedureIndex:];
+-[_ANEModel perfStatsMask];
+-[_ANEModel resetOnUnload];
+-[_ANEModel setCacheURLIdentifier:];
+-[_ANEModel setIntermediateBufferHandle:];
+-[_ANEModel setMapper:];
+-[_ANEModel setModelAttributes:];
+-[_ANEModel setPerfStatsMask:];
+-[_ANEModel setProgramHandle:];
+-[_ANEModel setString_id:];
+-[_ANEModel string_id];
+-[_ANEModel symbolIndicesForProcedureIndex:indexArrayKey:];
+-[_ANEModel updateModelAttributes:state:];
+-[_ANEModel updateModelAttributes:state:programHandle:intermediateBufferHandle:queueDepth:];
+
+@end
+
+@interface _ANEModelInstanceParameters : NSObject <NSCopying, NSSecureCoding> {
+    /* instance variables */
+    @"NSString" _instanceName;
+    @"NSArray" _procedureArray;
+}
+
+@property (T@"NSString",R,C,N,V_instanceName) instanceName;
+@property (T@"NSArray",R,N,V_procedureArray) procedureArray;
+
+/* class methods */
++[_ANEModelInstanceParameters new];
++[_ANEModelInstanceParameters supportsSecureCoding];
++[_ANEModelInstanceParameters withProcedureData:procedureArray:];
+
+/* instance methods */
+-[_ANEModelInstanceParameters description];
+-[_ANEModelInstanceParameters instanceName];
+-[_ANEModelInstanceParameters init];
+-[_ANEModelInstanceParameters initWithCoder:];
+-[_ANEModelInstanceParameters copyWithZone:];
+-[_ANEModelInstanceParameters encodeWithCoder:];
+-[_ANEModelInstanceParameters initWithProcedureData:procedureArray:];
+-[_ANEModelInstanceParameters procedureArray];
+
+@end
+
+@interface _ANEModelToken : NSObject {
+    /* instance variables */
+    i _processIdentifier;
+    @"NSString" _modelIdentifier;
+    @"NSString" _csIdentity;
+    @"NSString" _teamIdentity;
+}
+
+@property (T@"NSString",R,N,V_modelIdentifier) modelIdentifier;
+@property (T@"NSString",R,N,V_csIdentity) csIdentity;
+@property (T@"NSString",R,N,V_teamIdentity) teamIdentity;
+@property (Ti,R,N,V_processIdentifier) processIdentifier;
+
+/* class methods */
++[_ANEModelToken codeSigningIDFor:processIdentifier:];
++[_ANEModelToken processNameFor:identifier:];
++[_ANEModelToken teamIDFor:processIdentifier:];
++[_ANEModelToken tokenWithAuditToken:modelIdentifier:processIdentifier:];
++[_ANEModelToken tokenWithCsIdentity:teamIdentity:modelIdentifier:processIdentifier:];
+
+/* instance methods */
+-[_ANEModelToken modelIdentifier];
+-[_ANEModelToken processIdentifier];
+-[_ANEModelToken description];
+-[_ANEModelToken csIdentity];
+-[_ANEModelToken initWithAuditToken:modelIdentifier:processIdentifier:];
+-[_ANEModelToken initWithCsIdentity:teamIdentity:modelIdentifier:processIdentifier:];
+-[_ANEModelToken teamIdentity];
+
+@end
+
+@interface _ANEOutputSetEnqueue : NSObject {
+    /* instance variables */
+    B _signalNotRequired;
+    B _isOpenLoop;
+    I _procedureIndex;
+    I _setIndex;
+    Q _signalValue;
+}
+
+@property (TI,R,N,V_procedureIndex) procedureIndex;
+@property (TI,R,N,V_setIndex) setIndex;
+@property (TQ,R,N,V_signalValue) signalValue;
+@property (TB,R,N,V_signalNotRequired) signalNotRequired;
+@property (TB,R,N,V_isOpenLoop) isOpenLoop;
+
+/* class methods */
++[_ANEOutputSetEnqueue new];
++[_ANEOutputSetEnqueue outputSetWithProcedureIndex:setIndex:signalValue:signalNotRequired:isOpenLoop:];
+
+/* instance methods */
+-[_ANEOutputSetEnqueue init];
+-[_ANEOutputSetEnqueue procedureIndex];
+-[_ANEOutputSetEnqueue initOutputSetWithProcedureIndex:setIndex:signalValue:signalNotRequired:isOpenLoop:];
+-[_ANEOutputSetEnqueue isOpenLoop];
+-[_ANEOutputSetEnqueue setIndex];
+-[_ANEOutputSetEnqueue signalNotRequired];
+-[_ANEOutputSetEnqueue signalValue];
+
+@end
+
+@interface _ANEPerformanceStats : NSObject {
+    /* instance variables */
+    Q _hwExecutionTime;
+    @"NSData" _pStatsRawData;
+    @"NSData" _perfCounterData;
+}
+
+@property (T@"NSData",R,N,V_perfCounterData) perfCounterData;
+@property (TQ,R,N,V_hwExecutionTime) hwExecutionTime;
+@property (T@"NSData",R,N,V_pStatsRawData) pStatsRawData;
+
+/* class methods */
++[_ANEPerformanceStats new];
++[_ANEPerformanceStats driverMaskForANEFMask:];
++[_ANEPerformanceStats statsWithHardwareExecutionNS:];
++[_ANEPerformanceStats statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:];
++[_ANEPerformanceStats statsWithRequestPerformanceBuffer:statsBufferSize:];
+
+/* instance methods */
+-[_ANEPerformanceStats description];
+-[_ANEPerformanceStats init];
+-[_ANEPerformanceStats hwExecutionTime];
+-[_ANEPerformanceStats perfCounterData];
+-[_ANEPerformanceStats emitPerfcounterSignpostsWithModelStringID:];
+-[_ANEPerformanceStats initWithHardwareExecution:perfCounterData:ANEStatsRawData:];
+-[_ANEPerformanceStats initWithReconstructedData:hardwareExecutionNS:];
+-[_ANEPerformanceStats initWithRequestPerformanceBuffer:statsBufferSize:];
+-[_ANEPerformanceStats pStatsRawData];
+-[_ANEPerformanceStats performanceCounters];
+-[_ANEPerformanceStats stringForPerfCounter:];
+
+@end
+
+@interface _ANEPerformanceStatsIOSurface : NSObject {
+    /* instance variables */
+    q _statType;
+    @"_ANEIOSurfaceObject" _stats;
+}
+
+@property (Tq,R,N,V_statType) statType;
+@property (T@"_ANEIOSurfaceObject",R,N,V_stats) stats;
+
+/* class methods */
++[_ANEPerformanceStatsIOSurface new];
++[_ANEPerformanceStatsIOSurface objectWithIOSurface:statType:];
+
+/* instance methods */
+-[_ANEPerformanceStatsIOSurface description];
+-[_ANEPerformanceStatsIOSurface init];
+-[_ANEPerformanceStatsIOSurface stats];
+-[_ANEPerformanceStatsIOSurface initWithIOSurface:statType:];
+-[_ANEPerformanceStatsIOSurface statType];
+
+@end
+
+@interface _ANEProcedureData : NSObject <NSCopying, NSSecureCoding> {
+    /* instance variables */
+    @"NSString" _procedureSymbol;
+    @"NSArray" _weightArray;
+}
+
+@property (T@"NSString",R,C,N,V_procedureSymbol) procedureSymbol;
+@property (T@"NSArray",R,N,V_weightArray) weightArray;
+
+/* class methods */
++[_ANEProcedureData new];
++[_ANEProcedureData supportsSecureCoding];
++[_ANEProcedureData procedureDataWithSymbol:weightArray:];
+
+/* instance methods */
+-[_ANEProcedureData description];
+-[_ANEProcedureData init];
+-[_ANEProcedureData initWithCoder:];
+-[_ANEProcedureData copyWithZone:];
+-[_ANEProcedureData encodeWithCoder:];
+-[_ANEProcedureData procedureSymbol];
+-[_ANEProcedureData initWithProcedure:weightArray:];
+-[_ANEProcedureData weightArray];
+
+@end
+
+@interface _ANEProgramForEvaluation : NSObject {
+    /* instance variables */
+    c _queueDepth;
+    @"_ANEDeviceController" _controller;
+    Q _programHandle;
+    Q _intermediateBufferHandle;
+    @"NSObject<OS_dispatch_semaphore>" _requestsInFlight;
+    q _currentAsyncRequestsInFlight;
+}
+
+@property (T@"_ANEDeviceController",R,N,V_controller) controller;
+@property (TQ,N,V_programHandle) programHandle;
+@property (TQ,N,V_intermediateBufferHandle) intermediateBufferHandle;
+@property (Tc,R,N,V_queueDepth) queueDepth;
+@property (T@"NSObject<OS_dispatch_semaphore>",R,N,V_requestsInFlight) requestsInFlight;
+@property (Tq,V_currentAsyncRequestsInFlight) currentAsyncRequestsInFlight;
+
+/* class methods */
++[_ANEProgramForEvaluation new];
++[_ANEProgramForEvaluation programWithController:intermediateBufferHandle:queueDepth:];
++[_ANEProgramForEvaluation programWithHandle:intermediateBufferHandle:queueDepth:];
+
+/* instance methods */
+-[_ANEProgramForEvaluation controller];
+-[_ANEProgramForEvaluation description];
+-[_ANEProgramForEvaluation init];
+-[_ANEProgramForEvaluation dealloc];
+-[_ANEProgramForEvaluation queueDepth];
+-[_ANEProgramForEvaluation intermediateBufferHandle];
+-[_ANEProgramForEvaluation programHandle];
+-[_ANEProgramForEvaluation currentAsyncRequestsInFlight];
+-[_ANEProgramForEvaluation initWithController:intermediateBufferHandle:queueDepth:];
+-[_ANEProgramForEvaluation processInputBuffers:model:options:error:];
+-[_ANEProgramForEvaluation processOutputSet:model:options:error:];
+-[_ANEProgramForEvaluation processRequest:model:qos:qIndex:modelStringID:options:returnValue:error:];
+-[_ANEProgramForEvaluation processSessionHint:options:report:error:];
+-[_ANEProgramForEvaluation programInferenceOtherErrorForMessage:model:methodName:];
+-[_ANEProgramForEvaluation requestsInFlight];
+-[_ANEProgramForEvaluation setCurrentAsyncRequestsInFlight:];
+-[_ANEProgramForEvaluation setIntermediateBufferHandle:];
+-[_ANEProgramForEvaluation setProgramHandle:];
+
+@end
+
+@interface _ANEProgramIOSurfacesMapper : NSObject {
+    /* instance variables */
+    @"_ANEDeviceController" _deviceController;
+    @"_ANEDeviceController" _controller;
+    Q _programHandle;
+}
+
+@property (T@"_ANEDeviceController",R,N,V_controller) controller;
+@property (TQ,R,N,V_programHandle) programHandle;
+@property (T@"_ANEDeviceController",R,N,V_deviceController) deviceController;
+
+/* class methods */
++[_ANEProgramIOSurfacesMapper new];
++[_ANEProgramIOSurfacesMapper initialize];
++[_ANEProgramIOSurfacesMapper mapperWithController:];
++[_ANEProgramIOSurfacesMapper mapperWithProgramHandle:];
+
+/* instance methods */
+-[_ANEProgramIOSurfacesMapper controller];
+-[_ANEProgramIOSurfacesMapper mapIOSurfacesWithModel:request:cacheInference:error:];
+-[_ANEProgramIOSurfacesMapper initWithController:];
+-[_ANEProgramIOSurfacesMapper init];
+-[_ANEProgramIOSurfacesMapper dealloc];
+-[_ANEProgramIOSurfacesMapper programHandle];
+-[_ANEProgramIOSurfacesMapper deviceController];
+-[_ANEProgramIOSurfacesMapper prepareANEMemoryMappingParams:request:];
+-[_ANEProgramIOSurfacesMapper unmapIOSurfacesWithModel:request:error:];
+-[_ANEProgramIOSurfacesMapper validateRequest:model:];
+
+@end
+
+@interface _ANEQoSMapper : NSObject
+
+/* class methods */
++[_ANEQoSMapper aneUserInteractiveTaskQoS];
++[_ANEQoSMapper aneBackgroundTaskQoS];
++[_ANEQoSMapper aneDefaultTaskQoS];
++[_ANEQoSMapper aneRealTimeTaskQoS];
++[_ANEQoSMapper aneUserInitiatedTaskQoS];
++[_ANEQoSMapper aneUtilityTaskQoS];
++[_ANEQoSMapper dispatchQueueArrayByMappingPrioritiesWithTag:];
++[_ANEQoSMapper programPriorityForQoS:];
++[_ANEQoSMapper qosForProgramPriority:];
++[_ANEQoSMapper queueIndexForQoS:];
++[_ANEQoSMapper realTimeProgramPriority];
++[_ANEQoSMapper realTimeQueueIndex];
+
+@end
+
+@interface _ANERequest : NSObject {
+    /* instance variables */
+    @"NSArray" _inputArray;
+    @"NSArray" _inputIndexArray;
+    @"NSArray" _outputArray;
+    @"NSArray" _outputIndexArray;
+    @"_ANEIOSurfaceObject" _weightsBuffer;
+    @"_ANESharedEvents" _sharedEvents;
+    @"NSNumber" _transactionHandle;
+    @"NSNumber" _procedureIndex;
+    @"_ANEPerformanceStats" _perfStats;
+    @"NSArray" _perfStatsArray;
+    @? _completionHandler;
+}
+
+@property (T@"_ANEPerformanceStats",&,N,V_perfStats) perfStats;
+@property (T@"NSNumber",C,N,V_transactionHandle) transactionHandle;
+@property (T@"NSArray",R,N,V_inputArray) inputArray;
+@property (T@"NSArray",R,N,V_inputIndexArray) inputIndexArray;
+@property (T@"NSArray",R,N,V_outputArray) outputArray;
+@property (T@"NSArray",R,N,V_outputIndexArray) outputIndexArray;
+@property (T@"_ANEIOSurfaceObject",R,N,V_weightsBuffer) weightsBuffer;
+@property (T@"_ANESharedEvents",&,N,V_sharedEvents) sharedEvents;
+@property (T@"NSNumber",R,C,N,V_procedureIndex) procedureIndex;
+@property (T@"NSArray",R,N,V_perfStatsArray) perfStatsArray;
+@property (T@?,C,V_completionHandler) completionHandler;
+
+/* class methods */
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:procedureIndex:];
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:];
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:];
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:];
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:];
++[_ANERequest requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:procedureIndex:];
+
+/* instance methods */
+-[_ANERequest setCompletionHandler:];
+-[_ANERequest validate];
+-[_ANERequest description];
+-[_ANERequest completionHandler];
+-[_ANERequest weightsBuffer];
+-[_ANERequest procedureIndex];
+-[_ANERequest perfStats];
+-[_ANERequest perfStatsArray];
+-[_ANERequest setSharedEvents:];
+-[_ANERequest sharedEvents];
+-[_ANERequest inputIndexArray];
+-[_ANERequest ioSurfacesCount];
+-[_ANERequest initWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:];
+-[_ANERequest initWithVirtualModel:];
+-[_ANERequest inputArray];
+-[_ANERequest outputArray];
+-[_ANERequest outputIndexArray];
+-[_ANERequest setPerfStats:];
+-[_ANERequest setTransactionHandle:];
+-[_ANERequest transactionHandle];
+
+@end
+
+@interface _ANESandboxingHelper : NSObject
+
+/* class methods */
++[_ANESandboxingHelper initialize];
++[_ANESandboxingHelper releaseSandboxExtension:handle:];
++[_ANESandboxingHelper canAccessPathAt:methodName:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forModel:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forPath:error:];
++[_ANESandboxingHelper issueSandboxExtensionForModel:error:];
++[_ANESandboxingHelper issueSandboxExtensionForPath:error:];
++[_ANESandboxingHelper sandboxExtensionPathForModelURL:];
+
+@end
+
+@interface _ANESharedEvents : NSObject {
+    /* instance variables */
+    @"NSArray" _signalEvents;
+    @"NSArray" _waitEvents;
+}
+
+@property (T@"NSArray",&,N,V_signalEvents) signalEvents;
+@property (T@"NSArray",&,N,V_waitEvents) waitEvents;
+
+/* class methods */
++[_ANESharedEvents new];
++[_ANESharedEvents sharedEventsWithSignalEvents:waitEvents:];
+
+/* instance methods */
+-[_ANESharedEvents description];
+-[_ANESharedEvents init];
+-[_ANESharedEvents initWithSignalEvents:waitEvents:];
+-[_ANESharedEvents setSignalEvents:];
+-[_ANESharedEvents setWaitEvents:];
+-[_ANESharedEvents signalEvents];
+-[_ANESharedEvents waitEvents];
+
+@end
+
+@interface _ANESharedSignalEvent : NSObject <NSSecureCoding> {
+    /* instance variables */
+    I _symbolIndex;
+    Q _value;
+    Q _agentMask;
+    q _eventType;
+    @"IOSurfaceSharedEvent" _sharedEvent;
+}
+
+@property (T@"IOSurfaceSharedEvent",R,N,V_sharedEvent) sharedEvent;
+@property (TQ,N,V_value) value;
+@property (TI,R,N,V_symbolIndex) symbolIndex;
+@property (TQ,N,V_agentMask) agentMask;
+@property (Tq,R,N,V_eventType) eventType;
+
+/* class methods */
++[_ANESharedSignalEvent new];
++[_ANESharedSignalEvent supportsSecureCoding];
++[_ANESharedSignalEvent signalEventWithValue:symbolIndex:eventType:sharedEvent:];
+
+/* instance methods */
+-[_ANESharedSignalEvent eventType];
+-[_ANESharedSignalEvent sharedEvent];
+-[_ANESharedSignalEvent description];
+-[_ANESharedSignalEvent init];
+-[_ANESharedSignalEvent initWithCoder:];
+-[_ANESharedSignalEvent setValue:];
+-[_ANESharedSignalEvent encodeWithCoder:];
+-[_ANESharedSignalEvent value];
+-[_ANESharedSignalEvent agentMask];
+-[_ANESharedSignalEvent initWithValue:symbolIndex:eventType:sharedEvent:agentMask:];
+-[_ANESharedSignalEvent setAgentMask:];
+-[_ANESharedSignalEvent symbolIndex];
+-[_ANESharedSignalEvent waitEvent];
+
+@end
+
+@interface _ANESharedWaitEvent : NSObject {
+    /* instance variables */
+    Q _value;
+    Q _eventType;
+    @"IOSurfaceSharedEvent" _sharedEvent;
+}
+
+@property (T@"IOSurfaceSharedEvent",R,N,V_sharedEvent) sharedEvent;
+@property (TQ,N,V_value) value;
+@property (TQ,R,N,V_eventType) eventType;
+
+/* class methods */
++[_ANESharedWaitEvent new];
++[_ANESharedWaitEvent waitEventWithValue:sharedEvent:];
++[_ANESharedWaitEvent waitEventWithValue:sharedEvent:eventType:];
+
+/* instance methods */
+-[_ANESharedWaitEvent eventType];
+-[_ANESharedWaitEvent sharedEvent];
+-[_ANESharedWaitEvent description];
+-[_ANESharedWaitEvent init];
+-[_ANESharedWaitEvent setValue:];
+-[_ANESharedWaitEvent value];
+-[_ANESharedWaitEvent initWithValue:sharedEvent:eventType:];
+
+@end
+
+@interface _ANEStrings : NSObject
+
+/* class methods */
++[_ANEStrings machServiceName];
++[_ANEStrings errorDomainGeneric];
++[_ANEStrings modelBinaryName];
++[_ANEStrings pps_internalDir];
++[_ANEStrings adapterWeightsAccessEntitlement];
++[_ANEStrings adapterWeightsAccessEntitlementBypassBootArg];
++[_ANEStrings aggressivePowerSavingEntitlement];
++[_ANEStrings binExtension];
++[_ANEStrings buildSpecificModelDataVaultDirectory];
++[_ANEStrings buildSpecificUserModelDataVaultDirectory];
++[_ANEStrings cloneDirectory];
++[_ANEStrings compilerServiceAccessEntitlement];
++[_ANEStrings coreAnalyticsANEUsageDefaultReportedClient];
++[_ANEStrings coreAnalyticsANEUsageKeyGroup];
++[_ANEStrings dataVaultStorageClass];
++[_ANEStrings defaultANECIRFileName];
++[_ANEStrings defaultANECIROptionsFileName];
++[_ANEStrings defaultCompilerOptionsFilename];
++[_ANEStrings defaultLLIRBundleName];
++[_ANEStrings defaultMILFileName];
++[_ANEStrings defaultMLIRFileName];
++[_ANEStrings defaultWeightFileName];
++[_ANEStrings errorDomainCompiler];
++[_ANEStrings errorDomainEspresso];
++[_ANEStrings errorDomainVirtIO];
++[_ANEStrings hwxExtension];
++[_ANEStrings inMemoryModelCacheName];
++[_ANEStrings internalLibraryPath];
++[_ANEStrings launchIOKitEvent];
++[_ANEStrings launchUserIOKitEvent];
++[_ANEStrings llirBundleExtension];
++[_ANEStrings machServiceNamePrivate];
++[_ANEStrings memoryUnwireAccessEntitlement];
++[_ANEStrings modelAssetsCacheName];
++[_ANEStrings modelCacheRetainName];
++[_ANEStrings modelDataVaultDirectory];
++[_ANEStrings modelPurgeInAllPartitionsEntitlement];
++[_ANEStrings modelSourceStoreName];
++[_ANEStrings noSandboxExtension];
++[_ANEStrings ppsCategoryForANE];
++[_ANEStrings ppsSubsystemForANE];
++[_ANEStrings pps_applicationDir];
++[_ANEStrings pps_catalogDir];
++[_ANEStrings pps_defaultSystemPathDir];
++[_ANEStrings pps_defaultUserPathPrefix];
++[_ANEStrings pps_frameworkDir];
++[_ANEStrings pps_privateFrameworkDir];
++[_ANEStrings pps_tmpDir];
++[_ANEStrings pps_varDir];
++[_ANEStrings processModelShareAccessEntitlement];
++[_ANEStrings restrictedAccessEntitlement];
++[_ANEStrings secondaryANECompilerServiceAccessEntitlement];
++[_ANEStrings storageMaintainerAccessEntitlement];
++[_ANEStrings systemLibraryPath];
++[_ANEStrings systemModelsCacheDirectory];
++[_ANEStrings tempDirectory];
++[_ANEStrings testing_ThreeSixtyModelName];
++[_ANEStrings testing_cacheDirectory];
++[_ANEStrings testing_cacheDirectoryWithSuffix:];
++[_ANEStrings testing_cacheDirectoryWithSuffix:buildVersion:];
++[_ANEStrings testing_cloneDirectory:];
++[_ANEStrings testing_dataVaultStorageClass];
++[_ANEStrings testing_defaultMLIRModelName];
++[_ANEStrings testing_encryptedModelNames];
++[_ANEStrings testing_external_modelPath];
++[_ANEStrings testing_external_precompiledModelPath];
++[_ANEStrings testing_inputDirectory];
++[_ANEStrings testing_modelDirectory];
++[_ANEStrings testing_modelDirectory:];
++[_ANEStrings testing_modelNames];
++[_ANEStrings testing_tempDirectory:];
++[_ANEStrings testing_userCacheDirectory];
++[_ANEStrings testing_userCacheDirectoryWithSuffix:];
++[_ANEStrings testing_userCacheDirectoryWithSuffix:buildVersion:];
++[_ANEStrings testing_userCloneDirectory:];
++[_ANEStrings testing_userTempDirectory:];
++[_ANEStrings testing_zeroModelName];
++[_ANEStrings trimmedModelPath:trimmedPath:];
++[_ANEStrings userCloneDirectory];
++[_ANEStrings userMachServiceName];
++[_ANEStrings userModelDataVaultDirectory];
++[_ANEStrings userTempDirectory];
++[_ANEStrings vm_allowPrecompiledBinaryBootArg];
++[_ANEStrings vm_debugDumpBootArg];
++[_ANEStrings vm_forceValidationOnGuestBootArg];
++[_ANEStrings vm_tmpBaseDirectory];
+
+@end
+
+@interface _ANEVirtualClient : NSObject {
+    /* instance variables */
+    I _connect;
+    @"NSObject<OS_dispatch_queue>" _queue;
+}
+
+@property (TI,R,N,V_connect) connect;
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_queue) queue;
+
+/* class methods */
++[_ANEVirtualClient new];
++[_ANEVirtualClient getObjectFromIOSurface:classType:length:];
++[_ANEVirtualClient freeModelFileIOSurfaces:];
++[_ANEVirtualClient printIOSurfaceDataInBytes:];
++[_ANEVirtualClient setCodeSigningIdentity:];
++[_ANEVirtualClient updateError:errorLength:errorCode:error:];
++[_ANEVirtualClient updatePerformanceStats:performanceStatsLength:perfStatsRawIOSurfaceRef:performanceStatsRawLength:hwExecutionTime:];
++[_ANEVirtualClient dictionaryGetNSStringForKey:key:];
++[_ANEVirtualClient getCodeSigningIdentity];
++[_ANEVirtualClient dictionaryGetInt64ForKey:key:];
++[_ANEVirtualClient copyDictionaryDataToStruct:dictionary:];
++[_ANEVirtualClient getDictionaryWithJSONEncodingFromIOSurface:withArchivedDataSize:];
++[_ANEVirtualClient shouldUsePrecompiledPath:options:shouldUseChunking:chunkingThreshold:];
++[_ANEVirtualClient dictionaryGetUInt64ForKey:key:];
++[_ANEVirtualClient updateError:errorLength:error:];
++[_ANEVirtualClient getCFDictionaryFromIOSurface:dataLength:];
++[_ANEVirtualClient printStruct:];
++[_ANEVirtualClient createIOSurface:ioSID:];
++[_ANEVirtualClient dictionaryGetInt8ForKey:key:];
++[_ANEVirtualClient sharedConnection];
++[_ANEVirtualClient copyLLIRBundleToIOSurface:writtenDataSize:];
++[_ANEVirtualClient dictionaryGetUInt32ForKey:key:];
+
+/* instance methods */
+-[_ANEVirtualClient hasANE];
+-[_ANEVirtualClient validateNetworkCreateMLIR:validation_params:];
+-[_ANEVirtualClient compiledModelExistsFor:];
+-[_ANEVirtualClient doEvaluateWithModel:options:request:qos:completionEvent:error:];
+-[_ANEVirtualClient validateNetworkCreate:uuid:function:directoryPath:scratchPadPath:milTextData:];
+-[_ANEVirtualClient outputDictIOSurfaceSize];
+-[_ANEVirtualClient loadModelNewInstance:options:modelInstParams:qos:error:];
+-[_ANEVirtualClient unloadModel:options:qos:error:];
+-[_ANEVirtualClient evaluateWithModel:options:request:qos:error:];
+-[_ANEVirtualClient copyModelOptionFiles:options:vmData:];
+-[_ANEVirtualClient copyToIOSurface:size:ioSID:];
+-[_ANEVirtualClient copyModelMetaData:options:dictionary:vmData:];
+-[_ANEVirtualClient copyOptions:vmData:];
+-[_ANEVirtualClient doMapIOSurfacesWithModel:request:cacheInference:error:];
+-[_ANEVirtualClient mapIOSurfacesWithModel:request:cacheInference:error:];
+-[_ANEVirtualClient negotiatedDataInterfaceVersion];
+-[_ANEVirtualClient readWeightFilename:];
+-[_ANEVirtualClient hostBuildVersionStr];
+-[_ANEVirtualClient doEvaluateWithModelLegacy:options:request:qos:completionEvent:error:];
+-[_ANEVirtualClient compileModel:options:qos:error:];
+-[_ANEVirtualClient transferFileToHostWithPath:withChunkSize:withUUID:withModelInputPath:overWriteFileNameWith:];
+-[_ANEVirtualClient connect];
+-[_ANEVirtualClient getValidateNetworkVersion];
+-[_ANEVirtualClient init];
+-[_ANEVirtualClient copyDictionaryToIOSurface:copiedDataSize:createdIOSID:];
+-[_ANEVirtualClient releaseIOSurfaces:];
+-[_ANEVirtualClient beginRealTimeTask];
+-[_ANEVirtualClient endRealTimeTask];
+-[_ANEVirtualClient copyToIOSurface:length:ioSID:];
+-[_ANEVirtualClient parallelDecompressedData:];
+-[_ANEVirtualClient loadModel:options:qos:error:];
+-[_ANEVirtualClient updatePerformanceStats:];
+-[_ANEVirtualClient doJsonParsingMatchWeightName:];
+-[_ANEVirtualClient checkKernReturnValue:selector:outParams:];
+-[_ANEVirtualClient purgeCompiledModelMatchingHash:];
+-[_ANEVirtualClient copyModelOptionFiles:options:dictionary:vmData:];
+-[_ANEVirtualClient echo:];
+-[_ANEVirtualClient numANEs];
+-[_ANEVirtualClient exchangeBuildVersionInfo];
+-[_ANEVirtualClient callIOUserClientWithDictionary:inDictionary:error:];
+-[_ANEVirtualClient callIOUserClient:inParams:outParams:];
+-[_ANEVirtualClient negotiatedCapabilityMask];
+-[_ANEVirtualClient isInternalBuild];
+-[_ANEVirtualClient printDictionary:];
+-[_ANEVirtualClient copyFilesInDirectoryToIOSurfaces:ioSurfaceRefs:ioSurfaceSizes:fileNames:];
+-[_ANEVirtualClient validateEnvironmentForPrecompiledBinarySupport];
+-[_ANEVirtualClient aneBoardtype];
+-[_ANEVirtualClient dealloc];
+-[_ANEVirtualClient compiledModelExistsMatchingHash:];
+-[_ANEVirtualClient initWithSingletonAccess];
+-[_ANEVirtualClient loadModelNewInstanceLegacy:options:modelInstParams:qos:error:];
+-[_ANEVirtualClient copyErrorValue:vmData:];
+-[_ANEVirtualClient numANECores];
+-[_ANEVirtualClient updateError:error:];
+-[_ANEVirtualClient copyErrorValue:];
+-[_ANEVirtualClient copyAllModelFiles:dictionary:ioSurfaceRefs:];
+-[_ANEVirtualClient copyModel:options:vmData:];
+-[_ANEVirtualClient purgeCompiledModel:];
+-[_ANEVirtualClient sessionHintWithModel:hint:options:report:error:];
+-[_ANEVirtualClient aneArchitectureTypeStr];
+-[_ANEVirtualClient sendGuestBuildVersion];
+-[_ANEVirtualClient getDeviceInfo];
+-[_ANEVirtualClient getModelAttribute:];
+-[_ANEVirtualClient queue];
+-[_ANEVirtualClient copyOptions:dictionary:vmData:];
+
+@end
+
+@interface _ANEWeight : NSObject <NSCopying, NSSecureCoding> {
+    /* instance variables */
+    @"NSString" _weightSymbol;
+    @"NSURL" _weightURL;
+    @"NSData" _SHACode;
+    @"NSString" _sandboxExtension;
+}
+
+@property (T@"NSURL",C,N,V_weightURL) weightURL;
+@property (T@"NSString",R,C,N,V_weightSymbol) weightSymbol;
+@property (T@"NSData",R,C,N,V_SHACode) SHACode;
+@property (T@"NSString",C,N,V_sandboxExtension) sandboxExtension;
+
+/* class methods */
++[_ANEWeight new];
++[_ANEWeight supportsSecureCoding];
++[_ANEWeight weightWithSymbolAndURL:weightURL:];
++[_ANEWeight weightWithSymbolAndURLSHA:weightURL:SHACode:];
+
+/* instance methods */
+-[_ANEWeight setSandboxExtension:];
+-[_ANEWeight description];
+-[_ANEWeight init];
+-[_ANEWeight initWithCoder:];
+-[_ANEWeight sandboxExtension];
+-[_ANEWeight copyWithZone:];
+-[_ANEWeight encodeWithCoder:];
+-[_ANEWeight SHACode];
+-[_ANEWeight initWithWeightSymbolAndURL:weightURL:];
+-[_ANEWeight initWithWeightSymbolAndURLSHA:weightURL:SHACode:sandboxExtension:];
+-[_ANEWeight setWeightURL:];
+-[_ANEWeight updateWeightURL:];
+-[_ANEWeight weightSymbol];
+-[_ANEWeight weightURL];
+
+@end
+
+@interface NSFileManager (ANE)
+
+/* class methods */
++[NSFileManager  ane_addWriteModeForPath:];
++[NSFileManager  ane_addWriteModeIfMissing:originalMode:];
+
+@end
+
+
+@protocol refs
+0x001e6ab7f00 => 0x001ec54d4f8: _ANEDaemonProtocol_Private
+0x001e6ab6870 => 0x001ea41aa10: NSCopying
+0x001e6ab6878 => 0x001ea41aa70: NSCoding
+0x001e6ab6880 => 0x001ea41aad0: NSSecureCoding
+0x001e6ab6888 => 0x001ea41acc8: _ANEDaemonProtocol
+0x001e6ab6890 => 0x001ea41ad68: _ANEDaemonProtocol_Private
+0x001e6ab7ef8 => 0x001ec54d498: _ANEDaemonProtocol
+
+@class refs
+
+@super refs
+0x001e6ab7f08 => 0x001ed5b8390: _ANEModelToken
+0x001e6ab7f10 => 0x001ec989420: _ANEProgramForEvaluation
+0x001e6ab7f48 => 0x001ec989268: _ANERequest
+0x001e6ab7f58 => 0x001ec9895b0: _ANEIOSurfaceOutputSets
+0x001e6ab7f68 => 0x001ec9898d0: _ANEInMemoryModel
+0x001e6ab7fb8 => 0x001ec989448: _ANEClient
+0x001e6ab7f20 => 0x001ec989178: _ANEWeight
+0x001e6ab7f38 => 0x001ec989880: _ANEOutputSetEnqueue
+0x001e6ab7f40 => 0x001ec9896a0: _ANEModel
+0x001e6ab7f60 => 0x001ec989380: _ANEProgramIOSurfacesMapper
+0x001e6ab7f78 => 0x001ec989218: _ANESharedEvents
+0x001e6ab7f88 => 0x001ec989920: _ANEPerformanceStats
+0x001e6ab7f90 => 0x001ec989790: _ANEVirtualClient
+0x001e6ab7f98 => 0x001ec989970: _ANEInputBuffersReady
+0x001e6ab7f18 => 0x001ec9891c8: _ANEProcedureData
+0x001e6ab7f30 => 0x001ec989830: _ANEPerformanceStatsIOSurface
+0x001e6ab7f50 => 0x001ec989600: _ANEChainingRequest
+0x001e6ab7fa8 => 0x001ec989628: _ANEBuffer
+0x001e6ab7fb0 => 0x001ec9895d8: _ANEDeviceController
+0x001e6ab7fc8 => 0x001ec9891a0: _ANESharedWaitEvent
+0x001e6ab7f28 => 0x001ec989588: _ANEModelInstanceParameters
+0x001e6ab7f70 => 0x001ec9893a8: _ANEDaemonConnection
+0x001e6ab7f80 => 0x001ec9896f0: _ANESharedSignalEvent
+0x001e6ab7fa0 => 0x001ec9896c8: _ANEIOSurfaceObject
+0x001e6ab7fc0 => 0x001ec989a10: _ANEInMemoryModelDescriptor
+
+@selectors refs
+0x001e6ab68c0 => 0x001fadea776: URLByDeletingLastPathComponent
+0x001e6ab6af8 => 0x001faa44f90: containsString:
+0x001e6ab7130 => 0x001fb3b772f: isEqualToInMemoryModelDescriptor:
+0x001e6ab7270 => 0x001fb3b7b6e: mpsConstants
+0x001e6ab7628 => 0x001fb3b84ea: setModelAttributes:
+0x001e6ab79e0 => 0x001fac1feb8: sendGuestBuildVersion
+0x001e6ab7d10 => 0x001fb3b885d: testing_defaultMLIRModelName
+0x001e6ab6950 => 0x001fa0618d0: aneSubType
+0x001e6ab6ed0 => 0x001fb3b6e17: guestToHostInterfaceTooOld:
+0x001e6ab79c0 => 0x001f9f31990: writeToFile:atomically:
+0x001e6ab7dc0 => 0x001fa11d4bd: printIOSurfaceDataInBytes:
+0x001e6ab6bb0 => 0x001fb3b699c: correctFileURLFormat:
+0x001e6ab71d8 => 0x001fa970010: loadModelNewInstanceLegacy:options:modelInstParams:qos:error:
+0x001e6ab7230 => 0x001fa3ef290: model
+0x001e6ab76d0 => 0x001f9fbd410: sharedEvent
+0x001e6ab7bb8 => 0x001fb3b65bf: buildSpecificModelDataVaultDirectory
+0x001e6ab7c00 => 0x001fb3b6d6c: errorDomainCompiler
+0x001e6ab7e40 => 0x001fb347fab: loadRealTimeModel:options:qos:error:
+0x001e6ab6968 => 0x001fb3b64aa: ane_addWriteModeForPath:
+0x001e6ab74d8 => 0x001fb3b81dc: purgeCompiledModel:withReply:
+0x001e6ab7598 => 0x001fb3b83fa: sandboxExtensionPathForModelURL:
+0x001e6ab7488 => 0x001fb3b7fe5: programIOSurfacesMapErrorForMethod:code:
+0x001e6ab6a70 => 0x001fb3b679e: compiledModelExistsFor:withReply:
+0x001e6ab6b00 => 0x001f9ffc410: contentsOfDirectoryAtPath:error:
+0x001e6ab7140 => 0x001f9e1abc9: isEqualToString:
+0x001e6ab72f8 => 0x001fadf950f: numberWithUnsignedInt:
+0x001e6ab73c0 => 0x001fb3b7d63: pps_defaultSystemPathDir
+0x001e6ab7948 => 0x001fb3b8c5f: virtualizationHostError:
+0x001e6ab6dd8 => 0x001fb3b6da6: executionDelay
+0x001e6ab77f8 => 0x001fa3fac10: synchronousRemoteObjectProxyWithErrorHandler:
+0x001e6ab7c80 => 0x001fb3b6b05: defaultMLIRFileName
+0x001e6ab74c0 => 0x001fb3b816a: programWithController:intermediateBufferHandle:queueDepth:
+0x001e6ab75d0 => 0x001fa186510: setCodeSigningIdentity:
+0x001e6ab6bc8 => 0x001fae01f77: createDirectoryAtPath:withIntermediateDirectories:attributes:error:
+0x001e6ab6c78 => 0x001fa1677d8: defaultManager
+0x001e6ab6df8 => 0x001faa2d7f8: fileAttributes
+0x001e6ab70f0 => 0x001f9dfa090: invalidate
+0x001e6ab77d8 => 0x001fa0e7710: substringFromIndex:
+0x001e6ab7840 => 0x001f9ee6890: timeIntervalSince1970
+0x001e6ab7500 => 0x001faf81024: queueDepth
+0x001e6ab75a0 => 0x001fb3b841b: saveModelFiles
+0x001e6ab7928 => 0x001facbe910: value
+0x001e6ab7ac8 => 0x001fb019e74: l
+0x001e6ab7c40 => 0x001fb3b6377: adapterWeightsAccessEntitlement
+0x001e6ab6e80 => 0x001fb347576: getCacheURLIdentifier
+0x001e6ab7088 => 0x001fb3b75eb: inputArray
+0x001e6ab76e0 => 0x001fb3493bc: sharedEventsWithSignalEvents:waitEvents:
+0x001e6ab7850 => 0x001fb3b8a9a: transactionHandle
+0x001e6ab7968 => 0x001fb3b8ce3: vm_debugDumpBootArg
+0x001e6ab70d0 => 0x001fb347e69: intermediateBufferHandle
+0x001e6ab73e0 => 0x001fb3b7da7: pps_privateFrameworkDir
+0x001e6ab7548 => 0x001fa811c90: removeLastObject
+0x001e6ab7d90 => 0x001fb3b8457: setAgentMask:
+0x001e6ab7dd8 => 0x001fb3b6898: consumeSandboxExtension:forModel:error:
+0x001e6ab7e80 => 0x001fb3b80e7: programLoadErrorForMethod:
+0x001e6ab7ec8 => 0x001fb3b8128: programLoadNewInstanceErrorForMethod:code:
+0x001e6ab6d88 => 0x001fa209890: enumerateKeysAndObjectsUsingBlock:
+0x001e6ab71c0 => 0x001fb3b7804: loadModel:sandboxExtension:options:qos:withReply:
+0x001e6ab68f0 => 0x001f9fb9da0: addIndex:
+0x001e6ab7188 => 0x001fa130e10: key
+0x001e6ab7278 => 0x001f9ea1f10: mutableBytes
+0x001e6ab7420 => 0x001fb0251d7: procedureIndex
+0x001e6ab7438 => 0x001f9fe5210: processInfo
+0x001e6ab76a8 => 0x001fb3b8581: setWeightURL:
+0x001e6ab7a20 => 0x001fa171d90: processIdentifier
+0x001e6ab7c20 => 0x001fb3b7aeb: modelPurgeInAllPartitionsEntitlement
+0x001e6ab6e10 => 0x001fae229fe: fileHandleForReadingAtPath:
+0x001e6ab6f28 => 0x001fb3b6e8c: hostTooOld:
+0x001e6ab7060 => 0x001fb3b74eb: initWithValue:sharedEvent:eventType:
+0x001e6ab7c38 => 0x001fb3b842a: secondaryANECompilerServiceAccessEntitlement
+0x001e6ab7d28 => 0x001fb3b7910: mapperWithProgramHandle:
+0x001e6ab7e38 => 0x001fb3b6589: buffersReadyWithModel:inputBuffers:options:qos:error:
+0x001e6ab6b30 => 0x001fa377a56: copyDictionaryDataToStruct:dictionary:
+0x001e6ab6fc0 => 0x001fb3b704b: initWithHardwareExecution:perfCounterData:ANEStatsRawData:
+0x001e6ab7530 => 0x001fb3b824d: realTimeProgramPriority
+0x001e6ab7700 => 0x001fb3b85cf: signalEvents
+0x001e6ab7aa8 => 0x001fb348240: objectWithIOSurface:statType:
+0x001e6ab6948 => 0x001fb346ac8: aneRealTimeTaskQoS
+0x001e6ab6d78 => 0x001fb3b6d05: endRealTimeTaskWithReply:
+0x001e6ab7160 => 0x001fb3b775c: isOpenLoop
+0x001e6ab7640 => 0x001fa83fc10: setObject:forKey:
+0x001e6ab7db8 => 0x001fa804810: printStruct:
+0x001e6ab7220 => 0x001fb3b78fa: mapperWithController:
+0x001e6ab7288 => 0x001fa856fa0: negotiatedCapabilityMask
+0x001e6ab74f8 => 0x001fad0cf10: queue
+0x001e6ab79e8 => 0x001fa07eee8: hostBuildVersionStr
+0x001e6ab7a00 => 0x001fa6ec090: .cxx_destruct
+0x001e6ab7ce0 => 0x001fb3b87a3: testing_ThreeSixtyModelName
+0x001e6ab7ee8 => 0x001fb3b7b47: modelWithMILText:weights:optionsPlist:
+0x001e6ab69c0 => 0x001fb3b64eb: badArgumentForMethod:
+0x001e6ab6a08 => 0x001fadebec2: cStringUsingEncoding:
+0x001e6ab6eb8 => 0x001faf5f9e7: getUUID
+0x001e6ab6fa0 => 0x001fb3b6ff4: initWithCsIdentity:teamIdentity:modelIdentifier:processIdentifier:
+0x001e6ab7660 => 0x001fafc69f0: setProgram:
+0x001e6ab7bd0 => 0x001fb3b7969: modelAssetsCacheName
+0x001e6ab6a98 => 0x001fa8eef10: completionHandler
+0x001e6ab6b20 => 0x001f9df2b10: copy
+0x001e6ab6bb8 => 0x001f9e67e90: count
+0x001e6ab6e68 => 0x001fb3b6e08: fwEnqueueDelay
+0x001e6ab6f00 => 0x001fb3b6e47: hexStringForBytes:length:
+0x001e6ab7110 => 0x001fb3b7711: isAnetoolRootDaemonConnection
+0x001e6ab6c48 => 0x001fa4b4510: decodeObjectOfClass:forKey:
+0x001e6ab6ca8 => 0x001fa56a210: dictionary
+0x001e6ab78c8 => 0x001fb3b8b4e: updateModelAttributes:state:programHandle:intermediateBufferHandle:queueDepth:
+0x001e6ab7d18 => 0x001fb3b6b2f: deviceController
+0x001e6ab7d30 => 0x001fb3b676c: compileWithQoS:options:error:
+0x001e6ab7ef0 => 0x001fb3467e3: waitEventWithValue:sharedEvent:
+0x001e6ab6a90 => 0x001fb3b6803: compilerOptionsWithOptions:isCompiledModelCached:
+0x001e6ab6c28 => 0x001fadef306: dataWithLength:
+0x001e6ab6e20 => 0x001fb3b6dec: fileNotFoundErrorForMethod:
+0x001e6ab72d8 => 0x001fadf9500: numberWithInt:
+0x001e6ab7410 => 0x001fb3b7e88: priorityQ
+0x001e6ab7b00 => 0x001fb3b693b: copySHA256For:toBuffer:
+0x001e6ab7cb8 => 0x001fb3b8988: testing_userCacheDirectoryWithSuffix:buildVersion:
+0x001e6ab7da0 => 0x001fb3b7448: initWithReconstructedData:hardwareExecutionNS:
+0x001e6ab6cd0 => 0x001fadec5a1: dictionaryWithObjects:forKeys:count:
+0x001e6ab73e8 => 0x001fb3b7dbf: pps_tmpDir
+0x001e6ab7870 => 0x001fb3b8aca: unloadModel:options:qos:withReply:
+0x001e6ab7ad0 => 0x001fb02723b: setL:
+0x001e6ab69b8 => 0x001f9fd2acc: attributesOfItemAtPath:error:
+0x001e6ab6d68 => 0x001faa37010: encodeXPCObject:forKey:
+0x001e6ab6e40 => 0x001fadec7a4: fileURLWithPath:
+0x001e6ab6f20 => 0x001fb3477a4: hexStringIdentifier
+0x001e6ab71e8 => 0x001fa6d3590: longValue
+0x001e6ab7608 => 0x001fa9d5390: setInterruptionHandler:
+0x001e6ab7b50 => 0x001fb3b82f0: requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:
+0x001e6ab7c98 => 0x001fb3b77db: launchUserIOKitEvent
+0x001e6ab6b60 => 0x001fad57923: copyLLIRBundleToIOSurface:writtenDataSize:
+0x001e6ab7128 => 0x001faa58490: isEqual:
+0x001e6ab7428 => 0x001fb3b63f7: procedureInfoForProcedureIndex:
+0x001e6ab7798 => 0x001fabee6a6: stringByDeletingLastPathComponent
+0x001e6ab7d38 => 0x001fb023e7e: loadWithQoS:options:error:
+0x001e6ab68f8 => 0x001fa6f3610: addObject:
+0x001e6ab7388 => 0x001fb348369: perfStatsArray
+0x001e6ab7750 => 0x001fa2d8710: state
+0x001e6ab7b98 => 0x001fb346af3: aneUtilityTaskQoS
+0x001e6ab7c90 => 0x001fb3b77ca: launchIOKitEvent
+0x001e6ab6e70 => 0x001fa790390: getCFDictionaryFromIOSurface:dataLength:
+0x001e6ab7190 => 0x001fa50a490: lastObject
+0x001e6ab7910 => 0x001f9e5960d: validateNetworkCreate:uuid:function:directoryPath:scratchPadPath:milTextData:
+0x001e6ab7958 => 0x001fb3b8c97: virtualizationKernelError:kernelErrorCode:
+0x001e6ab7ed8 => 0x001fb3b66e2: cloneIfWritable:isEncryptedModel:cloneDirectory:
+0x001e6ab69a8 => 0x001fa7ea207: array
+0x001e6ab6be0 => 0x001fb3b6a25: currentAsyncRequestsInFlight
+0x001e6ab7a48 => 0x001fa6381b3: precompiledModelChecksDisabled
+0x001e6ab7cf0 => 0x001fb3b887a: testing_encryptedModelNames
+0x001e6ab7040 => 0x001fb3b7477: initWithRequestPerformanceBuffer:statsBufferSize:
+0x001e6ab7878 => 0x001fb349682: unmapIOSurfacesWithModel:request:
+0x001e6ab78e8 => 0x001fb3b8bca: userDaemonConnection
+0x001e6ab6c58 => 0x001fa8a401b: decodeXPCObjectForKey:
+0x001e6ab7600 => 0x001fb3b84c2: setIntermediateBufferHandle:
+0x001e6ab7680 => 0x001f9eb217a: setSandboxExtension:
+0x001e6ab7b08 => 0x001fb3b6e33: hashForString:seed:
+0x001e6ab7b70 => 0x001f9ed5ba9: tool
+0x001e6ab6a38 => 0x001fb3b6713: codeSigningIDFor:processIdentifier:
+0x001e6ab6ae0 => 0x001fb3b68c0: consumeSandboxExtension:forPath:error:
+0x001e6ab6c30 => 0x001f9fbe910: date
+0x001e6ab6c80 => 0x001fb3b6b19: defaultWeightFileName
+0x001e6ab73b8 => 0x001fb3b7d54: pps_catalogDir
+0x001e6ab75e8 => 0x001f9e28e90: setDescriptor:
+0x001e6ab7688 => 0x001fade9f90: setState:
+0x001e6ab7920 => 0x001fb3b8c21: validateRequest:model:
+0x001e6ab70e0 => 0x001fb3b76b2: invalidModelErrorForMethod:
+0x001e6ab79f8 => 0x001f9fb5ead: copyToIOSurface:size:ioSID:
+0x001e6ab7c08 => 0x001fb3b6d80: errorDomainEspresso
+0x001e6ab7da8 => 0x001fb3b7cec: pStatsRawData
+0x001e6ab78c0 => 0x001fb3b8b31: updateModelAttributes:state:
+0x001e6ab70f8 => 0x001fa978110: ioSurface
+0x001e6ab7590 => 0x001fa90a16e: sandboxExtension
+0x001e6ab77b0 => 0x001fa7cb910: stringFromDate:
+0x001e6ab7900 => 0x001f9ff8710: validate
+0x001e6ab7ae8 => 0x001fb3b799b: modelAtURLWithCacheURLIdentifier:key:cacheURLIdentifier:
+0x001e6ab7d48 => 0x001fb01faa0: evaluateWithQoS:options:request:error:
+0x001e6ab6bf8 => 0x001fb3b6a42: daemonConnectionRestricted
+0x001e6ab6c88 => 0x001fa1c7190: description
+0x001e6ab6cb8 => 0x001faa67edf: dictionaryGetInt8ForKey:key:
+0x001e6ab7200 => 0x001fac76d90: machServiceName
+0x001e6ab7290 => 0x001fa017190: negotiatedDataInterfaceVersion
+0x001e6ab7380 => 0x001fb34835f: perfStats
+0x001e6ab7858 => 0x001fa0e0290: transferFileToHostWithPath:withChunkSize:withUUID:withModelInputPath:overWriteFileNameWith:
+0x001e6ab69a0 => 0x001fa0fcc10: arguments
+0x001e6ab6ba8 => 0x001fb3b697e: coreAnalyticsANEUsageKeyGroup
+0x001e6ab79b0 => 0x001fa9c90c4: weightsBuffer
+0x001e6ab7bd8 => 0x001fb3b8795: tempDirectory
+0x001e6ab68a8 => 0x001fa8b6310: dealloc
+0x001e6ab6f78 => 0x001fa7b9590: initWithBytes:length:
+0x001e6ab7350 => 0x001fb3b7c5b: outputIndexArray
+0x001e6ab7360 => 0x001fb3b7cc6: outputSymbolIndicesForProcedureIndex:
+0x001e6ab7788 => 0x001fa0bd810: stringByAppendingPathComponent:
+0x001e6ab7518 => 0x001fadfaa70: rangeOfString:options:range:
+0x001e6ab7810 => 0x001fb3b87bf: testing_cacheDirectory
+0x001e6ab7af8 => 0x001fb3b79d4: modelAtURLWithSourceURL:sourceURL:key:identifierSource:cacheURLIdentifier:
+0x001e6ab7d58 => 0x001fb3b78cb: mapIOSurfacesWithRequest:cacheInference:error:
+0x001e6ab6978 => 0x001fabd7e90: appendBytes:length:
+0x001e6ab6fc8 => 0x001fb3b7086: initWithIOSurface:startOffset:shouldRetain:
+0x001e6ab7028 => 0x001fb3b73e0: initWithProcedure:weightArray:
+0x001e6ab7258 => 0x001fb3b7a84: modelDataVaultDirectory
+0x001e6ab7550 => 0x001fb3b8290: reportErrorMsg:status:
+0x001e6ab7800 => 0x001fb3b8719: systemLibraryPath
+0x001e6ab7988 => 0x001fb3b8d60: waitEvents
+0x001e6ab7c70 => 0x001fb3b6abd: defaultCompilerOptionsFilename
+0x001e6ab7358 => 0x001fb3b7cbb: outputSets
+0x001e6ab7418 => 0x001fb3b7e92: procedureArray
+0x001e6ab75f0 => 0x001f9e22590: setDevice:
+0x001e6ab78a8 => 0x001fa9e0edb: updateError:error:
+0x001e6ab7d60 => 0x001fb3b8b15: unmapIOSurfacesWithRequest:
+0x001e6ab6b70 => 0x001f9fc4d10: copyModelMetaData:options:dictionary:vmData:
+0x001e6ab7178 => 0x001fb3b7781: issueSandboxExtensionForModel:error:
+0x001e6ab74c8 => 0x001fb3b81a5: programWithHandle:intermediateBufferHandle:queueDepth:
+0x001e6ab7ac0 => 0x001fb3b8541: setString_id:
+0x001e6ab7e68 => 0x001fb3493e5: sharedPrivateConnection
+0x001e6ab6a00 => 0x001f9e22390: bytes
+0x001e6ab6c98 => 0x001fadf48b7: destinationOfSymbolicLinkAtPath:error:
+0x001e6ab7018 => 0x001fb3b7392: initWithModelIdentifier:
+0x001e6ab7a60 => 0x001fac81890: encodeWithCoder:
+0x001e6ab7ba8 => 0x001fb3b8265: realTimeQueueIndex
+0x001e6ab6a18 => 0x001fa83f610: callIOUserClient:inParams:outParams:
+0x001e6ab6b40 => 0x001fab8469f: copyErrorValue:
+0x001e6ab6cf0 => 0x001fb3b6ba6: doEnqueueSetsWithModel:outputSet:options:qos:error:
+0x001e6ab7078 => 0x001fb3b7587: initWithWeightSymbolAndURLSHA:weightURL:SHACode:sandboxExtension:
+0x001e6ab7570 => 0x001fb3b83d0: resetOnUnload
+0x001e6ab77e0 => 0x001f9f11e10: substringToIndex:
+0x001e6ab7950 => 0x001fb3b8c78: virtualizationHostError:error:
+0x001e6ab7b68 => 0x001fad0afa2: maintenance
+0x001e6ab6d38 => 0x001fb3b6cc3: driverMaskForANEFMask:
+0x001e6ab6e60 => 0x001fa05e010: freeModelFileIOSurfaces:
+0x001e6ab7000 => 0x001fb3b721a: initWithModelAtURL:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:
+0x001e6ab7118 => 0x001fa9948e2: isBoolBootArgSetTrue:
+0x001e6ab7758 => 0x001fadcfe10: stats
+0x001e6ab7d98 => 0x001faada210: setValue:
+0x001e6ab7e28 => 0x001fb3b7dfc: prepareChainingWithModel:options:chainingReq:qos:error:
+0x001e6ab7ea8 => 0x001fb3b7fa0: programChainingPrepareErrorForMethod:
+0x001e6ab68d8 => 0x001fa0c8b90: UUID
+0x001e6ab6a20 => 0x001fa82bf90: callIOUserClientWithDictionary:inDictionary:error:
+0x001e6ab6d48 => 0x001fb3b63b7: echo:withReply:
+0x001e6ab6e90 => 0x001facae990: getDeviceInfo
+0x001e6ab76e8 => 0x001fb3b85aa: shouldSkipCloneFor:isEncryptedModel:
+0x001e6ab7b10 => 0x001fb3b754b: initWithVirtualModel:
+0x001e6ab7bc0 => 0x001fb3b65e4: buildSpecificUserModelDataVaultDirectory
+0x001e6ab6b98 => 0x001fa535cdc: copyToIOSurface:length:ioSID:
+0x001e6ab6d50 => 0x001fb3b6cda: emitPerfcounterSignpostsWithModelStringID:
+0x001e6ab70a0 => 0x001fb3b766a: inputFreeValue
+0x001e6ab71e0 => 0x001fb3b7872: localModelPath
+0x001e6ab7588 => 0x001fa429a90: resume
+0x001e6ab7938 => 0x001fb3b8c38: virtualClient
+0x001e6ab7a38 => 0x001f9fc29bc: aneArchitectureType
+0x001e6ab7e98 => 0x001fb3b76f2: invalidModelKeyErrorForMethod:
+0x001e6ab71b8 => 0x001fa5dfaa7: loadModel:options:qos:error:
+0x001e6ab75a8 => 0x001f9e55e90: scheme
+0x001e6ab7828 => 0x001fb3b88ee: testing_modelDirectory
+0x001e6ab7c78 => 0x001fb3b6a74: dataVaultStorageClass
+0x001e6ab6928 => 0x001fb3b649c: analyticsKey:
+0x001e6ab6b10 => 0x001fb3b6903: controllerWithProgramHandle:
+0x001e6ab6b90 => 0x001f9fd59a4: copyOptions:vmData:
+0x001e6ab6c70 => 0x001fb3b6af2: defaultMILFileName
+0x001e6ab6e98 => 0x001fa677f90: getDictionaryWithJSONEncodingFromIOSurface:withArchivedDataSize:
+0x001e6ab78a0 => 0x001fa440690: unsignedShortValue
+0x001e6ab78f0 => 0x001fb3b8bdf: userMachServiceName
+0x001e6ab7a58 => 0x001f9decf8a: new
+0x001e6ab69e8 => 0x001fa436810: boolValue
+0x001e6ab6a30 => 0x001fa6c4190: checkKernReturnValue:selector:outParams:
+0x001e6ab6b58 => 0x001fae200b4: copyItemAtPath:toPath:error:
+0x001e6ab7740 => 0x001fabf10a4: startOffset
+0x001e6ab78f8 => 0x001fb3b8bf3: userModelDataVaultDirectory
+0x001e6ab7978 => 0x001fb3b8d18: vm_tmpBaseDirectory
+0x001e6ab7a10 => 0x001fb3b6a1a: csIdentity
+0x001e6ab7b38 => 0x001fb3485f0: requestWithInputs:inputIndices:outputs:outputIndices:perfStats:procedureIndex:
+0x001e6ab68b0 => 0x001fadef11f: JSONObjectWithData:options:error:
+0x001e6ab6ce0 => 0x001fb3b6b40: dispatchQueueArrayByMappingPrioritiesWithTag:
+0x001e6ab7198 => 0x001fa08af90: lastPathComponent
+0x001e6ab72a0 => 0x001fb3b6307: networkTextHash
+0x001e6ab7728 => 0x001fa232f90: source
+0x001e6ab7b60 => 0x001f9e1ba90: compiler
+0x001e6ab7ce8 => 0x001fb3b891d: testing_modelNames
+0x001e6ab7ee0 => 0x001fb0245d6: modelWithNetworkDescription:weights:optionsPlist:
+0x001e6ab6908 => 0x001fb3b645b: agentMask
+0x001e6ab6a28 => 0x001fb3b6620: canAccessPathAt:methodName:error:
+0x001e6ab6ad0 => 0x001f9e9f910: connections
+0x001e6ab7240 => 0x001fb3b62d7: modelAtURL:key:modelAttributes:
+0x001e6ab7510 => 0x001fadfaa4a: rangeOfString:
+0x001e6ab76f8 => 0x001fb349409: signalEventWithValue:symbolIndex:eventType:sharedEvent:
+0x001e6ab6fd8 => 0x001fb3b70ce: initWithIOSurfaceObject:symbolIndex:source:
+0x001e6ab72f0 => 0x001fadeda6c: numberWithLongLong:
+0x001e6ab7818 => 0x001fb3b87d6: testing_cacheDirectoryWithSuffix:
+0x001e6ab7d40 => 0x001fb02960b: unloadWithQoS:error:
+0x001e6ab7df0 => 0x001fb3b7bb6: objectWithIOSurface:startOffset:
+0x001e6ab7e30 => 0x001fb3b6d1f: enqueueSetsWithModel:outputSet:options:qos:error:
+0x001e6ab72d0 => 0x001fadeda5a: numberWithDouble:
+0x001e6ab75f8 => 0x001fb3b84b9: setIndex
+0x001e6ab7a18 => 0x001fb3b8788: teamIdentity
+0x001e6ab7ad8 => 0x001fb3b797e: modelAtURL:key:mpsConstants:
+0x001e6ab6af0 => 0x001fa303110: containsObject:
+0x001e6ab6c90 => 0x001fa056590: descriptor
+0x001e6ab79f0 => 0x001f9e8f0f7: outputDictIOSurfaceSize
+0x001e6ab6ae8 => 0x001fadec0e0: containsIndex:
+0x001e6ab6f88 => 0x001fa4fd010: initWithContentsOfFile:options:error:
+0x001e6ab7390 => 0x001fb3b7cfa: perfStatsMask
+0x001e6ab7478 => 0x001fa90fcb2: program
+0x001e6ab7778 => 0x001f9ffb610: stop
+0x001e6ab7e08 => 0x001fb3b69de: createIOSurfaceWithWidth:pixel_size:height:bytesPerElement:
+0x001e6ab6930 => 0x001fabf77b8: aneArchitectureTypeStr
+0x001e6ab6a60 => 0x001fb3b678a: compiledModelExists
+0x001e6ab6cc0 => 0x001fa2875b5: dictionaryGetNSStringForKey:key:
+0x001e6ab6cd8 => 0x001fadec5c6: dictionaryWithObjectsAndKeys:
+0x001e6ab7a98 => 0x001fb3b8d8e: weightWithSymbolAndURLSHA:weightURL:SHACode:
+0x001e6ab7b30 => 0x001fb025634: requestWithInputs:inputIndices:outputs:outputIndices:procedureIndex:
+0x001e6ab6d18 => 0x001fb3b6c2e: doLoadModelNewInstance:options:modelInstParams:qos:error:
+0x001e6ab7340 => 0x001fb3b7c42: outputArray
+0x001e6ab7480 => 0x001fb34851a: programHandle
+0x001e6ab77f0 => 0x001fb3b86eb: symbolIndicesForProcedureIndex:indexArrayKey:
+0x001e6ab79d0 => 0x001fa08042d: doEvaluateWithModelLegacy:options:request:qos:completionEvent:error:
+0x001e6ab7e90 => 0x001fb3b7947: missingCodeSigningErrorForMethod:
+0x001e6ab6960 => 0x001fa4a415d: aneSubTypeVariant
+0x001e6ab6f40 => 0x001fb3b6ea5: identifierSource
+0x001e6ab7308 => 0x001fadf9541: numberWithUnsignedLong:
+0x001e6ab76c0 => 0x001fadea5d2: setWithObjects:
+0x001e6ab7be8 => 0x001fb3b8c0f: userTempDirectory
+0x001e6ab7dc8 => 0x001fad6fe24: dictionaryGetUInt32ForKey:key:
+0x001e6ab6cf8 => 0x001fb3b6bda: doEvaluateDirectWithModel:options:request:qos:error:
+0x001e6ab71d0 => 0x001fb3b7836: loadModelNewInstance:options:modelInstParams:qos:withReply:
+0x001e6ab7860 => 0x001fb3b8aac: trimmedModelPath:trimmedPath:
+0x001e6ab7930 => 0x001fae30e3c: value:withObjCType:
+0x001e6ab6c20 => 0x001fae2077f: dataWithContentsOfFile:
+0x001e6ab6cb0 => 0x001fa325b4a: dictionaryGetInt64ForKey:key:
+0x001e6ab7318 => 0x001f9ee2826: objectAtIndexedSubscript:
+0x001e6ab7368 => 0x001fa56f3a5: parallelDecompressedData:
+0x001e6ab7370 => 0x001fa446a10: path
+0x001e6ab7980 => 0x001fb3b8d36: waitEventWithValue:sharedEvent:eventType:
+0x001e6ab7c58 => 0x001fb3b62f7: modelBinaryName
+0x001e6ab69f0 => 0x001f9deb7b5: bootArgs
+0x001e6ab6a10 => 0x001fb3b660d: cacheURLIdentifier
+0x001e6ab7050 => 0x001fb3b74ca: initWithSignalEvents:waitEvents:
+0x001e6ab73c8 => 0x001fb3b7d7c: pps_defaultUserPathPrefix
+0x001e6ab7ca0 => 0x001fb3b87f8: testing_cacheDirectoryWithSuffix:buildVersion:
+0x001e6ab7ca8 => 0x001fb3b8930: testing_tempDirectory:
+0x001e6ab7e88 => 0x001fb3b6337: programLoadErrorForMethod:code:
+0x001e6ab7638 => 0x001fa6f2a90: setObject:atIndexedSubscript:
+0x001e6ab6dc8 => 0x001f9e43190: eventType
+0x001e6ab72e8 => 0x001fadef5ae: numberWithLong:
+0x001e6ab7490 => 0x001fb3b800e: programIOSurfacesUnmapErrorForMethod:code:
+0x001e6ab7578 => 0x001f9f7c210: restricted
+0x001e6ab7d08 => 0x001fb3b88b1: testing_external_precompiledModelPath
+0x001e6ab7248 => 0x001fb3b7a1f: modelAtURLWithSourceURL:sourceURL:key:identifierSource:cacheURLIdentifier:UUID:
+0x001e6ab7338 => 0x001fb3b7c31: optionsPlistHash
+0x001e6ab75b8 => 0x001f9f5e090: set
+0x001e6ab76c8 => 0x001facd2790: sharedConnection
+0x001e6ab6900 => 0x001fb3b6444: addValue:forScalarKey:
+0x001e6ab6ab8 => 0x001fa1aec90: connect
+0x001e6ab6b68 => 0x001fabdcb90: copyModel:options:vmData:
+0x001e6ab6c50 => 0x001fa127910: decodeObjectOfClasses:forKey:
+0x001e6ab6d08 => 0x001fa5f60ca: doJsonParsingMatchWeightName:
+0x001e6ab6fb0 => 0x001fa822690: initWithDispatchQueue:
+0x001e6ab7a80 => 0x001f9e38d90: supportsSecureCoding
+0x001e6ab7c50 => 0x001fb3b7929: memoryUnwireAccessEntitlement
+0x001e6ab7650 => 0x001fb3b84fe: setPerfStats:
+0x001e6ab6f30 => 0x001fb3468df: hwExecutionTime
+0x001e6ab7058 => 0x001fa92fb90: initWithSingletonAccess
+0x001e6ab7238 => 0x001fb3468ff: modelAtURL:key:
+0x001e6ab7e00 => 0x001fb3b69b2: createIOSurfaceWithWidth:pixel_size:height:
+0x001e6ab7e78 => 0x001fb3b7fc6: programCreationErrorForMethod:
+0x001e6ab6ab0 => 0x001f9dea185: conn
+0x001e6ab6eb0 => 0x001fadec9cc: getResourceValue:forKey:error:
+0x001e6ab70a8 => 0x001fb3b62b7: inputIndexArray
+0x001e6ab7328 => 0x001fa484190: objectForKeyedSubscript:
+0x001e6ab7348 => 0x001fb3b7c4e: outputBuffer
+0x001e6ab7398 => 0x001fb3b7d08: performanceCounters
+0x001e6ab75c0 => 0x001fb3b8465: setCacheURLIdentifier:
+0x001e6ab7b88 => 0x001fb346adb: aneUserInitiatedTaskQoS
+0x001e6ab75e0 => 0x001fae0ee94: setDateFormat:
+0x001e6ab69b0 => 0x001fadebd5a: arrayWithObjects:count:
+0x001e6ab7080 => 0x001fb3b75c9: initWithstatsSurRef:outputBuffer:
+0x001e6ab76a0 => 0x001fa349c90: setValue:forKey:
+0x001e6ab7770 => 0x001fb3b8669: statsWithRequestPerformanceBuffer:statsBufferSize:
+0x001e6ab77c0 => 0x001fadea0d3: stringWithFormat:
+0x001e6ab7bc8 => 0x001fb3b6eb6: inMemoryModelCacheName
+0x001e6ab7d00 => 0x001fb3b8896: testing_external_modelPath
+0x001e6ab6b48 => 0x001fa99c890: copyErrorValue:vmData:
+0x001e6ab7098 => 0x001fb3b7602: inputBufferInfoIndex
+0x001e6ab70e8 => 0x001fb3b76ce: invalidModelInstanceErrorForMethod:
+0x001e6ab7218 => 0x001fad710a9: mapper
+0x001e6ab7ed0 => 0x001fb3b7b9a: notSupportedErrorForMethod:
+0x001e6ab6d60 => 0x001fa088990: encodeObject:forKey:
+0x001e6ab7730 => 0x001fabe7c90: sourceURL
+0x001e6ab7c10 => 0x001fb3b6465: aggressivePowerSavingEntitlement
+0x001e6ab7e58 => 0x001fb3b63d7: isVirtualClient
+0x001e6ab68a0 => 0x001fa271490: init
+0x001e6ab6918 => 0x001fa34d790: allValues
+0x001e6ab6e38 => 0x001fa9be090: fileType
+0x001e6ab7068 => 0x001fb3b7510: initWithValue:symbolIndex:eventType:sharedEvent:agentMask:
+0x001e6ab7138 => 0x001fb3b63c7: isEqualToModel:
+0x001e6ab72b0 => 0x001fb3b7b87: noSandboxExtension
+0x001e6ab78b0 => 0x001fa6e6710: updateError:errorLength:error:
+0x001e6ab7990 => 0x001fb3b8d6b: weightArray
+0x001e6ab6c38 => 0x001f9ebe590: debugDescription
+0x001e6ab6ff0 => 0x001faa0fa90: initWithMachServiceName:options:
+0x001e6ab71a0 => 0x001f9e8ad90: length
+0x001e6ab7b78 => 0x001fa54a6eb: tests
+0x001e6ab75d8 => 0x001fb3b8498: setCurrentAsyncRequestsInFlight:
+0x001e6ab6a80 => 0x001fb3b67c0: compiledModelExistsMatchingHash:withReply:
+0x001e6ab6e28 => 0x001f9e44590: fileSize
+0x001e6ab6f10 => 0x001fb3b6e61: hexStringForDataArray:
+0x001e6ab7298 => 0x001fb3b7b7b: networkText
+0x001e6ab6b50 => 0x001fa88ca9c: copyFilesInDirectoryToIOSurfaces:ioSurfaceRefs:ioSurfaceSizes:fileNames:
+0x001e6ab6bd0 => 0x001fb01cfed: createErrorWithCode:description:
+0x001e6ab6cc8 => 0x001fa6d0410: dictionaryGetUInt64ForKey:key:
+0x001e6ab6d98 => 0x001fadf5190: enumeratorAtPath:
+0x001e6ab71a8 => 0x001fadea120: lengthOfBytesUsingEncoding:
+0x001e6ab7378 => 0x001fb3b63e7: perfCounterData
+0x001e6ab7940 => 0x001fb3b8c46: virtualizationDataError:
+0x001e6ab7e18 => 0x001fb3b68e7: controllerWithPrivilegedVM:
+0x001e6ab6c10 => 0x001fad7a342: dataUsingEncoding:
+0x001e6ab6f50 => 0x001fae24083: initForReadingFromData:error:
+0x001e6ab6fd0 => 0x001fb3b70b2: initWithIOSurface:statType:
+0x001e6ab7498 => 0x001fb3b8039: programInferenceOtherErrorForMessage:model:methodName:
+0x001e6ab75c8 => 0x001fadfbdcb: setClasses:forSelector:argumentIndex:ofReply:
+0x001e6ab7848 => 0x001fb3b8a08: timeoutErrorForMethod:
+0x001e6ab7a78 => 0x001fb348456: procedureDataWithSymbol:weightArray:
+0x001e6ab7c68 => 0x001fb3b7a6f: modelCacheRetainName
+0x001e6ab6988 => 0x001fa2f1210: appendFormat:
+0x001e6ab69c8 => 0x001fb3b6501: baseModelIdentifierNotFoundForNewInstanceMethod:
+0x001e6ab73f0 => 0x001fb3b7dca: pps_varDir
+0x001e6ab7468 => 0x001fb3b7f77: processSessionHint:options:report:error:
+0x001e6ab74e0 => 0x001fa7079c0: purgeCompiledModelMatchingHash:
+0x001e6ab7820 => 0x001fb3b88d7: testing_inputDirectory
+0x001e6ab7908 => 0x001fa8a17b5: validateEnvironmentForPrecompiledBinarySupport
+0x001e6ab7dd0 => 0x001fb3b7617: inputBuffersWithProcedureIndex:inputBufferInfoIndex:inputFreeValue:executionDelay:
+0x001e6ab6a40 => 0x001faa760a6: common
+0x001e6ab6c60 => 0x001fb3b6a8a: defaultANECIRFileName
+0x001e6ab6ca0 => 0x001f9f5fb90: device
+0x001e6ab71f8 => 0x001fb3b789a: loopbackOutputSymbolIndex
+0x001e6ab7bb0 => 0x001fb3b7c00: objectWithstatsSurRef:outputBuffer:
+0x001e6ab7be0 => 0x001fb3b66d3: cloneDirectory
+0x001e6ab7cf8 => 0x001fb3b883f: testing_dataVaultStorageClass
+0x001e6ab7e48 => 0x001fb3472a3: evaluateRealTimeWithModel:options:request:error:
+0x001e6ab7250 => 0x001fb01a3f9: modelAttributes
+0x001e6ab7d78 => 0x001fb3b8530: setSignalEvents:
+0x001e6ab69d8 => 0x001fb3b6532: beginRealTimeTaskWithReply:
+0x001e6ab6db8 => 0x001f9eb659e: evaluateWithModel:options:request:qos:error:
+0x001e6ab7180 => 0x001fb3b77a6: issueSandboxExtensionForPath:error:
+0x001e6ab7508 => 0x001fb3b823b: queueIndexForQoS:
+0x001e6ab7540 => 0x001fad9c410: removeItemAtPath:error:
+0x001e6ab7558 => 0x001fb3b82a7: reportEvaluateFailure:failureReason:qIdx:
+0x001e6ab7630 => 0x001f9e17a10: setModelURL:
+0x001e6ab68e0 => 0x001faaa7425: UUIDString
+0x001e6ab72c0 => 0x001fa762190: numANEs
+0x001e6ab72e0 => 0x001fae0ed25: numberWithInteger:
+0x001e6ab7c88 => 0x001fb3b6adc: defaultLLIRBundleName
+0x001e6ab7eb0 => 0x001fb3b7a9c: modelIdentifierNotFoundForMethod:
+0x001e6ab6920 => 0x001fb3b6486: allowRestrictedAccess
+0x001e6ab6a58 => 0x001fb3b6737: compileModel:sandboxExtension:options:qos:withReply:
+0x001e6ab6de0 => 0x001fb3b6db5: fastConn
+0x001e6ab6e78 => 0x001fadec8b6: getCString:maxLength:encoding:
+0x001e6ab7970 => 0x001fb3b8cf7: vm_forceValidationOnGuestBootArg
+0x001e6ab7ea0 => 0x001fb3b872b: systemModelPurgeNotAllowedForMethod:
+0x001e6ab6ed8 => 0x001f9df3588: hasANE
+0x001e6ab7228 => 0x001fa5ec890: memoryPoolId
+0x001e6ab7528 => 0x001fa067cb3: readWeightFilename:
+0x001e6ab7698 => 0x001fb3b8565: setUsecount:
+0x001e6ab79a0 => 0x001fb3b8d84: weightURL
+0x001e6ab6d00 => 0x001f9e4e190: doEvaluateWithModel:options:request:qos:completionEvent:error:
+0x001e6ab7670 => 0x001faf82046: setQueueDepth:
+0x001e6ab77a0 => 0x001fadeedf7: stringByReplacingOccurrencesOfString:withString:
+0x001e6ab7b80 => 0x001fb01b08c: aneUserInteractiveTaskQoS
+0x001e6ab7e70 => 0x001fb3b7e70: priorityErrorForMethod:
+0x001e6ab6ee0 => 0x001fadecc28: hasDirectoryPath
+0x001e6ab7ae0 => 0x001fb3b7b25: modelWithCacheURLIdentifier:UUID:
+0x001e6ab6d28 => 0x001fb3b6c68: doPrepareChainingWithModel:options:chainingReq:qos:error:
+0x001e6ab68c8 => 0x001fadefdc4: URLByStandardizingPath
+0x001e6ab6b18 => 0x001fb3b6920: convertToHexString:length:
+0x001e6ab6d10 => 0x001fb3b6c0f: doLoadModel:options:qos:error:
+0x001e6ab70c8 => 0x001faded0db: interfaceWithProtocol:
+0x001e6ab7c28 => 0x001fb3b869c: storageMaintainerAccessEntitlement
+0x001e6ab7c48 => 0x001fb3b6417: adapterWeightsAccessEntitlementBypassBootArg
+0x001e6ab7d70 => 0x001fb021022: inMemoryModelWithDescriptor:
+0x001e6ab6ad8 => 0x001fb3b6397: connectionsUsedForLoadingModels
+0x001e6ab6ef8 => 0x001fab39290: hash
+0x001e6ab6f38 => 0x001fb3b6e98: hwxExtension
+0x001e6ab7020 => 0x001fb3b73ab: initWithNetworkText:weights:optionsPlist:isMILModel:
+0x001e6ab7070 => 0x001fb3b7561: initWithWeightSymbolAndURL:weightURL:
+0x001e6ab77e8 => 0x001fb3b86df: symbolIndex
+0x001e6ab7af0 => 0x001fb3480ab: modelAtURLWithSourceURL:sourceURL:key:cacheURLIdentifier:
+0x001e6ab7c60 => 0x001fb3b7b10: modelSourceStoreName
+0x001e6ab6de8 => 0x001fb3b6dbe: fastConnWithoutLock
+0x001e6ab6ff8 => 0x001fb3b71f6: initWithMachServiceName:restricted:
+0x001e6ab7648 => 0x001f9e24b90: setObject:forKeyedSubscript:
+0x001e6ab7b18 => 0x001fb3492a1: setSharedEvents:
+0x001e6ab7b90 => 0x001fb346ab6: aneDefaultTaskQoS
+0x001e6ab7d20 => 0x001f9e56e10: initialize
+0x001e6ab7de0 => 0x001fb3b6357: releaseSandboxExtension:handle:
+0x001e6ab6aa8 => 0x001fadf4150: componentsSeparatedByString:
+0x001e6ab6f58 => 0x001fb3b6ecd: initInputsProcedureIndex:inputBufferInfoIndex:inputFreeValue:executionDelay:
+0x001e6ab7168 => 0x001fb3b7767: isPrivileged
+0x001e6ab72c8 => 0x001fadea9f4: numberWithBool:
+0x001e6ab7520 => 0x001f9df02f7: readDataOfLength:
+0x001e6ab7e60 => 0x001fb3b7774: isRootDaemon
+0x001e6ab6c18 => 0x001fadec2ee: dataWithBytes:length:
+0x001e6ab6ec8 => 0x001f9dfaf90: getValue:
+0x001e6ab6fe0 => 0x001fb3b70fa: initWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:transactionHandle:
+0x001e6ab71f0 => 0x001fb3b7881: loopbackInputSymbolIndex
+0x001e6ab79a8 => 0x001f9fa1d90: weights
+0x001e6ab7e10 => 0x001fb3b655b: bufferWithIOSurfaceObject:symbolIndex:source:
+0x001e6ab73f8 => 0x001fb3b7dd5: prepareANEMemoryMappingParams:request:
+0x001e6ab7708 => 0x001fb3b85dc: signalNotRequired
+0x001e6ab7868 => 0x001f9ea8bba: unloadModel:options:qos:error:
+0x001e6ab7df8 => 0x001fb3b7bd7: objectWithIOSurfaceNoRetain:startOffset:
+0x001e6ab68d0 => 0x001fab0fa10: UTF8String
+0x001e6ab6c68 => 0x001fb3b6aa0: defaultANECIROptionsFileName
+0x001e6ab6e08 => 0x001fad32fce: fileExistsAtPath:isDirectory:
+0x001e6ab73b0 => 0x001fb3b7d41: pps_applicationDir
+0x001e6ab74a0 => 0x001fb3b8070: programInferenceOtherErrorForMethod:
+0x001e6ab77c8 => 0x001fadea0e5: stringWithUTF8String:
+0x001e6ab7cc0 => 0x001fb3b89d7: testing_userTempDirectory:
+0x001e6ab6e48 => 0x001fae0ebd2: fileURLWithPath:isDirectory:
+0x001e6ab7108 => 0x001fb3b62c7: ioSurfacesCount
+0x001e6ab7bf0 => 0x001fb3b8bb7: userCloneDirectory
+0x001e6ab7120 => 0x001fabb50cb: isBootArgPresent:
+0x001e6ab7210 => 0x001f9ff6dba: mapIOSurfacesWithModel:request:cacheInference:error:
+0x001e6ab78b8 => 0x001fa200d90: updateError:errorLength:errorCode:error:
+0x001e6ab7a88 => 0x001fb3b8b9d: updateWeightURL:
+0x001e6ab7c30 => 0x001fb3b7eca: processModelShareAccessEntitlement
+0x001e6ab7cb0 => 0x001fb3b8827: testing_cloneDirectory:
+0x001e6ab68e8 => 0x001f9fdde90: addEntriesFromDictionary:
+0x001e6ab6c08 => 0x001fb3b6a5d: dataNotFoundForMethod:
+0x001e6ab6b78 => 0x001fa754d90: copyModelOptionFiles:options:dictionary:vmData:
+0x001e6ab6d30 => 0x001fb3b6ca2: doUnloadModel:options:qos:error:
+0x001e6ab7090 => 0x001fb3b75f6: inputBuffer
+0x001e6ab7170 => 0x001fa73e910: isVirtualMachine
+0x001e6ab77d0 => 0x001fb3b86d5: string_id
+0x001e6ab7a30 => 0x001fb3b8a1f: tokenWithAuditToken:modelIdentifier:processIdentifier:
+0x001e6ab7ec0 => 0x001fb3b8102: programLoadNewInstanceErrorForMethod:
+0x001e6ab73d0 => 0x001fb3b7d96: pps_frameworkDir
+0x001e6ab7450 => 0x001fb3b7eed: processNameFor:identifier:
+0x001e6ab7690 => 0x001fb3b854f: setTransactionHandle:
+0x001e6ab6990 => 0x001fa4eea90: appendString:
+0x001e6ab6aa0 => 0x001fadec0a0: componentsJoinedByString:
+0x001e6ab6bf0 => 0x001f9e976b6: daemonConnection
+0x001e6ab6c40 => 0x001f9e22b90: decodeIntegerForKey:
+0x001e6ab7888 => 0x001fa3eda9c: unsignedIntValue
+0x001e6ab7918 => 0x001f9e1604d: validateNetworkCreateMLIR:validation_params:
+0x001e6ab7eb8 => 0x001fb3b7abe: modelNewInstanceCacheIdentifierNotNilMethod:
+0x001e6ab6dd0 => 0x001fa776790: exchangeBuildVersionInfo
+0x001e6ab6f98 => 0x001fb3b6fbc: initWithController:intermediateBufferHandle:queueDepth:
+0x001e6ab7330 => 0x001fb3b7c24: optionsPlist
+0x001e6ab7d80 => 0x001fb3b8572: setWaitEvents:
+0x001e6ab6910 => 0x001f9ef6d90: allKeys
+0x001e6ab6980 => 0x001f9df3aa3: appendData:
+0x001e6ab6b28 => 0x001fab9c5cc: copyAllModelFiles:dictionary:ioSurfaceRefs:
+0x001e6ab78d0 => 0x001fa5e9290: updatePerformanceStats:
+0x001e6ab78e0 => 0x001fb3b8bae: usecount
+0x001e6ab7a50 => 0x001fb3b8278: reportClient:modelName:
+0x001e6ab7430 => 0x001fb3b6327: procedureSymbol
+0x001e6ab7b20 => 0x001f9f7b610: setCompletionHandler:
+0x001e6ab7c18 => 0x001fb3b6835: compilerServiceAccessEntitlement
+0x001e6ab7720 => 0x001fa0580c9: sortedArrayUsingComparator:
+0x001e6ab79b8 => 0x001fb3b8dbb: weightsHash
+0x001e6ab7d68 => 0x001fb3b847c: setCompilerOptionsFileName:
+0x001e6ab7de8 => 0x001fb024b80: objectWithIOSurface:
+0x001e6ab6ee8 => 0x001fadecc39: hasPrefix:
+0x001e6ab7320 => 0x001fa08dd10: objectForKey:
+0x001e6ab74d0 => 0x001fabdf8d4: purgeCompiledModel:
+0x001e6ab7710 => 0x001fb3b85ee: signalValue
+0x001e6ab7a40 => 0x001fa1458a4: isExcessivePowerDrainWhenIdle
+0x001e6ab6ea0 => 0x001fad06aae: getModelAttribute:
+0x001e6ab7150 => 0x001fa857510: isInternalBuild
+0x001e6ab7448 => 0x001fa326110: processName
+0x001e6ab79d8 => 0x001fa9aa290: numANECores
+0x001e6ab6e30 => 0x001fadf579b: fileSystemRepresentation
+0x001e6ab6f80 => 0x001fab43310: initWithContentsOfFile:
+0x001e6ab7280 => 0x001f9e36010: mutableCopy
+0x001e6ab7568 => 0x001fb3b83bf: requestsInFlight
+0x001e6ab7898 => 0x001f9fae510: unsignedLongLongValue
+0x001e6ab7ab0 => 0x001fb3b7c6c: outputSetWithProcedureIndex:setIndex:signalValue:signalNotRequired:isOpenLoop:
+0x001e6ab7b28 => 0x001fb3b836c: requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:procedureIndex:
+0x001e6ab6ea8 => 0x001f9e45ba7: getObjectFromIOSurface:classType:length:
+0x001e6ab70b0 => 0x001fb3b7679: inputSymbolIndicesForProcedureIndex:
+0x001e6ab73a0 => 0x001fb3b7d1c: ppsCategoryForANE
+0x001e6ab74b8 => 0x001fb3b8153: programPriorityForQoS:
+0x001e6ab7610 => 0x001fa127790: setInvalidationHandler:
+0x001e6ab7a70 => 0x001fa91c990: copyWithZone:
+0x001e6ab6da8 => 0x001fb3b6d94: errorDomainVirtIO
+0x001e6ab74b0 => 0x001fb3b80bd: programInferenceProgramNotFoundForMethod:
+0x001e6ab6ba0 => 0x001fb3b6953: coreAnalyticsANEUsageDefaultReportedClient
+0x001e6ab6d80 => 0x001fb3b6d51: entitlementErrorForMethod:
+0x001e6ab70b8 => 0x001fa1e96db: instanceName
+0x001e6ab74f0 => 0x001fb3b8224: qosForProgramPriority:
+0x001e6ab7748 => 0x001fb3b85fa: statType
+0x001e6ab7780 => 0x001fadfd173: stringByAppendingFormat:
+0x001e6ab7ba0 => 0x001fb346aa1: aneBackgroundTaskQoS
+0x001e6ab6bc0 => 0x001fad00210: countByEnumeratingWithState:objects:count:
+0x001e6ab70c0 => 0x001fa1e5f10: integerValue
+0x001e6ab76d8 => 0x001fb3493af: sharedEvents
+0x001e6ab7890 => 0x001fa178210: unsignedIntegerValue
+0x001e6ab7a08 => 0x001f9dfd810: modelIdentifier
+0x001e6ab7db0 => 0x001fb3b860f: statsWithHardwareExecutionNS:
+0x001e6ab6be8 => 0x001f9e131a6: daemon
+0x001e6ab6ce8 => 0x001fb3b6b6e: doBuffersReadyWithModel:inputBuffers:options:qos:error:
+0x001e6ab7048 => 0x001fb3b74a9: initWithRestrictedAccessAllowed:
+0x001e6ab73a8 => 0x001fb3b7d2e: ppsSubsystemForANE
+0x001e6ab7458 => 0x001fb3b7f08: processOutputSet:model:options:error:
+0x001e6ab7718 => 0x001fae0c798: signaledValue
+0x001e6ab7cc8 => 0x001fb3b89bb: testing_userCloneDirectory:
+0x001e6ab69e0 => 0x001fb3b654e: binExtension
+0x001e6ab6b80 => 0x001f9eed0bc: copyModelOptionFiles:options:vmData:
+0x001e6ab6da0 => 0x001fb01fa8d: errorDomainGeneric
+0x001e6ab6a88 => 0x001fb3b67eb: compilerOptionsFileName
+0x001e6ab6b88 => 0x001fad6d190: copyOptions:dictionary:vmData:
+0x001e6ab6dc0 => 0x001faf80194: eventPort
+0x001e6ab7208 => 0x001fb3b78b4: machServiceNamePrivate
+0x001e6ab6940 => 0x001fa8ac790: aneBoardtype
+0x001e6ab6ef0 => 0x001fadecc44: hasSuffix:
+0x001e6ab6f60 => 0x001fb3b6f1a: initOutputSetWithProcedureIndex:setIndex:signalValue:signalNotRequired:isOpenLoop:
+0x001e6ab7300 => 0x001fadf9526: numberWithUnsignedInteger:
+0x001e6ab7400 => 0x001fb3b7e34: prepareChainingWithModel:options:chainingReq:qos:withReply:
+0x001e6ab7470 => 0x001f9ec9710: productName
+0x001e6ab7618 => 0x001fb3b84df: setMapper:
+0x001e6ab7b48 => 0x001fb34869c: requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:sharedEvents:
+0x001e6ab69f8 => 0x001f9eb6f99: buildVersion
+0x001e6ab6d58 => 0x001fab6b8ba: encodeInteger:forKey:
+0x001e6ab7268 => 0x001fb3480e5: modelWithCacheURLIdentifier:
+0x001e6ab7738 => 0x001f9fa9790: start
+0x001e6ab7d50 => 0x001fb348528: purgeCompiledModel
+0x001e6ab6e88 => 0x001fa2d3aaa: getCodeSigningIdentity
+0x001e6ab6fe8 => 0x001fb3b7173: initWithInputs:outputs:lbInputSymbolId:lbOutputSymbolId:procedureIndex:signalEvents:transactionHandle:fwEnqueueDelay:memoryPoolId:
+0x001e6ab71c8 => 0x001f9e96b90: loadModelNewInstance:options:modelInstParams:qos:error:
+0x001e6ab73d8 => 0x001fb3b6317: pps_internalDir
+0x001e6ab7b40 => 0x001fb34863f: requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:
+0x001e6ab6d90 => 0x001fa0daa90: enumerateObjectsUsingBlock:
+0x001e6ab6e50 => 0x001fa7fd090: firstObject
+0x001e6ab6f48 => 0x001f9e9fc90: indexSet
+0x001e6ab77a8 => 0x001fb3b86bf: stringForPerfCounter:
+0x001e6ab7880 => 0x001fb3b8aed: unmapIOSurfacesWithModel:request:error:
+0x001e6ab69d0 => 0x001fa4ac4b6: beginRealTimeTask
+0x001e6ab6c00 => 0x001fa394d90: data
+0x001e6ab7560 => 0x001fb3b82d1: reportTelemetryToPPS:playload:
+0x001e6ab7658 => 0x001fb3b850c: setPerfStatsMask:
+0x001e6ab7960 => 0x001fb3b8cc2: vm_allowPrecompiledBinaryBootArg
+0x001e6ab7d88 => 0x001fb3b8d2c: waitEvent
+0x001e6ab7e20 => 0x001fb3b858f: sharedPrivilegedConnection
+0x001e6ab7e50 => 0x001fb34965b: unloadRealTimeModel:options:qos:error:
+0x001e6ab7538 => 0x001fa3ffd90: releaseIOSurfaces:
+0x001e6ab7768 => 0x001fb3b862d: statsWithReconstructed:hardwareExecutionNS:aneStatsRawData:
+0x001e6ab79c8 => 0x001fae31442: writeToFile:atomically:encoding:error:
+0x001e6ab6958 => 0x001fa183994: aneSubTypeProductVariant
+0x001e6ab7030 => 0x001fb3b73ff: initWithProcedureData:procedureArray:
+0x001e6ab7678 => 0x001fa0ebc9b: setRemoteObjectInterface:
+0x001e6ab7808 => 0x001fb3b876b: teamIDFor:processIdentifier:
+0x001e6ab7a28 => 0x001fb3b8a56: tokenWithCsIdentity:teamIdentity:modelIdentifier:processIdentifier:
+0x001e6ab7a90 => 0x001fb349775: weightWithSymbolAndURL:weightURL:
+0x001e6ab6d40 => 0x001fa761d90: echo:
+0x001e6ab74a8 => 0x001fb3b8095: programInferenceOverflowErrorForMethod:
+0x001e6ab7620 => 0x001fa035f90: setModel:
+0x001e6ab7b58 => 0x001fb3b6642: chainingRequestWithInputs:outputSets:lbInputSymbolId:lbOutputSymbolId:procedureIndex:signalEvents:transactionHandle:fwEnqueueDelay:memoryPoolId:
+0x001e6ab6ac0 => 0x001fb3b6856: connectionForLoadingModel:options:
+0x001e6ab6b38 => 0x001fa364990: copyDictionaryToIOSurface:copiedDataSize:createdIOSID:
+0x001e6ab6db0 => 0x001fa870410: errorWithDomain:code:userInfo:
+0x001e6ab6f08 => 0x001fb020e5f: hexStringForData:
+0x001e6ab6f18 => 0x001fb3b6e78: hexStringForString:
+0x001e6ab7260 => 0x001f9dfb990: modelURL
+0x001e6ab7310 => 0x001fadf9559: numberWithUnsignedLongLong:
+0x001e6ab74e8 => 0x001fb3b81fa: purgeCompiledModelMatchingHash:withReply:
+0x001e6ab6998 => 0x001fadebc82: archivedDataWithRootObject:requiringSecureCoding:error:
+0x001e6ab78d8 => 0x001fa206d61: updatePerformanceStats:performanceStatsLength:perfStatsRawIOSurfaceRef:performanceStatsRawLength:hwExecutionTime:
+0x001e6ab7998 => 0x001fb3b8d77: weightSymbol
+0x001e6ab68b8 => 0x001fb3b62af: SHACode
+0x001e6ab6b08 => 0x001f9f2be21: controller
+0x001e6ab6f90 => 0x001fa000690: initWithController:
+0x001e6ab6fb8 => 0x001fa44144e: initWithFormat:
+0x001e6ab75b0 => 0x001fabe8134: sessionHintWithModel:hint:options:report:error:
+0x001e6ab7790 => 0x001fadfd1b3: stringByAppendingString:
+0x001e6ab77b8 => 0x001faad4690: stringValue
+0x001e6ab7a68 => 0x001fa804e90: initWithCoder:
+0x001e6ab6ac8 => 0x001fb3b6879: connectionUsedForLoadingModel:
+0x001e6ab6d20 => 0x001f9fde410: doMapIOSurfacesWithModel:request:cacheInference:error:
+0x001e6ab7010 => 0x001fb3b72fd: initWithModelAtURL:sourceURL:UUID:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:string_id:generateNewStringId:mpsConstants:
+0x001e6ab7100 => 0x001fb01a359: ioSurfaceObject
+0x001e6ab76b8 => 0x001fadeeb29: setWithObject:
+0x001e6ab7760 => 0x001fb3b8603: statsSurRef
+0x001e6ab7aa0 => 0x001fb3497da: withProcedureData:procedureArray:
+0x001e6ab6a50 => 0x001fa0a42bf: compileModel:options:qos:error:
+0x001e6ab6a78 => 0x001fa9243b7: compiledModelExistsMatchingHash:
+0x001e6ab6df0 => 0x001fb3b6dd2: fileAccessErrorForMethod:
+0x001e6ab6e58 => 0x001fa3c5dc9: framework
+0x001e6ab6ec0 => 0x001fa1af290: getValidateNetworkVersion
+0x001e6ab70d8 => 0x001fb3b769e: internalLibraryPath
+0x001e6ab76b0 => 0x001fabf8327: setWithArray:
+0x001e6ab6f70 => 0x001fb3b6f86: initWithAuditToken:modelIdentifier:processIdentifier:
+0x001e6ab7158 => 0x001fb3b7751: isMILModel
+0x001e6ab72b8 => 0x001fae08ae7: notifyListener:atValue:block:
+0x001e6ab7460 => 0x001fb3b7f2e: processRequest:model:qos:qIndex:modelStringID:options:returnValue:error:
+0x001e6ab7ab8 => 0x001fabc20f4: shallowCopy
+0x001e6ab7cd0 => 0x001fb3b8905: testing_modelDirectory:
+0x001e6ab6938 => 0x001fabf10b0: aneBoardType
+0x001e6ab6a48 => 0x001fa33a410: compare:
+0x001e6ab6e00 => 0x001faae1de5: fileExistsAtPath:
+0x001e6ab6e18 => 0x001fa9a2b90: fileModificationDate
+0x001e6ab6f68 => 0x001fb3b6f6d: initWithANEPrivilegedVM:
+0x001e6ab7038 => 0x001fb3b7425: initWithProgramHandle:priviledged:
+0x001e6ab72a8 => 0x001fa031a90: nextObject
+0x001e6ab7580 => 0x001fb3b83de: restrictedAccessEntitlement
+0x001e6ab6970 => 0x001fb3b64c3: ane_addWriteModeIfMissing:originalMode:
+0x001e6ab6a68 => 0x001f9e19d77: compiledModelExistsFor:
+0x001e6ab76f0 => 0x001fa6ce9b9: shouldUsePrecompiledPath:options:shouldUseChunking:chunkingThreshold:
+0x001e6ab7830 => 0x001fb3b8947: testing_userCacheDirectory
+0x001e6ab7838 => 0x001fb3b8962: testing_userCacheDirectoryWithSuffix:
+0x001e6ab7cd8 => 0x001fb3b89f2: testing_zeroModelName
+0x001e6ab7668 => 0x001fb3b851e: setProgramHandle:
+0x001e6ab6bd8 => 0x001fa8dd310: createIOSurface:ioSID:
+0x001e6ab7008 => 0x001fb3b7275: initWithModelAtURL:sourceURL:UUID:key:identifierSource:cacheURLIdentifier:modelAttributes:standardizeURL:string_id:generateNewStringId:
+0x001e6ab7148 => 0x001faded271: isFileURL
+0x001e6ab71b0 => 0x001fb3b77f0: llirBundleExtension
+0x001e6ab7440 => 0x001fb3b7ea1: processInputBuffers:model:options:error:
+0x001e6ab7bf8 => 0x001fb3b8750: systemModelsCacheDirectory
+0x001e6ab6d70 => 0x001fa4be4b0: endRealTimeTask
+0x001e6ab6fa8 => 0x001fb3b7037: initWithDesctiptor:
+0x001e6ab7408 => 0x001fa8776a3: printDictionary:

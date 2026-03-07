@@ -1,0 +1,2153 @@
+Flags = DyldCategoriesOptimized, OptimizedByDyld, SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 34
+  __objc_nlclslist  = 0
+  __objc_catlist    = 1
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 5
+  __objc_classrefs  = 0
+  __objc_superrefs  = 25
+  __objc_selrefs    = 715
+
+@protocol NSCoding // 0x1ea41aa70
+
+@required
+
+/* required instance methods */
+- (id)initWithCoder:(id)coder;
+- (void)encodeWithCoder:(id)coder;
+
+@optional
+
+@end
+
+@protocol NSCopying // 0x1ea41aa10
+
+@required
+
+/* required instance methods */
+- (id)copyWithZone:(struct _NSZone *)zone;
+
+@optional
+
+@end
+
+@protocol NSSecureCoding <NSCoding> // 0x1ea41aad0
+
+@required
+
+@property (class, readonly) _Bool supportsSecureCoding;
+
+/* class methods */
++ (_Bool)supportsSecureCoding;
+
+@optional
+
+@end
+
+@protocol _ANEDaemonProtocol // 0x1ea41acc8
+
+@required
+
+/* required instance methods */
+- (void)compileModel:(id)model sandboxExtension:(id)extension options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+- (void)compiledModelExistsFor:(id)_for withReply:(id /* block */)reply;
+- (void)compiledModelExistsMatchingHash:(id)hash withReply:(id /* block */)reply;
+- (void)loadModel:(id)model sandboxExtension:(id)extension options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+- (void)loadModelNewInstance:(id)instance options:(id)options modelInstParams:(id)params qos:(unsigned int)qos withReply:(id /* block */)reply;
+- (void)prepareChainingWithModel:(id)model options:(id)options chainingReq:(id)req qos:(unsigned int)qos withReply:(id /* block */)reply;
+- (void)purgeCompiledModel:(id)model withReply:(id /* block */)reply;
+- (void)purgeCompiledModelMatchingHash:(id)hash withReply:(id /* block */)reply;
+- (void)reportTelemetryToPPS:(id)pps playload:(id)playload;
+- (void)unloadModel:(id)model options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+
+@optional
+
+@end
+
+@protocol _ANEDaemonProtocol_Private <_ANEDaemonProtocol> // 0x1ea41ad68
+
+@required
+
+/* required instance methods */
+- (void)echo:(id)echo withReply:(id /* block */)reply;
+- (void)beginRealTimeTaskWithReply:(id /* block */)reply;
+- (void)endRealTimeTaskWithReply:(id /* block */)reply;
+
+@optional
+
+@end
+
+@interface _ANEBuffer : NSObject <NSSecureCoding> { // 0x1ec989628
+    /* instance variables */               // +size   offset
+    _ANEIOSurfaceObject *_ioSurfaceObject; // +0x8    0x8
+    NSNumber *_symbolIndex;                // +0x8    0x10
+    long long _source;                     // +0x8    0x18
+}
+
+@property (readonly, nonatomic) _ANEIOSurfaceObject *ioSurfaceObject;
+@property (readonly, nonatomic) NSNumber *symbolIndex;
+@property (readonly, nonatomic) long long source;
+
+/* class methods */
+// 0x19f240268
++ (id)new;
+// 0x19f240434
++ (_Bool)supportsSecureCoding;
+// 0x19f2401e0
++ (id)bufferWithIOSurfaceObject:(id)object symbolIndex:(id)index source:(long long)source;
+
+/* instance methods */
+// 0x19f240360
+- (id)description;
+// 0x19f240694
+- (long long)source;
+// 0x19f240270
+- (id)init;
+// 0x19f24069c
+- (void).cxx_destruct;
+// 0x19f240504
+- (id)initWithCoder:(id)coder;
+// 0x19f24043c
+- (void)encodeWithCoder:(id)coder;
+// 0x19f240684
+- (id)ioSurfaceObject;
+// 0x19f24028c
+- (id)initWithIOSurfaceObject:(id)object symbolIndex:(id)index source:(long long)source;
+// 0x19f24068c
+- (id)symbolIndex;
+
+@end
+
+@interface _ANEChainingRequest : NSObject <NSSecureCoding> { // 0x1ec989600
+    /* instance variables */             // +size   offset
+    NSArray *_inputBuffer;               // +0x8    0x8
+    NSArray *_outputSets;                // +0x8    0x10
+    NSArray *_loopbackInputSymbolIndex;  // +0x8    0x18
+    NSArray *_loopbackOutputSymbolIndex; // +0x8    0x20
+    NSArray *_signalEvents;              // +0x8    0x28
+    NSNumber *_transactionHandle;        // +0x8    0x30
+    NSNumber *_procedureIndex;           // +0x8    0x38
+    NSNumber *_fwEnqueueDelay;           // +0x8    0x40
+    NSNumber *_memoryPoolId;             // +0x8    0x48
+}
+
+@property (readonly, nonatomic) NSArray *inputBuffer;
+@property (readonly, nonatomic) NSArray *outputSets;
+@property (readonly, nonatomic) NSArray *loopbackInputSymbolIndex;
+@property (readonly, nonatomic) NSArray *loopbackOutputSymbolIndex;
+@property (readonly, nonatomic) NSArray *signalEvents;
+@property (readonly, nonatomic) NSNumber *transactionHandle;
+@property (readonly, nonatomic) NSNumber *procedureIndex;
+@property (readonly, nonatomic) NSNumber *fwEnqueueDelay;
+@property (readonly, nonatomic) NSNumber *memoryPoolId;
+
+/* class methods */
+// 0x19f21ae70
++ (_Bool)supportsSecureCoding;
+// 0x19f21a3c8
++ (id)chainingRequestWithInputs:(id)inputs outputSets:(id)sets lbInputSymbolId:(id)id lbOutputSymbolId:(id)id procedureIndex:(id)index signalEvents:(id)events transactionHandle:(id)handle fwEnqueueDelay:(id)delay memoryPoolId:(id)id;
+
+/* instance methods */
+// 0x19f21a524
+- (_Bool)validate;
+// 0x19f21ad68
+- (id)description;
+// 0x19f21b3a0
+- (id)memoryPoolId;
+// 0x19f21b3a8
+- (void).cxx_destruct;
+// 0x19f21b070
+- (id)initWithCoder:(id)coder;
+// 0x19f21ae78
+- (void)encodeWithCoder:(id)coder;
+// 0x19f21b390
+- (id)procedureIndex;
+// 0x19f21b398
+- (id)fwEnqueueDelay;
+// 0x19f21a210
+- (id)initWithInputs:(id)inputs outputs:(id)outputs lbInputSymbolId:(id)id lbOutputSymbolId:(id)id procedureIndex:(id)index signalEvents:(id)events transactionHandle:(id)handle fwEnqueueDelay:(id)delay memoryPoolId:(id)id;
+// 0x19f21b360
+- (id)inputBuffer;
+// 0x19f21b370
+- (id)loopbackInputSymbolIndex;
+// 0x19f21b378
+- (id)loopbackOutputSymbolIndex;
+// 0x19f21b368
+- (id)outputSets;
+// 0x19f21b380
+- (id)signalEvents;
+// 0x19f21b388
+- (id)transactionHandle;
+
+@end
+
+@interface _ANEClient : NSObject { // 0x1ec989448
+    /* instance variables */                                                // +size   offset
+    struct os_unfair_lock_s { unsigned int _os_unfair_lock_opaque; } _lock; // +0x4    0x8
+    _ANEDaemonConnection *_fastConn;                                        // +0x8    0x10
+    _Bool _allowRestrictedAccess;                                           // +0x1    0x18
+    _Bool _isRootDaemon;                                                    // +0x1    0x19
+    _ANEDaemonConnection *_conn;                                            // +0x8    0x20
+    NSArray *_priorityQ;                                                    // +0x8    0x28
+    _ANEVirtualClient *_virtualClient;                                      // +0x8    0x30
+    NSMutableDictionary *_connectionsUsedForLoadingModels;                  // +0x8    0x38
+    NSMutableDictionary *_connections;                                      // +0x8    0x40
+}
+
+@property (readonly, nonatomic) _ANEDaemonConnection *conn;
+@property (readonly, nonatomic) _Bool allowRestrictedAccess;
+@property (readonly, nonatomic) _ANEDaemonConnection *fastConn;
+@property (readonly, nonatomic) NSArray *priorityQ;
+@property (readonly, nonatomic) _ANEVirtualClient *virtualClient;
+@property (readonly, nonatomic) NSMutableDictionary *connectionsUsedForLoadingModels;
+@property (readonly, nonatomic) NSMutableDictionary *connections;
+@property (readonly, nonatomic) _Bool isRootDaemon;
+
+/* class methods */
+// 0x19f2416d0
++ (id)new;
+// 0x19f241514
++ (void)initialize;
+// 0x19f2416f4
++ (id)sharedConnection;
+// 0x19f245e14
++ (id)sharedPrivateConnection;
+
+/* instance methods */
+// 0x19f24a6bc
+- (id)conn;
+// 0x19f243d18
+- (_Bool)compiledModelExistsFor:(id)_for;
+// 0x19f243320
+- (_Bool)loadModelNewInstance:(id)instance options:(id)options modelInstParams:(id)params qos:(unsigned int)qos error:(id *)error;
+// 0x19f24a6e4
+- (id)connections;
+// 0x19f243334
+- (_Bool)unloadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f243330
+- (_Bool)evaluateWithModel:(id)model options:(id)options request:(id)request qos:(unsigned int)qos error:(id *)error;
+// 0x19f2455ec
+- (_Bool)mapIOSurfacesWithModel:(id)model request:(id)request cacheInference:(_Bool)inference error:(id *)error;
+// 0x19f2427cc
+- (_Bool)compileModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f2416d8
+- (id)init;
+// 0x19f245ea0
+- (_Bool)beginRealTimeTask;
+// 0x19f246128
+- (_Bool)endRealTimeTask;
+// 0x19f24331c
+- (_Bool)loadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f24a6f4
+- (void).cxx_destruct;
+// 0x19f244fe0
+- (void)purgeCompiledModelMatchingHash:(id)hash;
+// 0x19f249eb4
+- (_Bool)echo:(id)echo;
+// 0x19f241b34
+- (void)dealloc;
+// 0x19f244914
+- (_Bool)compiledModelExistsMatchingHash:(id)hash;
+// 0x19f244354
+- (void)purgeCompiledModel:(id)model;
+// 0x19f24a378
+- (_Bool)sessionHintWithModel:(id)model hint:(id)hint options:(id)options report:(id)report error:(id *)error;
+// 0x19f248fb0
+- (_Bool)evaluateRealTimeWithModel:(id)model options:(id)options request:(id)request error:(id *)error;
+// 0x19f2463b0
+- (_Bool)loadRealTimeModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f249e78
+- (_Bool)unloadRealTimeModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f2459a8
+- (void)unmapIOSurfacesWithModel:(id)model request:(id)request;
+// 0x19f24a6dc
+- (id)connectionsUsedForLoadingModels;
+// 0x19f249e7c
+- (_Bool)isVirtualClient;
+// 0x19f24a6c4
+- (_Bool)allowRestrictedAccess;
+// 0x19f24332c
+- (_Bool)buffersReadyWithModel:(id)model inputBuffers:(id)buffers options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f241ef4
+- (id)connectionForLoadingModel:(id)model options:(id)options;
+// 0x19f24259c
+- (id)connectionUsedForLoadingModel:(id)model;
+// 0x19f248a64
+- (_Bool)doBuffersReadyWithModel:(id)model inputBuffers:(id)buffers options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f248518
+- (_Bool)doEnqueueSetsWithModel:(id)model outputSet:(id)set options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f249400
+- (_Bool)doEvaluateDirectWithModel:(id)model options:(id)options request:(id)request qos:(unsigned int)qos error:(id *)error;
+// 0x19f2463b4
+- (_Bool)doLoadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f246e8c
+- (_Bool)doLoadModelNewInstance:(id)instance options:(id)options modelInstParams:(id)params qos:(unsigned int)qos error:(id *)error;
+// 0x19f247cb8
+- (_Bool)doPrepareChainingWithModel:(id)model options:(id)options chainingReq:(id)req qos:(unsigned int)qos error:(id *)error;
+// 0x19f243338
+- (_Bool)doUnloadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f243328
+- (_Bool)enqueueSetsWithModel:(id)model outputSet:(id)set options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f241de0
+- (id)fastConn;
+// 0x19f241bec
+- (id)fastConnWithoutLock;
+// 0x19f241780
+- (id)initWithRestrictedAccessAllowed:(_Bool)allowed;
+// 0x19f24a158
+- (_Bool)isAnetoolRootDaemonConnection;
+// 0x19f24a6ec
+- (_Bool)isRootDaemon;
+// 0x19f243324
+- (_Bool)prepareChainingWithModel:(id)model options:(id)options chainingReq:(id)req qos:(unsigned int)qos error:(id *)error;
+// 0x19f24a6cc
+- (id)priorityQ;
+// 0x19f24905c
+- (void)reportEvaluateFailure:(id)failure failureReason:(unsigned int)reason qIdx:(unsigned long long)idx;
+// 0x19f24a6d4
+- (id)virtualClient;
+
+@end
+
+@interface _ANECloneHelper : NSObject // 0x1ec9899e8
+
+/* class methods */
+// 0x19f24bf04
++ (id)cloneIfWritable:(id)writable isEncryptedModel:(_Bool)model cloneDirectory:(id)directory;
+// 0x19f24bbf8
++ (_Bool)shouldSkipCloneFor:(id)_for isEncryptedModel:(_Bool)model;
+
+@end
+
+@interface _ANEDaemonConnection : NSObject <_ANEDaemonProtocol> { // 0x1ec9893a8
+    /* instance variables */            // +size   offset
+    _Bool _restricted;                  // +0x1    0x8
+    NSXPCConnection *_daemonConnection; // +0x8    0x10
+}
+
+@property (readonly, nonatomic) NSXPCConnection *daemonConnection;
+@property (readonly, nonatomic) _Bool restricted;
+
+/* class methods */
+// 0x19f220850
++ (id)daemonConnection;
+// 0x19f220878
++ (id)daemonConnectionRestricted;
+// 0x19f2208e8
++ (id)userDaemonConnection;
+
+/* instance methods */
+// 0x19f22331c
+- (id)daemonConnection;
+// 0x19f223324
+- (_Bool)restricted;
+// 0x19f2206d0
+- (id)init;
+// 0x19f22332c
+- (void).cxx_destruct;
+// 0x19f220804
+- (void)dealloc;
+// 0x19f220e80
+- (void)echo:(id)echo withReply:(id /* block */)reply;
+// 0x19f220958
+- (void)beginRealTimeTaskWithReply:(id /* block */)reply;
+// 0x19f221128
+- (void)compileModel:(id)model sandboxExtension:(id)extension options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+// 0x19f2223e4
+- (void)compiledModelExistsFor:(id)_for withReply:(id /* block */)reply;
+// 0x19f222d6c
+- (void)compiledModelExistsMatchingHash:(id)hash withReply:(id /* block */)reply;
+// 0x19f220bf4
+- (void)endRealTimeTaskWithReply:(id /* block */)reply;
+// 0x19f220728
+- (id)initWithMachServiceName:(id)name restricted:(_Bool)restricted;
+// 0x19f221524
+- (void)loadModel:(id)model sandboxExtension:(id)extension options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+// 0x19f221944
+- (void)loadModelNewInstance:(id)instance options:(id)options modelInstParams:(id)params qos:(unsigned int)qos withReply:(id /* block */)reply;
+// 0x19f222a24
+- (void)prepareChainingWithModel:(id)model options:(id)options chainingReq:(id)req qos:(unsigned int)qos withReply:(id /* block */)reply;
+// 0x19f22274c
+- (void)purgeCompiledModel:(id)model withReply:(id /* block */)reply;
+// 0x19f223044
+- (void)purgeCompiledModelMatchingHash:(id)hash withReply:(id /* block */)reply;
+// 0x19f22220c
+- (void)reportTelemetryToPPS:(id)pps playload:(id)playload;
+// 0x19f221d64
+- (void)unloadModel:(id)model options:(id)options qos:(unsigned int)qos withReply:(id /* block */)reply;
+
+@end
+
+@interface _ANEDataReporter : NSObject // 0x1ec989100
+
+/* class methods */
+// 0x19f21000c
++ (void)addValue:(long long)value forScalarKey:(id)key;
+// 0x19f2103d4
++ (id)analyticsKey:(id)key;
+// 0x19f2101d8
++ (id)reportClient:(id)client modelName:(id)name;
+// 0x19f2108b4
++ (void)reportErrorMsg:(unsigned int)msg status:(unsigned int)status;
+// 0x19f210474
++ (void)reportTelemetryToPPS:(id)pps playload:(id)playload;
+
+@end
+
+@interface _ANEDeviceController : NSObject { // 0x1ec9895d8
+    /* instance variables */                                                                                             // +size   offset
+    _Bool _isPrivileged;                                                                                                 // +0x1    0x8
+    long long _usecount;                                                                                                 // +0x8    0x10
+    struct ANEDeviceStruct { void *x0; void *x1; void *x2; unsigned char x3; int x4; unsigned long long x5; } * _device; // +0x8    0x18
+    unsigned long long _programHandle;                                                                                   // +0x8    0x20
+}
+
+@property (nonatomic) long long usecount;
+@property (readonly, nonatomic) _Bool isPrivileged;
+@property (nonatomic) struct ANEDeviceStruct { void *x0; void *x1; void *x2; unsigned char x3; int x4; unsigned long long x5; } * device;
+@property (readonly, nonatomic) unsigned long long programHandle;
+
+/* class methods */
+// 0x19f240778
++ (id)new;
+// 0x19f2406e0
++ (void)initialize;
+// 0x19f2407dc
++ (id)controllerWithPrivilegedVM:(_Bool)vm;
+// 0x19f24079c
++ (id)controllerWithProgramHandle:(unsigned long long)handle;
+// 0x19f240818
++ (id)sharedPrivilegedConnection;
+
+/* instance methods */
+// 0x19f2414ec
+- (void)setDevice:(struct ANEDeviceStruct { void *x0; void *x1; void *x2; unsigned char x3; int x4; unsigned long long x5; } *)device;
+// 0x19f2414e4
+- (struct ANEDeviceStruct { void *x0; void *x1; void *x2; unsigned char x3; int x4; unsigned long long x5; } *)device;
+// 0x19f240a8c
+- (void)start;
+// 0x19f241170
+- (void)stop;
+// 0x19f240780
+- (id)init;
+// 0x19f2414f4
+- (unsigned long long)programHandle;
+// 0x19f2408a8
+- (id)initWithANEPrivilegedVM:(_Bool)vm;
+// 0x19f240a34
+- (id)initWithProgramHandle:(unsigned long long)handle priviledged:(_Bool)priviledged;
+// 0x19f2414dc
+- (_Bool)isPrivileged;
+// 0x19f2414d4
+- (void)setUsecount:(long long)usecount;
+// 0x19f2414cc
+- (long long)usecount;
+
+@end
+
+@interface _ANEDeviceInfo : NSObject // 0x1ec9897e0
+
+/* class methods */
+// 0x19f20ddd0
++ (id)bootArgs;
+// 0x19f20d0f4
++ (_Bool)hasANE;
+// 0x19f20dcb8
++ (id)buildVersion;
+// 0x19f20dd44
++ (id)productName;
+// 0x19f20d1e8
++ (id)aneArchitectureType;
+// 0x19f20d4ac
++ (id)aneSubType;
+// 0x19f20d960
++ (_Bool)isExcessivePowerDrainWhenIdle;
+// 0x19f20db54
++ (id)aneSubTypeProductVariant;
+// 0x19f20d980
++ (id)aneSubTypeVariant;
+// 0x19f20e01c
++ (_Bool)precompiledModelChecksDisabled;
+// 0x19f20d060
++ (_Bool)isVirtualMachine;
+// 0x19f20e0d0
++ (unsigned int)numANEs;
+// 0x19f20d000
++ (_Bool)isInternalBuild;
+// 0x19f20df20
++ (_Bool)isBoolBootArgSetTrue:(id)_true;
+// 0x19f20e438
++ (unsigned int)numANECores;
+// 0x19f20de8c
++ (_Bool)isBootArgPresent:(id)present;
+// 0x19f20d3c8
++ (long long)aneBoardType;
+
+@end
+
+@interface _ANEErrors : NSObject // 0x1ec989088
+
+/* class methods */
+// 0x19f24a878
++ (id)createErrorWithCode:(long long)code description:(id)description;
+// 0x19f24ae18
++ (id)programLoadErrorForMethod:(id)method code:(long long)code;
+// 0x19f24b8ec
++ (id)badArgumentForMethod:(id)method;
+// 0x19f24b3c4
++ (id)baseModelIdentifierNotFoundForNewInstanceMethod:(id)method;
+// 0x19f24b7e4
++ (id)dataNotFoundForMethod:(id)method;
+// 0x19f24a9f4
++ (id)entitlementErrorForMethod:(id)method;
+// 0x19f24b028
++ (id)fileAccessErrorForMethod:(id)method;
+// 0x19f24b2bc
++ (id)fileNotFoundErrorForMethod:(id)method;
+// 0x19f24b6dc
++ (id)guestToHostInterfaceTooOld:(id)old;
+// 0x19f24b658
++ (id)hostTooOld:(id)old;
+// 0x19f24b0ac
++ (id)invalidModelErrorForMethod:(id)method;
+// 0x19f24b4cc
++ (id)invalidModelInstanceErrorForMethod:(id)method;
+// 0x19f24b130
++ (id)invalidModelKeyErrorForMethod:(id)method;
+// 0x19f24afa4
++ (id)missingCodeSigningErrorForMethod:(id)method;
+// 0x19f24b340
++ (id)modelIdentifierNotFoundForMethod:(id)method;
+// 0x19f24b448
++ (id)modelNewInstanceCacheIdentifierNotNilMethod:(id)method;
+// 0x19f24b868
++ (id)notSupportedErrorForMethod:(id)method;
+// 0x19f24aabc
++ (id)priorityErrorForMethod:(id)method;
+// 0x19f24b238
++ (id)programChainingPrepareErrorForMethod:(id)method;
+// 0x19f24ac08
++ (id)programCreationErrorForMethod:(id)method;
+// 0x19f24ae9c
++ (id)programIOSurfacesMapErrorForMethod:(id)method code:(long long)code;
+// 0x19f24af20
++ (id)programIOSurfacesUnmapErrorForMethod:(id)method code:(long long)code;
+// 0x19f24ad10
++ (id)programInferenceOtherErrorForMethod:(id)method;
+// 0x19f24ac8c
++ (id)programInferenceOverflowErrorForMethod:(id)method;
+// 0x19f24b760
++ (id)programInferenceProgramNotFoundForMethod:(id)method;
+// 0x19f24ad94
++ (id)programLoadErrorForMethod:(id)method;
+// 0x19f24b550
++ (id)programLoadNewInstanceErrorForMethod:(id)method;
+// 0x19f24b5d4
++ (id)programLoadNewInstanceErrorForMethod:(id)method code:(long long)code;
+// 0x19f24b1b4
++ (id)systemModelPurgeNotAllowedForMethod:(id)method;
+// 0x19f24ab84
++ (id)timeoutErrorForMethod:(id)method;
+// 0x19f24b970
++ (id)virtualizationDataError:(id)error;
+// 0x19f24ba78
++ (id)virtualizationHostError:(id)error;
+// 0x19f24bafc
++ (id)virtualizationHostError:(id)error error:(id)error;
+// 0x19f24b9f4
++ (id)virtualizationKernelError:(id)error kernelErrorCode:(int)code;
+
+@end
+
+@interface _ANEHashEncoding : NSObject // 0x1ec989060
+
+/* class methods */
+// 0x19f21871c
++ (id)hexStringForData:(id)data;
+// 0x19f21857c
++ (id)convertToHexString:(char *)string length:(unsigned long long)length;
+// 0x19f218934
++ (void)copySHA256For:(id)_for toBuffer:(char *)buffer;
+// 0x19f2189d8
++ (unsigned int)hashForString:(id)string seed:(unsigned int)seed;
+// 0x19f218614
++ (id)hexStringForBytes:(char *)bytes length:(unsigned long long)length;
+// 0x19f218794
++ (id)hexStringForDataArray:(id)array;
+// 0x19f2186a4
++ (id)hexStringForString:(id)string;
+
+@end
+
+@interface _ANEIOSurfaceObject : NSObject <NSSecureCoding> { // 0x1ec9896c8
+    /* instance variables */         // +size   offset
+    struct __IOSurface * _ioSurface; // +0x8    0x8
+    NSNumber *_startOffset;          // +0x8    0x10
+}
+
+@property (readonly, nonatomic) struct __IOSurface * ioSurface;
+@property (readonly, nonatomic) NSNumber *startOffset;
+
+/* class methods */
+// 0x19f23fbac
++ (id)new;
+// 0x19f23fd98
++ (_Bool)supportsSecureCoding;
+// 0x19f23fa84
++ (id)objectWithIOSurface:(struct __IOSurface *)iosurface;
+// 0x19f23ff04
++ (struct __IOSurface *)createIOSurfaceWithWidth:(int)width pixel_size:(int)pixel_size height:(int)height;
+// 0x19f240044
++ (struct __IOSurface *)createIOSurfaceWithWidth:(int)width pixel_size:(int)pixel_size height:(int)height bytesPerElement:(int)element;
+// 0x19f23facc
++ (id)objectWithIOSurface:(struct __IOSurface *)iosurface startOffset:(id)offset;
+// 0x19f23fb3c
++ (id)objectWithIOSurfaceNoRetain:(struct __IOSurface *)retain startOffset:(id)offset;
+
+/* instance methods */
+// 0x19f23fce0
+- (id)description;
+// 0x19f23fbb4
+- (id)init;
+// 0x19f2401d4
+- (void).cxx_destruct;
+// 0x19f23fe34
+- (id)initWithCoder:(id)coder;
+// 0x19f23fc90
+- (void)dealloc;
+// 0x19f2401c4
+- (struct __IOSurface *)ioSurface;
+// 0x19f2401cc
+- (id)startOffset;
+// 0x19f23fda0
+- (void)encodeWithCoder:(id)coder;
+// 0x19f23fbd0
+- (id)initWithIOSurface:(struct __IOSurface *)iosurface startOffset:(id)offset shouldRetain:(_Bool)retain;
+
+@end
+
+@interface _ANEIOSurfaceOutputSets : NSObject <NSSecureCoding> { // 0x1ec9895b0
+    /* instance variables */           // +size   offset
+    struct __IOSurface * _statsSurRef; // +0x8    0x8
+    NSArray *_outputBuffer;            // +0x8    0x10
+}
+
+@property (readonly, nonatomic) struct __IOSurface * statsSurRef;
+@property (readonly, nonatomic) NSArray *outputBuffer;
+
+/* class methods */
+// 0x19f21bcc8
++ (id)new;
+// 0x19f21be88
++ (_Bool)supportsSecureCoding;
+// 0x19f21bc5c
++ (id)objectWithstatsSurRef:(struct __IOSurface *)ref outputBuffer:(id)buffer;
+
+/* instance methods */
+// 0x19f21bdd4
+- (id)description;
+// 0x19f21bcd0
+- (id)init;
+// 0x19f21c0c4
+- (void).cxx_destruct;
+// 0x19f21bf34
+- (id)initWithCoder:(id)coder;
+// 0x19f21bd9c
+- (void)dealloc;
+// 0x19f21be90
+- (void)encodeWithCoder:(id)coder;
+// 0x19f21bcec
+- (id)initWithstatsSurRef:(struct __IOSurface *)ref outputBuffer:(id)buffer;
+// 0x19f21c0bc
+- (id)outputBuffer;
+// 0x19f21c0b4
+- (struct __IOSurface *)statsSurRef;
+
+@end
+
+@interface _ANEInMemoryModel : NSObject { // 0x1ec9898d0
+    /* instance variables */                      // +size   offset
+    signed char _queueDepth;                      // +0x1    0x8
+    _Bool _isMILModel;                            // +0x1    0x9
+    unsigned int _perfStatsMask;                  // +0x4    0xc
+    NSDictionary *_modelAttributes;               // +0x8    0x10
+    NSString *_hexStringIdentifier;               // +0x8    0x18
+    unsigned long long _intermediateBufferHandle; // +0x8    0x20
+    _ANEClient *_sharedConnection;                // +0x8    0x28
+    NSURL *_modelURL;                             // +0x8    0x30
+    NSString *_compilerOptionsFileName;           // +0x8    0x38
+    _ANEModel *_model;                            // +0x8    0x40
+    unsigned long long _string_id;                // +0x8    0x48
+    unsigned long long _programHandle;            // +0x8    0x50
+    _ANEProgramForEvaluation *_program;           // +0x8    0x58
+    unsigned long long _state;                    // +0x8    0x60
+    _ANEInMemoryModelDescriptor *_descriptor;     // +0x8    0x68
+}
+
+@property (readonly, nonatomic) _ANEClient *sharedConnection;
+@property (retain, nonatomic) NSDictionary *modelAttributes;
+@property (retain, nonatomic) NSURL *modelURL;
+@property (readonly, nonatomic) _Bool isMILModel;
+@property (copy, nonatomic) NSString *compilerOptionsFileName;
+@property (retain, nonatomic) _ANEModel *model;
+@property (readonly, nonatomic) unsigned long long string_id;
+@property (nonatomic) unsigned long long programHandle;
+@property (nonatomic) signed char queueDepth;
+@property (nonatomic) unsigned long long intermediateBufferHandle;
+@property (retain, nonatomic) _ANEProgramForEvaluation *program;
+@property (nonatomic) unsigned int perfStatsMask;
+@property (nonatomic) unsigned long long state;
+@property (retain, nonatomic) _ANEInMemoryModelDescriptor *descriptor;
+@property (readonly, copy, nonatomic) NSString *hexStringIdentifier;
+
+/* class methods */
+// 0x19f21ed20
++ (id)new;
+// 0x19f21ecd8
++ (void)initialize;
+// 0x19f21f63c
++ (id)inMemoryModelWithDescriptor:(id)descriptor;
+
+/* instance methods */
+// 0x19f2204dc
+- (id)modelURL;
+// 0x19f2204e4
+- (void)setModelURL:(id)url;
+// 0x19f220560
+- (void)setDescriptor:(id)descriptor;
+// 0x19f220510
+- (void)setModel:(id)model;
+// 0x19f220558
+- (id)descriptor;
+// 0x19f21ed28
+- (id)init;
+// 0x19f220548
+- (unsigned long long)state;
+// 0x19f220508
+- (id)model;
+// 0x19f22056c
+- (void).cxx_destruct;
+// 0x19f21ef28
+- (void)dealloc;
+// 0x19f220534
+- (id)program;
+// 0x19f2204d4
+- (id)sharedConnection;
+// 0x19f220550
+- (void)setState:(unsigned long long)state;
+// 0x19f2204c4
+- (signed char)queueDepth;
+// 0x19f2204cc
+- (void)setQueueDepth:(signed char)depth;
+// 0x19f22053c
+- (void)setProgram:(id)program;
+// 0x19f220488
+- (id)modelAttributes;
+// 0x19f21ffc0
+- (_Bool)evaluateWithQoS:(unsigned int)s options:(id)options request:(id)request error:(id *)error;
+// 0x19f21f9b0
+- (_Bool)loadWithQoS:(unsigned int)s options:(id)options error:(id *)error;
+// 0x19f21fcd8
+- (_Bool)unloadWithQoS:(unsigned int)s error:(id *)error;
+// 0x19f2204ac
+- (id)hexStringIdentifier;
+// 0x19f2204b4
+- (unsigned long long)intermediateBufferHandle;
+// 0x19f220524
+- (unsigned long long)programHandle;
+// 0x19f2202c0
+- (void)purgeCompiledModel;
+// 0x19f21f804
+- (_Bool)compileWithQoS:(unsigned int)s options:(id)options error:(id *)error;
+// 0x19f220224
+- (_Bool)compiledModelExists;
+// 0x19f2204f8
+- (id)compilerOptionsFileName;
+// 0x19f21f698
+- (id)compilerOptionsWithOptions:(id)options isCompiledModelCached:(_Bool)cached;
+// 0x19f21ed44
+- (id)initWithDesctiptor:(id)desctiptor;
+// 0x19f2204f0
+- (_Bool)isMILModel;
+// 0x19f21efdc
+- (id)localModelPath;
+// 0x19f220354
+- (_Bool)mapIOSurfacesWithRequest:(id)request cacheInference:(_Bool)inference error:(id *)error;
+// 0x19f22049c
+- (unsigned int)perfStatsMask;
+// 0x19f21f064
+- (id)saveModelFiles;
+// 0x19f220500
+- (void)setCompilerOptionsFileName:(id)name;
+// 0x19f2204bc
+- (void)setIntermediateBufferHandle:(unsigned long long)handle;
+// 0x19f220490
+- (void)setModelAttributes:(id)attributes;
+// 0x19f2204a4
+- (void)setPerfStatsMask:(unsigned int)mask;
+// 0x19f22052c
+- (void)setProgramHandle:(unsigned long long)handle;
+// 0x19f22051c
+- (unsigned long long)string_id;
+// 0x19f2203f8
+- (void)unmapIOSurfacesWithRequest:(id)request;
+
+@end
+
+@interface _ANEInMemoryModelDescriptor : NSObject { // 0x1ec989a10
+    /* instance variables */     // +size   offset
+    _Bool _isMILModel;           // +0x1    0x8
+    NSString *_networkTextHash;  // +0x8    0x10
+    NSString *_weightsHash;      // +0x8    0x18
+    NSString *_optionsPlistHash; // +0x8    0x20
+    NSData *_networkText;        // +0x8    0x28
+    NSDictionary *_weights;      // +0x8    0x30
+    NSData *_optionsPlist;       // +0x8    0x38
+}
+
+@property (readonly, copy, nonatomic) NSString *networkTextHash;
+@property (readonly, copy, nonatomic) NSString *weightsHash;
+@property (readonly, nonatomic) NSString *optionsPlistHash;
+@property (readonly, copy, nonatomic) NSData *networkText;
+@property (readonly, nonatomic) NSDictionary *weights;
+@property (readonly, nonatomic) NSData *optionsPlist;
+@property (readonly, nonatomic) _Bool isMILModel;
+
+/* class methods */
+// 0x19f24c784
++ (id)new;
+// 0x19f24cbe0
++ (id)modelWithNetworkDescription:(id)description weights:(id)weights optionsPlist:(id)plist;
+// 0x19f24cc80
++ (id)modelWithMILText:(id)miltext weights:(id)weights optionsPlist:(id)plist;
+
+/* instance methods */
+// 0x19f24d04c
+- (id)weights;
+// 0x19f24c78c
+- (id)init;
+// 0x19f24d064
+- (void).cxx_destruct;
+// 0x19f24cf14
+- (_Bool)isEqual:(id)equal;
+// 0x19f24cf90
+- (unsigned long long)hash;
+// 0x19f24cd20
+- (id)hexStringIdentifier;
+// 0x19f24d02c
+- (id)networkTextHash;
+// 0x19f24c7a8
+- (id)initWithNetworkText:(id)text weights:(id)weights optionsPlist:(id)plist isMILModel:(_Bool)milmodel;
+// 0x19f24cde0
+- (_Bool)isEqualToInMemoryModelDescriptor:(id)descriptor;
+// 0x19f24d05c
+- (_Bool)isMILModel;
+// 0x19f24d044
+- (id)networkText;
+// 0x19f24d054
+- (id)optionsPlist;
+// 0x19f24d03c
+- (id)optionsPlistHash;
+// 0x19f24d034
+- (id)weightsHash;
+
+@end
+
+@interface _ANEInputBuffersReady : NSObject { // 0x1ec989970
+    /* instance variables */            // +size   offset
+    unsigned int _procedureIndex;       // +0x4    0x8
+    NSArray *_inputBufferInfoIndex;     // +0x8    0x10
+    NSArray *_inputFreeValue;           // +0x8    0x18
+    unsigned long long _executionDelay; // +0x8    0x20
+}
+
+@property (readonly, nonatomic) unsigned int procedureIndex;
+@property (readonly, nonatomic) NSArray *inputBufferInfoIndex;
+@property (readonly, nonatomic) NSArray *inputFreeValue;
+@property (readonly, nonatomic) unsigned long long executionDelay;
+
+/* class methods */
+// 0x19f23ebcc
++ (id)new;
+// 0x19f23ecb0
++ (id)inputBuffersWithProcedureIndex:(unsigned int)index inputBufferInfoIndex:(id)index inputFreeValue:(id)value executionDelay:(unsigned long long)delay;
+
+/* instance methods */
+// 0x19f23ed48
+- (_Bool)validate;
+// 0x19f23ebd4
+- (id)init;
+// 0x19f23ee6c
+- (void).cxx_destruct;
+// 0x19f23ee4c
+- (unsigned int)procedureIndex;
+// 0x19f23ee64
+- (unsigned long long)executionDelay;
+// 0x19f23ebf0
+- (id)initInputsProcedureIndex:(unsigned int)index inputBufferInfoIndex:(id)index inputFreeValue:(id)value executionDelay:(unsigned long long)delay;
+// 0x19f23ee54
+- (id)inputBufferInfoIndex;
+// 0x19f23ee5c
+- (id)inputFreeValue;
+
+@end
+
+@interface _ANELog : NSObject // 0x1ec9897b8
+
+/* class methods */
+// 0x19f21b460
++ (id)daemon;
+// 0x19f21b578
++ (id)compiler;
+// 0x19f21b690
++ (id)tool;
+// 0x19f21b4ec
++ (id)framework;
+// 0x19f21b7a8
++ (id)tests;
+// 0x19f21b71c
++ (id)common;
+// 0x19f21b604
++ (id)maintenance;
+
+@end
+
+@interface _ANEModel : NSObject <NSCopying, NSSecureCoding> { // 0x1ec9896a0
+    /* instance variables */                                             // +size   offset
+    signed char _queueDepth;                                             // +0x1    0x8
+    unsigned int _perfStatsMask;                                         // +0x4    0xc
+    struct os_unfair_lock_s { unsigned int _os_unfair_lock_opaque; } _l; // +0x4    0x10
+    NSURL *_sourceURL;                                                   // +0x8    0x18
+    NSURL *_modelURL;                                                    // +0x8    0x20
+    NSString *_key;                                                      // +0x8    0x28
+    NSUUID *_UUID;                                                       // +0x8    0x30
+    long long _identifierSource;                                         // +0x8    0x38
+    unsigned long long _string_id;                                       // +0x8    0x40
+    unsigned long long _programHandle;                                   // +0x8    0x48
+    unsigned long long _intermediateBufferHandle;                        // +0x8    0x50
+    NSDictionary *_modelAttributes;                                      // +0x8    0x58
+    NSDictionary *_mpsConstants;                                         // +0x8    0x60
+    _ANEProgramForEvaluation *_program;                                  // +0x8    0x68
+    unsigned long long _state;                                           // +0x8    0x70
+    _ANEProgramIOSurfacesMapper *_mapper;                                // +0x8    0x78
+    NSString *_cacheURLIdentifier;                                       // +0x8    0x80
+}
+
+@property (retain, nonatomic) NSDictionary *modelAttributes;
+@property (nonatomic) unsigned long long programHandle;
+@property (nonatomic) signed char queueDepth;
+@property (nonatomic) unsigned long long intermediateBufferHandle;
+@property (nonatomic) struct os_unfair_lock_s { unsigned int x0; } l;
+@property (retain, nonatomic) _ANEProgramForEvaluation *program;
+@property (nonatomic) unsigned int perfStatsMask;
+@property (nonatomic) unsigned long long state;
+@property (retain, nonatomic) _ANEProgramIOSurfacesMapper *mapper;
+@property (nonatomic) unsigned long long string_id;
+@property (copy, nonatomic) NSString *cacheURLIdentifier;
+@property (readonly, nonatomic) NSURL *sourceURL;
+@property (readonly, nonatomic) NSURL *modelURL;
+@property (readonly, copy, nonatomic) NSString *key;
+@property (readonly, nonatomic) NSUUID *UUID;
+@property (readonly, nonatomic) long long identifierSource;
+@property (readonly, nonatomic) NSDictionary *mpsConstants;
+
+/* class methods */
+// 0x19f2159fc
++ (id)new;
+// 0x19f21773c
++ (_Bool)supportsSecureCoding;
+// 0x19f216500
++ (id)modelAtURL:(id)url key:(id)key;
+// 0x19f2169f4
++ (id)modelAtURLWithSourceURL:(id)url sourceURL:(id)url key:(id)key cacheURLIdentifier:(id)urlidentifier;
+// 0x19f2166f0
++ (id)modelWithCacheURLIdentifier:(id)urlidentifier;
+// 0x19f21660c
++ (id)modelAtURL:(id)url key:(id)key modelAttributes:(id)attributes;
+// 0x19f216d44
++ (id)correctFileURLFormat:(id)urlformat;
+// 0x19f21650c
++ (id)modelAtURL:(id)url key:(id)key mpsConstants:(id)constants;
+// 0x19f216800
++ (id)modelAtURLWithCacheURLIdentifier:(id)urlidentifier key:(id)key cacheURLIdentifier:(id)urlidentifier;
+// 0x19f216b1c
++ (id)modelAtURLWithSourceURL:(id)url sourceURL:(id)url key:(id)key identifierSource:(long long)source cacheURLIdentifier:(id)urlidentifier;
+// 0x19f216c1c
++ (id)modelAtURLWithSourceURL:(id)url sourceURL:(id)url key:(id)key identifierSource:(long long)source cacheURLIdentifier:(id)urlidentifier UUID:(id)uuid;
+// 0x19f21674c
++ (id)modelWithCacheURLIdentifier:(id)urlidentifier UUID:(id)uuid;
+
+/* instance methods */
+// 0x19f2183cc
+- (id)modelURL;
+// 0x19f2183dc
+- (id)UUID;
+// 0x19f2183d4
+- (id)key;
+// 0x19f215a20
+- (id)description;
+// 0x19f215a04
+- (id)init;
+// 0x19f21847c
+- (unsigned long long)state;
+// 0x19f2184a8
+- (void).cxx_destruct;
+// 0x19f217970
+- (id)initWithCoder:(id)coder;
+// 0x19f21644c
+- (void)dealloc;
+// 0x19f218468
+- (id)program;
+// 0x19f217c58
+- (id)copyWithZone:(struct _NSZone *)zone;
+// 0x19f21814c
+- (_Bool)isEqual:(id)equal;
+// 0x19f218304
+- (unsigned long long)hash;
+// 0x19f2181c8
+- (id)shallowCopy;
+// 0x19f2183c4
+- (id)sourceURL;
+// 0x19f217744
+- (void)encodeWithCoder:(id)coder;
+// 0x19f21848c
+- (id)mapper;
+// 0x19f218484
+- (void)setState:(unsigned long long)state;
+// 0x19f2168d0
+- (id)getUUID;
+// 0x19f21841c
+- (signed char)queueDepth;
+// 0x19f218424
+- (void)setQueueDepth:(signed char)depth;
+// 0x19f218470
+- (void)setProgram:(id)program;
+// 0x19f218458
+- (struct os_unfair_lock_s { unsigned int x0; })l;
+// 0x19f21842c
+- (id)modelAttributes;
+// 0x19f218460
+- (void)setL:(struct os_unfair_lock_s { unsigned int x0; })l;
+// 0x19f2168c8
+- (id)getCacheURLIdentifier;
+// 0x19f21840c
+- (unsigned long long)intermediateBufferHandle;
+// 0x19f2183fc
+- (unsigned long long)programHandle;
+// 0x19f217d98
+- (_Bool)isEqualToModel:(id)model;
+// 0x19f2170dc
+- (id)procedureInfoForProcedureIndex:(unsigned int)index;
+// 0x19f2184a0
+- (id)cacheURLIdentifier;
+// 0x19f2183e4
+- (long long)identifierSource;
+// 0x19f216348
+- (id)initWithModelAtURL:(id)url key:(id)key identifierSource:(long long)source cacheURLIdentifier:(id)urlidentifier modelAttributes:(id)attributes standardizeURL:(_Bool)url;
+// 0x19f216304
+- (id)initWithModelAtURL:(id)url sourceURL:(id)url UUID:(id)uuid key:(id)key identifierSource:(long long)source cacheURLIdentifier:(id)urlidentifier modelAttributes:(id)attributes standardizeURL:(_Bool)url string_id:(unsigned long long)string_id generateNewStringId:(_Bool)id;
+// 0x19f215f8c
+- (id)initWithModelAtURL:(id)url sourceURL:(id)url UUID:(id)uuid key:(id)key identifierSource:(long long)source cacheURLIdentifier:(id)urlidentifier modelAttributes:(id)attributes standardizeURL:(_Bool)url string_id:(unsigned long long)string_id generateNewStringId:(_Bool)id mpsConstants:(id)constants;
+// 0x19f2166d0
+- (id)initWithModelIdentifier:(id)identifier;
+// 0x19f21771c
+- (id)inputSymbolIndicesForProcedureIndex:(unsigned int)index;
+// 0x19f218450
+- (id)mpsConstants;
+// 0x19f21772c
+- (id)outputSymbolIndicesForProcedureIndex:(unsigned int)index;
+// 0x19f218440
+- (unsigned int)perfStatsMask;
+// 0x19f217060
+- (void)resetOnUnload;
+// 0x19f2168d8
+- (void)setCacheURLIdentifier:(id)urlidentifier;
+// 0x19f218414
+- (void)setIntermediateBufferHandle:(unsigned long long)handle;
+// 0x19f218494
+- (void)setMapper:(id)mapper;
+// 0x19f218434
+- (void)setModelAttributes:(id)attributes;
+// 0x19f218448
+- (void)setPerfStatsMask:(unsigned int)mask;
+// 0x19f218404
+- (void)setProgramHandle:(unsigned long long)handle;
+// 0x19f2183f4
+- (void)setString_id:(unsigned long long)string_id;
+// 0x19f2183ec
+- (unsigned long long)string_id;
+// 0x19f217488
+- (id)symbolIndicesForProcedureIndex:(unsigned int)index indexArrayKey:(id)key;
+// 0x19f216f40
+- (void)updateModelAttributes:(id)attributes state:(unsigned long long)state;
+// 0x19f216fb4
+- (void)updateModelAttributes:(id)attributes state:(unsigned long long)state programHandle:(unsigned long long)handle intermediateBufferHandle:(unsigned long long)handle queueDepth:(signed char)depth;
+
+@end
+
+@interface _ANEModelInstanceParameters : NSObject <NSCopying, NSSecureCoding> { // 0x1ec989588
+    /* instance variables */  // +size   offset
+    NSString *_instanceName;  // +0x8    0x8
+    NSArray *_procedureArray; // +0x8    0x10
+}
+
+@property (readonly, copy, nonatomic) NSString *instanceName;
+@property (readonly, nonatomic) NSArray *procedureArray;
+
+/* class methods */
+// 0x19f214fec
++ (id)new;
+// 0x19f2150b8
++ (_Bool)supportsSecureCoding;
+// 0x19f214ec8
++ (id)withProcedureData:(id)data procedureArray:(id)array;
+
+/* instance methods */
+// 0x19f214f48
+- (id)description;
+// 0x19f21534c
+- (id)instanceName;
+// 0x19f214ff4
+- (id)init;
+// 0x19f21535c
+- (void).cxx_destruct;
+// 0x19f2151a0
+- (id)initWithCoder:(id)coder;
+// 0x19f2152ec
+- (id)copyWithZone:(struct _NSZone *)zone;
+// 0x19f2150c0
+- (void)encodeWithCoder:(id)coder;
+// 0x19f215010
+- (id)initWithProcedureData:(id)data procedureArray:(id)array;
+// 0x19f215354
+- (id)procedureArray;
+
+@end
+
+@interface _ANEModelToken : NSObject { // 0x1ed5b8390
+    /* instance variables */    // +size   offset
+    int _processIdentifier;     // +0x4    0x8
+    NSString *_modelIdentifier; // +0x8    0x10
+    NSString *_csIdentity;      // +0x8    0x18
+    NSString *_teamIdentity;    // +0x8    0x20
+}
+
+@property (readonly, nonatomic) NSString *modelIdentifier;
+@property (readonly, nonatomic) NSString *csIdentity;
+@property (readonly, nonatomic) NSString *teamIdentity;
+@property (readonly, nonatomic) int processIdentifier;
+
+/* class methods */
+// 0x19f20c768
++ (id)codeSigningIDFor:(struct { unsigned int x0[8]; })idfor processIdentifier:(int)identifier;
+// 0x19f20c510
++ (id)processNameFor:(struct { unsigned int x0[8]; })_for identifier:(int)identifier;
+// 0x19f20c9f0
++ (id)teamIDFor:(struct { unsigned int x0[8]; })idfor processIdentifier:(int)identifier;
+// 0x19f20ce24
++ (id)tokenWithAuditToken:(struct { unsigned int x0[8]; })token modelIdentifier:(id)identifier processIdentifier:(int)identifier;
+// 0x19f20cd74
++ (id)tokenWithCsIdentity:(id)identity teamIdentity:(id)identity modelIdentifier:(id)identifier processIdentifier:(int)identifier;
+
+/* instance methods */
+// 0x19f20cf3c
+- (id)modelIdentifier;
+// 0x19f20cf54
+- (int)processIdentifier;
+// 0x19f20ceac
+- (id)description;
+// 0x19f20cf5c
+- (void).cxx_destruct;
+// 0x19f20cf44
+- (id)csIdentity;
+// 0x19f20cbc4
+- (id)initWithAuditToken:(struct { unsigned int x0[8]; })token modelIdentifier:(id)identifier processIdentifier:(int)identifier;
+// 0x19f20cc98
+- (id)initWithCsIdentity:(id)identity teamIdentity:(id)identity modelIdentifier:(id)identifier processIdentifier:(int)identifier;
+// 0x19f20cf4c
+- (id)teamIdentity;
+
+@end
+
+@interface _ANEOutputSetEnqueue : NSObject { // 0x1ec989880
+    /* instance variables */         // +size   offset
+    _Bool _signalNotRequired;        // +0x1    0x8
+    _Bool _isOpenLoop;               // +0x1    0x9
+    unsigned int _procedureIndex;    // +0x4    0xc
+    unsigned int _setIndex;          // +0x4    0x10
+    unsigned long long _signalValue; // +0x8    0x18
+}
+
+@property (readonly, nonatomic) unsigned int procedureIndex;
+@property (readonly, nonatomic) unsigned int setIndex;
+@property (readonly, nonatomic) unsigned long long signalValue;
+@property (readonly, nonatomic) _Bool signalNotRequired;
+@property (readonly, nonatomic) _Bool isOpenLoop;
+
+/* class methods */
+// 0x19f2158cc
++ (id)new;
+// 0x19f215968
++ (id)outputSetWithProcedureIndex:(unsigned int)index setIndex:(unsigned int)index signalValue:(unsigned long long)value signalNotRequired:(_Bool)required isOpenLoop:(_Bool)loop;
+
+/* instance methods */
+// 0x19f2158d4
+- (id)init;
+// 0x19f2159d4
+- (unsigned int)procedureIndex;
+// 0x19f2158f0
+- (id)initOutputSetWithProcedureIndex:(unsigned int)index setIndex:(unsigned int)index signalValue:(unsigned long long)value signalNotRequired:(_Bool)required isOpenLoop:(_Bool)loop;
+// 0x19f2159f4
+- (_Bool)isOpenLoop;
+// 0x19f2159dc
+- (unsigned int)setIndex;
+// 0x19f2159ec
+- (_Bool)signalNotRequired;
+// 0x19f2159e4
+- (unsigned long long)signalValue;
+
+@end
+
+@interface _ANEPerformanceStats : NSObject { // 0x1ec989920
+    /* instance variables */             // +size   offset
+    unsigned long long _hwExecutionTime; // +0x8    0x8
+    NSData *_pStatsRawData;              // +0x8    0x10
+    NSData *_perfCounterData;            // +0x8    0x18
+}
+
+@property (readonly, nonatomic) NSData *perfCounterData;
+@property (readonly, nonatomic) unsigned long long hwExecutionTime;
+@property (readonly, nonatomic) NSData *pStatsRawData;
+
+/* class methods */
+// 0x19f226068
++ (id)new;
+// 0x19f225f44
++ (unsigned int)driverMaskForANEFMask:(unsigned int)anefmask;
+// 0x19f226588
++ (id)statsWithHardwareExecutionNS:(unsigned long long)ns;
+// 0x19f2265cc
++ (id)statsWithReconstructed:(id)reconstructed hardwareExecutionNS:(unsigned long long)ns aneStatsRawData:(id)data;
+// 0x19f226544
++ (id)statsWithRequestPerformanceBuffer:(void * *)buffer statsBufferSize:(unsigned int *)size;
+
+/* instance methods */
+// 0x19f225f90
+- (id)description;
+// 0x19f226070
+- (id)init;
+// 0x19f226c80
+- (void).cxx_destruct;
+// 0x19f226c68
+- (unsigned long long)hwExecutionTime;
+// 0x19f226c78
+- (id)perfCounterData;
+// 0x19f226804
+- (void)emitPerfcounterSignpostsWithModelStringID:(unsigned long long)id;
+// 0x19f22608c
+- (id)initWithHardwareExecution:(unsigned long long)execution perfCounterData:(id)data ANEStatsRawData:(id)data;
+// 0x19f226530
+- (id)initWithReconstructedData:(id)data hardwareExecutionNS:(unsigned long long)ns;
+// 0x19f226158
+- (id)initWithRequestPerformanceBuffer:(void * *)buffer statsBufferSize:(unsigned int *)size;
+// 0x19f226c70
+- (id)pStatsRawData;
+// 0x19f226670
+- (id)performanceCounters;
+// 0x19f225f6c
+- (id)stringForPerfCounter:(int)counter;
+
+@end
+
+@interface _ANEPerformanceStatsIOSurface : NSObject { // 0x1ec989830
+    /* instance variables */     // +size   offset
+    long long _statType;         // +0x8    0x8
+    _ANEIOSurfaceObject *_stats; // +0x8    0x10
+}
+
+@property (readonly, nonatomic) long long statType;
+@property (readonly, nonatomic) _ANEIOSurfaceObject *stats;
+
+/* class methods */
+// 0x19f21540c
++ (id)new;
+// 0x19f2153a0
++ (id)objectWithIOSurface:(id)iosurface statType:(long long)type;
+
+/* instance methods */
+// 0x19f2154b4
+- (id)description;
+// 0x19f215414
+- (id)init;
+// 0x19f215574
+- (void).cxx_destruct;
+// 0x19f21556c
+- (id)stats;
+// 0x19f215430
+- (id)initWithIOSurface:(id)iosurface statType:(long long)type;
+// 0x19f215564
+- (long long)statType;
+
+@end
+
+@interface _ANEProcedureData : NSObject <NSCopying, NSSecureCoding> { // 0x1ec9891c8
+    /* instance variables */    // +size   offset
+    NSString *_procedureSymbol; // +0x8    0x8
+    NSArray *_weightArray;      // +0x8    0x10
+}
+
+@property (readonly, copy, nonatomic) NSString *procedureSymbol;
+@property (readonly, nonatomic) NSArray *weightArray;
+
+/* class methods */
+// 0x19f2143d0
++ (id)new;
+// 0x19f21449c
++ (_Bool)supportsSecureCoding;
+// 0x19f2142ac
++ (id)procedureDataWithSymbol:(id)symbol weightArray:(id)array;
+
+/* instance methods */
+// 0x19f21432c
+- (id)description;
+// 0x19f2143d8
+- (id)init;
+// 0x19f214744
+- (void).cxx_destruct;
+// 0x19f214588
+- (id)initWithCoder:(id)coder;
+// 0x19f2146d4
+- (id)copyWithZone:(struct _NSZone *)zone;
+// 0x19f2144a4
+- (void)encodeWithCoder:(id)coder;
+// 0x19f214734
+- (id)procedureSymbol;
+// 0x19f2143f4
+- (id)initWithProcedure:(id)procedure weightArray:(id)array;
+// 0x19f21473c
+- (id)weightArray;
+
+@end
+
+@interface _ANEProgramForEvaluation : NSObject { // 0x1ec989420
+    /* instance variables */                            // +size   offset
+    signed char _queueDepth;                            // +0x1    0x8
+    _ANEDeviceController *_controller;                  // +0x8    0x10
+    unsigned long long _programHandle;                  // +0x8    0x18
+    unsigned long long _intermediateBufferHandle;       // +0x8    0x20
+    NSObject<OS_dispatch_semaphore> *_requestsInFlight; // +0x8    0x28
+    long long _currentAsyncRequestsInFlight;            // +0x8    0x30
+}
+
+@property (readonly, nonatomic) _ANEDeviceController *controller;
+@property (nonatomic) unsigned long long programHandle;
+@property (nonatomic) unsigned long long intermediateBufferHandle;
+@property (readonly, nonatomic) signed char queueDepth;
+@property (readonly, nonatomic) NSObject<OS_dispatch_semaphore> *requestsInFlight;
+@property long long currentAsyncRequestsInFlight;
+
+/* class methods */
+// 0x19f2109b0
++ (id)new;
+// 0x19f210a68
++ (id)programWithController:(id)controller intermediateBufferHandle:(unsigned long long)handle queueDepth:(signed char)depth;
+// 0x19f2109d4
++ (id)programWithHandle:(unsigned long long)handle intermediateBufferHandle:(unsigned long long)handle queueDepth:(signed char)depth;
+
+/* instance methods */
+// 0x19f21418c
+- (id)controller;
+// 0x19f210c70
+- (id)description;
+// 0x19f2109b8
+- (id)init;
+// 0x19f2141d4
+- (void).cxx_destruct;
+// 0x19f210bd8
+- (void)dealloc;
+// 0x19f2141b4
+- (signed char)queueDepth;
+// 0x19f2141a4
+- (unsigned long long)intermediateBufferHandle;
+// 0x19f214194
+- (unsigned long long)programHandle;
+// 0x19f2141c4
+- (long long)currentAsyncRequestsInFlight;
+// 0x19f210af0
+- (id)initWithController:(id)controller intermediateBufferHandle:(unsigned long long)handle queueDepth:(signed char)depth;
+// 0x19f2132d0
+- (_Bool)processInputBuffers:(id)buffers model:(id)model options:(id)options error:(id *)error;
+// 0x19f212fac
+- (_Bool)processOutputSet:(id)set model:(id)model options:(id)options error:(id *)error;
+// 0x19f210fb0
+- (_Bool)processRequest:(id)request model:(id)model qos:(unsigned int)qos qIndex:(unsigned long long)index modelStringID:(unsigned long long)id options:(id)options returnValue:(unsigned int *)value error:(id *)error;
+// 0x19f213984
+- (_Bool)processSessionHint:(id)hint options:(id)options report:(id)report error:(id *)error;
+// 0x19f210d3c
+- (id)programInferenceOtherErrorForMessage:(struct ANENotificationMessageStruct { int x0; int x1; void *x2; void *x3[4]; unsigned int x4[4]; } *)message model:(id)model methodName:(id)name;
+// 0x19f2141bc
+- (id)requestsInFlight;
+// 0x19f2141cc
+- (void)setCurrentAsyncRequestsInFlight:(long long)flight;
+// 0x19f2141ac
+- (void)setIntermediateBufferHandle:(unsigned long long)handle;
+// 0x19f21419c
+- (void)setProgramHandle:(unsigned long long)handle;
+
+@end
+
+@interface _ANEProgramIOSurfacesMapper : NSObject { // 0x1ec989380
+    /* instance variables */                 // +size   offset
+    _ANEDeviceController *_deviceController; // +0x8    0x8
+    _ANEDeviceController *_controller;       // +0x8    0x10
+    unsigned long long _programHandle;       // +0x8    0x18
+}
+
+@property (readonly, nonatomic) _ANEDeviceController *controller;
+@property (readonly, nonatomic) unsigned long long programHandle;
+@property (readonly, nonatomic) _ANEDeviceController *deviceController;
+
+/* class methods */
+// 0x19f21d544
++ (id)new;
+// 0x19f21d4ac
++ (void)initialize;
+// 0x19f21d69c
++ (id)mapperWithController:(id)controller;
+// 0x19f21d620
++ (id)mapperWithProgramHandle:(unsigned long long)handle;
+
+/* instance methods */
+// 0x19f21ec84
+- (id)controller;
+// 0x19f21df58
+- (_Bool)mapIOSurfacesWithModel:(id)model request:(id)request cacheInference:(_Bool)inference error:(id *)error;
+// 0x19f21d568
+- (id)initWithController:(id)controller;
+// 0x19f21d54c
+- (id)init;
+// 0x19f21ec94
+- (void).cxx_destruct;
+// 0x19f21d70c
+- (void)dealloc;
+// 0x19f21ec8c
+- (unsigned long long)programHandle;
+// 0x19f21ec7c
+- (id)deviceController;
+// 0x19f21dc28
+- (void)prepareANEMemoryMappingParams:(struct ANEMemoryMappingParamsStruct { struct ANEBufferStruct { struct __IOSurface *x00; unsigned int x1; int x2; int x3; unsigned int x4; } x[128]; unsigned long long x1; unsigned int x2; unsigned int x3; unsigned long long x4; } *)params request:(id)request;
+// 0x19f21e628
+- (_Bool)unmapIOSurfacesWithModel:(id)model request:(id)request error:(id *)error;
+// 0x19f21d7ac
+- (_Bool)validateRequest:(id)request model:(id)model;
+
+@end
+
+@interface _ANEQoSMapper : NSObject // 0x1ec9893f8
+
+/* class methods */
+// 0x19f21b83c
++ (unsigned int)aneUserInteractiveTaskQoS;
+// 0x19f21b85c
++ (unsigned int)aneBackgroundTaskQoS;
+// 0x19f21b84c
++ (unsigned int)aneDefaultTaskQoS;
+// 0x19f21b834
++ (unsigned int)aneRealTimeTaskQoS;
+// 0x19f21b844
++ (unsigned int)aneUserInitiatedTaskQoS;
+// 0x19f21b854
++ (unsigned int)aneUtilityTaskQoS;
+// 0x19f21bafc
++ (id)dispatchQueueArrayByMappingPrioritiesWithTag:(id)tag;
+// 0x19f21b998
++ (int)programPriorityForQoS:(unsigned int)s;
+// 0x19f21bacc
++ (unsigned int)qosForProgramPriority:(int)priority;
+// 0x19f21b864
++ (unsigned long long)queueIndexForQoS:(unsigned int)s;
+// 0x19f21bac4
++ (int)realTimeProgramPriority;
+// 0x19f21b990
++ (unsigned long long)realTimeQueueIndex;
+
+@end
+
+@interface _ANERequest : NSObject { // 0x1ec989268
+    /* instance variables */             // +size   offset
+    NSArray *_inputArray;                // +0x8    0x8
+    NSArray *_inputIndexArray;           // +0x8    0x10
+    NSArray *_outputArray;               // +0x8    0x18
+    NSArray *_outputIndexArray;          // +0x8    0x20
+    _ANEIOSurfaceObject *_weightsBuffer; // +0x8    0x28
+    _ANESharedEvents *_sharedEvents;     // +0x8    0x30
+    NSNumber *_transactionHandle;        // +0x8    0x38
+    NSNumber *_procedureIndex;           // +0x8    0x40
+    _ANEPerformanceStats *_perfStats;    // +0x8    0x48
+    NSArray *_perfStatsArray;            // +0x8    0x50
+    id /* block */ _completionHandler;   // +0x8    0x58
+}
+
+@property (retain, nonatomic) _ANEPerformanceStats *perfStats;
+@property (copy, nonatomic) NSNumber *transactionHandle;
+@property (readonly, nonatomic) NSArray *inputArray;
+@property (readonly, nonatomic) NSArray *inputIndexArray;
+@property (readonly, nonatomic) NSArray *outputArray;
+@property (readonly, nonatomic) NSArray *outputIndexArray;
+@property (readonly, nonatomic) _ANEIOSurfaceObject *weightsBuffer;
+@property (retain, nonatomic) _ANESharedEvents *sharedEvents;
+@property (readonly, copy, nonatomic) NSNumber *procedureIndex;
+@property (readonly, nonatomic) NSArray *perfStatsArray;
+@property (copy) id /* block */ completionHandler;
+
+/* class methods */
+// 0x19f218d9c
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices procedureIndex:(id)index;
+// 0x19f218e8c
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices perfStats:(id)stats procedureIndex:(id)index;
+// 0x19f218f9c
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices weightsBuffer:(id)buffer perfStats:(id)stats procedureIndex:(id)index;
+// 0x19f2190c4
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices weightsBuffer:(id)buffer perfStats:(id)stats procedureIndex:(id)index sharedEvents:(id)events;
+// 0x19f219208
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices weightsBuffer:(id)buffer perfStats:(id)stats procedureIndex:(id)index sharedEvents:(id)events transactionHandle:(id)handle;
+// 0x19f218c8c
++ (id)requestWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices weightsBuffer:(id)buffer procedureIndex:(id)index;
+
+/* instance methods */
+// 0x19f21a120
+- (void)setCompletionHandler:(id /* block */)handler;
+// 0x19f219364
+- (_Bool)validate;
+// 0x19f219ef0
+- (id)description;
+// 0x19f21a128
+- (void).cxx_destruct;
+// 0x19f21a114
+- (id /* block */)completionHandler;
+// 0x19f21a0c4
+- (id)weightsBuffer;
+// 0x19f21a0f0
+- (id)procedureIndex;
+// 0x19f21a0f8
+- (id)perfStats;
+// 0x19f21a10c
+- (id)perfStatsArray;
+// 0x19f21a0d4
+- (void)setSharedEvents:(id)events;
+// 0x19f21a0cc
+- (id)sharedEvents;
+// 0x19f21a0ac
+- (id)inputIndexArray;
+// 0x19f219e64
+- (unsigned long long)ioSurfacesCount;
+// 0x19f218a9c
+- (id)initWithInputs:(id)inputs inputIndices:(id)indices outputs:(id)outputs outputIndices:(id)indices weightsBuffer:(id)buffer perfStats:(id)stats procedureIndex:(id)index sharedEvents:(id)events transactionHandle:(id)handle;
+// 0x19f218c54
+- (id)initWithVirtualModel:(void *)model;
+// 0x19f21a0a4
+- (id)inputArray;
+// 0x19f21a0b4
+- (id)outputArray;
+// 0x19f21a0bc
+- (id)outputIndexArray;
+// 0x19f21a100
+- (void)setPerfStats:(id)stats;
+// 0x19f21a0e8
+- (void)setTransactionHandle:(id)handle;
+// 0x19f21a0e0
+- (id)transactionHandle;
+
+@end
+
+@interface _ANESandboxingHelper : NSObject // 0x1ec989358
+
+/* class methods */
+// 0x19f23eef8
++ (void)initialize;
+// 0x19f23fa50
++ (_Bool)releaseSandboxExtension:(id)extension handle:(long long)handle;
+// 0x19f23ef40
++ (_Bool)canAccessPathAt:(id)at methodName:(id)name error:(id *)error;
+// 0x19f23f6b0
++ (long long)consumeSandboxExtension:(id)extension forModel:(id)model error:(id *)error;
+// 0x19f23f778
++ (long long)consumeSandboxExtension:(id)extension forPath:(id)path error:(id *)error;
+// 0x19f23f454
++ (id)issueSandboxExtensionForModel:(id)model error:(id *)error;
+// 0x19f23f0fc
++ (id)issueSandboxExtensionForPath:(id)path error:(id *)error;
+// 0x19f23eff8
++ (id)sandboxExtensionPathForModelURL:(id)url;
+
+@end
+
+@interface _ANESharedEvents : NSObject { // 0x1ec989218
+    /* instance variables */ // +size   offset
+    NSArray *_signalEvents;  // +0x8    0x8
+    NSArray *_waitEvents;    // +0x8    0x10
+}
+
+@property (retain, nonatomic) NSArray *signalEvents;
+@property (retain, nonatomic) NSArray *waitEvents;
+
+/* class methods */
+// 0x19f223374
++ (id)new;
+// 0x19f223498
++ (id)sharedEventsWithSignalEvents:(id)events waitEvents:(id)events;
+
+/* instance methods */
+// 0x19f223518
+- (id)description;
+// 0x19f22337c
+- (id)init;
+// 0x19f223604
+- (void).cxx_destruct;
+// 0x19f223398
+- (id)initWithSignalEvents:(id)events waitEvents:(id)events;
+// 0x19f2235e4
+- (void)setSignalEvents:(id)events;
+// 0x19f2235f8
+- (void)setWaitEvents:(id)events;
+// 0x19f2235dc
+- (id)signalEvents;
+// 0x19f2235f0
+- (id)waitEvents;
+
+@end
+
+@interface _ANESharedSignalEvent : NSObject <NSSecureCoding> { // 0x1ec9896f0
+    /* instance variables */            // +size   offset
+    unsigned int _symbolIndex;          // +0x4    0x8
+    unsigned long long _value;          // +0x8    0x10
+    unsigned long long _agentMask;      // +0x8    0x18
+    long long _eventType;               // +0x8    0x20
+    IOSurfaceSharedEvent *_sharedEvent; // +0x8    0x28
+}
+
+@property (readonly, nonatomic) IOSurfaceSharedEvent *sharedEvent;
+@property (nonatomic) unsigned long long value;
+@property (readonly, nonatomic) unsigned int symbolIndex;
+@property (nonatomic) unsigned long long agentMask;
+@property (readonly, nonatomic) long long eventType;
+
+/* class methods */
+// 0x19f223648
++ (id)new;
+// 0x19f223914
++ (_Bool)supportsSecureCoding;
+// 0x19f223714
++ (id)signalEventWithValue:(unsigned long long)value symbolIndex:(unsigned int)index eventType:(long long)type sharedEvent:(id)event;
+
+/* instance methods */
+// 0x19f223af0
+- (long long)eventType;
+// 0x19f223af8
+- (id)sharedEvent;
+// 0x19f22382c
+- (id)description;
+// 0x19f223650
+- (id)init;
+// 0x19f223b00
+- (void).cxx_destruct;
+// 0x19f2239e0
+- (id)initWithCoder:(id)coder;
+// 0x19f223ad8
+- (void)setValue:(unsigned long long)value;
+// 0x19f22391c
+- (void)encodeWithCoder:(id)coder;
+// 0x19f223ad0
+- (unsigned long long)value;
+// 0x19f223ae8
+- (unsigned long long)agentMask;
+// 0x19f22366c
+- (id)initWithValue:(unsigned long long)value symbolIndex:(unsigned int)index eventType:(long long)type sharedEvent:(id)event agentMask:(unsigned long long)mask;
+// 0x19f223824
+- (void)setAgentMask:(unsigned long long)mask;
+// 0x19f223ae0
+- (unsigned int)symbolIndex;
+// 0x19f22379c
+- (id)waitEvent;
+
+@end
+
+@interface _ANESharedWaitEvent : NSObject { // 0x1ec9891a0
+    /* instance variables */            // +size   offset
+    unsigned long long _value;          // +0x8    0x8
+    unsigned long long _eventType;      // +0x8    0x10
+    IOSurfaceSharedEvent *_sharedEvent; // +0x8    0x18
+}
+
+@property (readonly, nonatomic) IOSurfaceSharedEvent *sharedEvent;
+@property (nonatomic) unsigned long long value;
+@property (readonly, nonatomic) unsigned long long eventType;
+
+/* class methods */
+// 0x19f24d0d8
++ (id)new;
+// 0x19f24d190
++ (id)waitEventWithValue:(unsigned long long)value sharedEvent:(id)event;
+// 0x19f24d200
++ (id)waitEventWithValue:(unsigned long long)value sharedEvent:(id)event eventType:(unsigned long long)type;
+
+/* instance methods */
+// 0x19f24d338
+- (unsigned long long)eventType;
+// 0x19f24d340
+- (id)sharedEvent;
+// 0x19f24d274
+- (id)description;
+// 0x19f24d0e0
+- (id)init;
+// 0x19f24d348
+- (void).cxx_destruct;
+// 0x19f24d330
+- (void)setValue:(unsigned long long)value;
+// 0x19f24d328
+- (unsigned long long)value;
+// 0x19f24d0fc
+- (id)initWithValue:(unsigned long long)value sharedEvent:(id)event eventType:(unsigned long long)type;
+
+@end
+
+@interface _ANEStrings : NSObject // 0x1ec989560
+
+/* class methods */
+// 0x19f21c0d0
++ (id)machServiceName;
+// 0x19f21c7d0
++ (id)errorDomainGeneric;
+// 0x19f21c878
++ (id)modelBinaryName;
+// 0x19f21c9b0
++ (id)pps_internalDir;
+// 0x19f21c854
++ (id)adapterWeightsAccessEntitlement;
+// 0x19f21c860
++ (id)adapterWeightsAccessEntitlementBypassBootArg;
+// 0x19f21c80c
++ (id)aggressivePowerSavingEntitlement;
+// 0x19f21c914
++ (id)binExtension;
+// 0x19f21c10c
++ (id)buildSpecificModelDataVaultDirectory;
+// 0x19f21c238
++ (id)buildSpecificUserModelDataVaultDirectory;
+// 0x19f21c488
++ (id)cloneDirectory;
+// 0x19f21c818
++ (id)compilerServiceAccessEntitlement;
+// 0x19f21c950
++ (id)coreAnalyticsANEUsageDefaultReportedClient;
+// 0x19f21c944
++ (id)coreAnalyticsANEUsageKeyGroup;
+// 0x19f21c8a8
++ (id)dataVaultStorageClass;
+// 0x19f21c8b4
++ (id)defaultANECIRFileName;
+// 0x19f21c8c0
++ (id)defaultANECIROptionsFileName;
+// 0x19f21c89c
++ (id)defaultCompilerOptionsFilename;
+// 0x19f21c8e4
++ (id)defaultLLIRBundleName;
+// 0x19f21c8cc
++ (id)defaultMILFileName;
+// 0x19f21c8d8
++ (id)defaultMLIRFileName;
+// 0x19f21c8f0
++ (id)defaultWeightFileName;
+// 0x19f21c7dc
++ (id)errorDomainCompiler;
+// 0x19f21c7e8
++ (id)errorDomainEspresso;
+// 0x19f21c7f4
++ (id)errorDomainVirtIO;
+// 0x19f21c908
++ (id)hwxExtension;
+// 0x19f21c364
++ (id)inMemoryModelCacheName;
+// 0x19f21c7c4
++ (id)internalLibraryPath;
+// 0x19f21c92c
++ (id)launchIOKitEvent;
+// 0x19f21c938
++ (id)launchUserIOKitEvent;
+// 0x19f21c8fc
++ (id)llirBundleExtension;
+// 0x19f21c0e8
++ (id)machServiceNamePrivate;
+// 0x19f21c86c
++ (id)memoryUnwireAccessEntitlement;
+// 0x19f21c370
++ (id)modelAssetsCacheName;
+// 0x19f21c890
++ (id)modelCacheRetainName;
+// 0x19f21c0f4
++ (id)modelDataVaultDirectory;
+// 0x19f21c824
++ (id)modelPurgeInAllPartitionsEntitlement;
+// 0x19f21c884
++ (id)modelSourceStoreName;
+// 0x19f21c920
++ (id)noSandboxExtension;
+// 0x19f21c968
++ (id)ppsCategoryForANE;
+// 0x19f21c95c
++ (id)ppsSubsystemForANE;
+// 0x19f21c9bc
++ (id)pps_applicationDir;
+// 0x19f21c9c8
++ (id)pps_catalogDir;
+// 0x19f21c9d4
++ (id)pps_defaultSystemPathDir;
+// 0x19f21c974
++ (id)pps_defaultUserPathPrefix;
+// 0x19f21c980
++ (id)pps_frameworkDir;
+// 0x19f21c98c
++ (id)pps_privateFrameworkDir;
+// 0x19f21c9a4
++ (id)pps_tmpDir;
+// 0x19f21c998
++ (id)pps_varDir;
+// 0x19f21c83c
++ (id)processModelShareAccessEntitlement;
+// 0x19f21c800
++ (id)restrictedAccessEntitlement;
+// 0x19f21c848
++ (id)secondaryANECompilerServiceAccessEntitlement;
+// 0x19f21c830
++ (id)storageMaintainerAccessEntitlement;
+// 0x19f21c7b8
++ (id)systemLibraryPath;
+// 0x19f21c7ac
++ (id)systemModelsCacheDirectory;
+// 0x19f21c37c
++ (id)tempDirectory;
+// 0x19f21d090
++ (id)testing_ThreeSixtyModelName;
+// 0x19f21cc28
++ (id)testing_cacheDirectory;
+// 0x19f21cc34
++ (id)testing_cacheDirectoryWithSuffix:(id)suffix;
+// 0x19f21ccd0
++ (id)testing_cacheDirectoryWithSuffix:(id)suffix buildVersion:(id)version;
+// 0x19f21cd64
++ (id)testing_cloneDirectory:(id)directory;
+// 0x19f21d1a4
++ (id)testing_dataVaultStorageClass;
+// 0x19f21d218
++ (id)testing_defaultMLIRModelName;
+// 0x19f21d148
++ (id)testing_encryptedModelNames;
+// 0x19f21d1b0
++ (id)testing_external_modelPath;
+// 0x19f21d1bc
++ (id)testing_external_precompiledModelPath;
+// 0x19f21ceb8
++ (id)testing_inputDirectory;
+// 0x19f21cec4
++ (id)testing_modelDirectory;
+// 0x19f21cfb4
++ (id)testing_modelDirectory:(id)directory;
+// 0x19f21d0ec
++ (id)testing_modelNames;
+// 0x19f21cd58
++ (id)testing_tempDirectory:(id)directory;
+// 0x19f21cd70
++ (id)testing_userCacheDirectory;
+// 0x19f21cd7c
++ (id)testing_userCacheDirectoryWithSuffix:(id)suffix;
+// 0x19f21ce18
++ (id)testing_userCacheDirectoryWithSuffix:(id)suffix buildVersion:(id)version;
+// 0x19f21ceac
++ (id)testing_userCloneDirectory:(id)directory;
+// 0x19f21cea0
++ (id)testing_userTempDirectory:(id)directory;
+// 0x19f21d034
++ (id)testing_zeroModelName;
+// 0x19f21d274
++ (_Bool)trimmedModelPath:(id)path trimmedPath:(id *)path;
+// 0x19f21c6a0
++ (id)userCloneDirectory;
+// 0x19f21c0dc
++ (id)userMachServiceName;
+// 0x19f21c100
++ (id)userModelDataVaultDirectory;
+// 0x19f21c594
++ (id)userTempDirectory;
+// 0x19f21cc10
++ (id)vm_allowPrecompiledBinaryBootArg;
+// 0x19f21cc1c
++ (id)vm_debugDumpBootArg;
+// 0x19f21cc04
++ (id)vm_forceValidationOnGuestBootArg;
+// 0x19f21cbf8
++ (id)vm_tmpBaseDirectory;
+
+@end
+
+@interface _ANEVirtualClient : NSObject { // 0x1ec989790
+    /* instance variables */             // +size   offset
+    unsigned int _connect;               // +0x4    0x8
+    NSObject<OS_dispatch_queue> *_queue; // +0x8    0x10
+}
+
+@property (readonly, nonatomic) unsigned int connect;
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *queue;
+
+/* class methods */
+// 0x19f226cc4
++ (id)new;
+// 0x19f23b20c
++ (id)getObjectFromIOSurface:(struct __IOSurface *)iosurface classType:(Class)type length:(unsigned long long)length;
+// 0x19f238718
++ (void)freeModelFileIOSurfaces:(struct __CFArray *)iosurfaces;
+// 0x19f23aa48
++ (void)printIOSurfaceDataInBytes:(struct __IOSurface *)bytes;
+// 0x19f23bc50
++ (_Bool)setCodeSigningIdentity:(struct __CFDictionary *)identity;
+// 0x19f23c310
++ (_Bool)updateError:(struct __IOSurface *)error errorLength:(unsigned long long)length errorCode:(long long)code error:(id *)error;
+// 0x19f23cbc0
++ (id)updatePerformanceStats:(struct __IOSurface *)stats performanceStatsLength:(unsigned long long)length perfStatsRawIOSurfaceRef:(struct __IOSurface *)ref performanceStatsRawLength:(unsigned long long)length hwExecutionTime:(unsigned long long)time;
+// 0x19f23b6a8
++ (id)dictionaryGetNSStringForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x19f23babc
++ (id)getCodeSigningIdentity;
+// 0x19f23b61c
++ (long long)dictionaryGetInt64ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x19f23b8f0
++ (void)copyDictionaryDataToStruct:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)_struct dictionary:(struct __CFDictionary *)dictionary;
+// 0x19f23abf8
++ (id)getDictionaryWithJSONEncodingFromIOSurface:(struct __IOSurface *)iosurface withArchivedDataSize:(unsigned long long)size;
+// 0x19f23d498
++ (_Bool)shouldUsePrecompiledPath:(id)path options:(id)options shouldUseChunking:(_Bool *)chunking chunkingThreshold:(unsigned long long)threshold;
+// 0x19f23b5dc
++ (unsigned long long)dictionaryGetUInt64ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x19f23c16c
++ (_Bool)updateError:(struct __IOSurface *)error errorLength:(unsigned long long)length error:(id *)error;
+// 0x19f23b6f4
++ (struct __CFDictionary *)getCFDictionaryFromIOSurface:(struct __IOSurface *)iosurface dataLength:(unsigned long long)length;
+// 0x19f22787c
++ (void)printStruct:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)_struct;
+// 0x19f235008
++ (struct __IOSurface *)createIOSurface:(unsigned long long)iosurface ioSID:(unsigned int *)sid;
+// 0x19f23b65c
++ (signed char)dictionaryGetInt8ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x19f226ce8
++ (id)sharedConnection;
+// 0x19f237f64
++ (struct __IOSurface *)copyLLIRBundleToIOSurface:(id)iosurface writtenDataSize:(unsigned long long *)size;
+// 0x19f23b59c
++ (unsigned int)dictionaryGetUInt32ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+
+/* instance methods */
+// 0x19f231b50
+- (_Bool)hasANE;
+// 0x19f231ff4
+- (struct __CFDictionary *)validateNetworkCreateMLIR:(unsigned long long)mlir validation_params:(struct __CFDictionary *)validation_params;
+// 0x19f230464
+- (_Bool)compiledModelExistsFor:(id)_for;
+// 0x19f22e46c
+- (_Bool)doEvaluateWithModel:(id)model options:(id)options request:(id)request qos:(unsigned int)qos completionEvent:(id)event error:(id *)error;
+// 0x19f23252c
+- (struct __CFDictionary *)validateNetworkCreate:(unsigned long long)create uuid:(id)uuid function:(id)function directoryPath:(id)path scratchPadPath:(id)path milTextData:(id)data;
+// 0x19f233258
+- (unsigned long long)outputDictIOSurfaceSize;
+// 0x19f2297e0
+- (_Bool)loadModelNewInstance:(id)instance options:(id)options modelInstParams:(id)params qos:(unsigned int)qos error:(id *)error;
+// 0x19f22cb90
+- (_Bool)unloadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f22d600
+- (_Bool)evaluateWithModel:(id)model options:(id)options request:(id)request qos:(unsigned int)qos error:(id *)error;
+// 0x19f239a20
+- (void)copyModelOptionFiles:(id)files options:(id)options vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f23a76c
+- (struct __IOSurface *)copyToIOSurface:(char *)iosurface size:(unsigned long long)size ioSID:(unsigned int *)sid;
+// 0x19f238774
+- (void)copyModelMetaData:(id)data options:(id)options dictionary:(struct __CFDictionary *)dictionary vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f23980c
+- (void)copyOptions:(id)options vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f2336d8
+- (_Bool)doMapIOSurfacesWithModel:(id)model request:(id)request cacheInference:(_Bool)inference error:(id *)error;
+// 0x19f2332ac
+- (_Bool)mapIOSurfacesWithModel:(id)model request:(id)request cacheInference:(_Bool)inference error:(id *)error;
+// 0x19f233128
+- (unsigned int)negotiatedDataInterfaceVersion;
+// 0x19f239074
+- (id)readWeightFilename:(id)filename;
+// 0x19f2331d0
+- (id)hostBuildVersionStr;
+// 0x19f223b0c
+- (_Bool)doEvaluateWithModelLegacy:(id)legacy options:(id)options request:(id)request qos:(unsigned int)qos completionEvent:(id)event error:(id *)error;
+// 0x19f227100
+- (_Bool)compileModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f2278cc
+- (_Bool)transferFileToHostWithPath:(id)path withChunkSize:(unsigned int)size withUUID:(id)uuid withModelInputPath:(id)path overWriteFileNameWith:(id)with;
+// 0x19f23db0c
+- (unsigned int)connect;
+// 0x19f231d7c
+- (unsigned long long)getValidateNetworkVersion;
+// 0x19f226ccc
+- (id)init;
+// 0x19f23d228
+- (struct __IOSurface *)copyDictionaryToIOSurface:(id)iosurface copiedDataSize:(unsigned long long *)size createdIOSID:(unsigned int *)iosid;
+// 0x19f23d108
+- (void)releaseIOSurfaces:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)iosurfaces;
+// 0x19f2314c8
+- (_Bool)beginRealTimeTask;
+// 0x19f231598
+- (_Bool)endRealTimeTask;
+// 0x19f23a428
+- (struct __IOSurface *)copyToIOSurface:(id)iosurface length:(unsigned long long)length ioSID:(unsigned int *)sid;
+// 0x19f2394ac
+- (id)parallelDecompressedData:(id)data;
+// 0x19f228a80
+- (_Bool)loadModel:(id)model options:(id)options qos:(unsigned int)qos error:(id *)error;
+// 0x19f23cf88
+- (id)updatePerformanceStats:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)stats;
+// 0x19f239274
+- (id)doJsonParsingMatchWeightName:(id)name;
+// 0x19f23c014
+- (void)checkKernReturnValue:(int)value selector:(unsigned int)selector outParams:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)params;
+// 0x19f23db1c
+- (void).cxx_destruct;
+// 0x19f23112c
+- (void)purgeCompiledModelMatchingHash:(id)hash;
+// 0x19f239cf4
+- (void)copyModelOptionFiles:(id)files options:(id)options dictionary:(struct __CFDictionary *)dictionary vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f231668
+- (_Bool)echo:(id)echo;
+// 0x19f231cd4
+- (unsigned int)numANEs;
+// 0x19f232dc0
+- (struct BuildVersionInfo { unsigned int x0; unsigned int x1; unsigned long long x2; unsigned char x3[32]; unsigned char x4; unsigned long long x5; unsigned long long x6; unsigned long long x7[15]; })exchangeBuildVersionInfo;
+// 0x19f23bcf8
+- (struct __CFDictionary *)callIOUserClientWithDictionary:(unsigned int)dictionary inDictionary:(struct __CFDictionary *)dictionary error:(id *)error;
+// 0x19f23b168
+- (_Bool)callIOUserClient:(unsigned int)client inParams:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)params outParams:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)params;
+// 0x19f23317c
+- (unsigned long long)negotiatedCapabilityMask;
+// 0x19f231bf8
+- (_Bool)isInternalBuild;
+// 0x19f235004
+- (void)printDictionary:(struct __CFDictionary *)dictionary;
+// 0x19f2365ec
+- (_Bool)copyFilesInDirectoryToIOSurfaces:(id)iosurfaces ioSurfaceRefs:(struct __CFArray *)refs ioSurfaceSizes:(id)sizes fileNames:(id)names;
+// 0x19f231dd0
+- (_Bool)validateEnvironmentForPrecompiledBinarySupport;
+// 0x19f231ba4
+- (long long)aneBoardtype;
+// 0x19f2270c8
+- (void)dealloc;
+// 0x19f230c68
+- (_Bool)compiledModelExistsMatchingHash:(id)hash;
+// 0x19f226d70
+- (id)initWithSingletonAccess;
+// 0x19f22b8d0
+- (_Bool)loadModelNewInstanceLegacy:(id)legacy options:(id)options modelInstParams:(id)params qos:(unsigned int)qos error:(id *)error;
+// 0x19f23a218
+- (void)copyErrorValue:(struct __CFDictionary *)value vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f231d28
+- (unsigned int)numANECores;
+// 0x19f23c7b0
+- (_Bool)updateError:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)error error:(id *)error;
+// 0x19f23a048
+- (void)copyErrorValue:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)value;
+// 0x19f236dfc
+- (_Bool)copyAllModelFiles:(id)files dictionary:(struct __CFDictionary *)dictionary ioSurfaceRefs:(struct __CFArray *)refs;
+// 0x19f2350f4
+- (void)copyModel:(id)model options:(id)options vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+// 0x19f2308cc
+- (void)purgeCompiledModel:(id)model;
+// 0x19f234570
+- (_Bool)sessionHintWithModel:(id)model hint:(id)hint options:(id)options report:(id)report error:(id *)error;
+// 0x19f231c4c
+- (id)aneArchitectureTypeStr;
+// 0x19f232b60
+- (void)sendGuestBuildVersion;
+// 0x19f2319b4
+- (struct DeviceExtendedInfo { struct DeviceInfo { unsigned int x0; long long x1; long long x2; _Bool x3; } x0; _Bool x1; unsigned int x2; unsigned int x3; signed char x4[32]; })getDeviceInfo;
+// 0x19f23af18
+- (id)getModelAttribute:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)attribute;
+// 0x19f23db14
+- (id)queue;
+// 0x19f2398bc
+- (void)copyOptions:(id)options dictionary:(struct __CFDictionary *)dictionary vmData:(struct VMData { struct __IOSurface *x0; struct __IOSurface *x1; struct __IOSurface *x2; struct __IOSurface *x3; struct __IOSurface *x4; struct __IOSurface *x5; struct __IOSurface *x6; struct __IOSurface *x7; struct __IOSurface *x8; struct __IOSurface *x9; struct __IOSurface *x10; struct __IOSurface *x11; struct __IOSurface *x12; struct __IOSurface *x13; struct __IOSurface *x14; struct __IOSurface *x15[32]; struct __IOSurface *x16[32]; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x17; struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } x18; struct __IOSurface *x19; struct __IOSurface *x20; } *)data;
+
+@end
+
+@interface _ANEWeight : NSObject <NSCopying, NSSecureCoding> { // 0x1ec989178
+    /* instance variables */     // +size   offset
+    NSString *_weightSymbol;     // +0x8    0x8
+    NSURL *_weightURL;           // +0x8    0x10
+    NSData *_SHACode;            // +0x8    0x18
+    NSString *_sandboxExtension; // +0x8    0x20
+}
+
+@property (copy, nonatomic) NSURL *weightURL;
+@property (readonly, copy, nonatomic) NSString *weightSymbol;
+@property (readonly, copy, nonatomic) NSData *SHACode;
+@property (copy, nonatomic) NSString *sandboxExtension;
+
+/* class methods */
+// 0x19f2148b8
++ (id)new;
+// 0x19f214b98
++ (_Bool)supportsSecureCoding;
+// 0x19f214798
++ (id)weightWithSymbolAndURL:(id)url weightURL:(id)url;
+// 0x19f214818
++ (id)weightWithSymbolAndURLSHA:(id)urlsha weightURL:(id)url SHACode:(id)shacode;
+
+/* instance methods */
+// 0x19f214e64
+- (void)setSandboxExtension:(id)extension;
+// 0x19f2148dc
+- (id)description;
+// 0x19f2148c0
+- (id)init;
+// 0x19f214e6c
+- (void).cxx_destruct;
+// 0x19f214ca8
+- (id)initWithCoder:(id)coder;
+// 0x19f214e5c
+- (id)sandboxExtension;
+// 0x19f214ddc
+- (id)copyWithZone:(struct _NSZone *)zone;
+// 0x19f214ba0
+- (void)encodeWithCoder:(id)coder;
+// 0x19f214e54
+- (id)SHACode;
+// 0x19f2149e4
+- (id)initWithWeightSymbolAndURL:(id)url weightURL:(id)url;
+// 0x19f214a8c
+- (id)initWithWeightSymbolAndURLSHA:(id)urlsha weightURL:(id)url SHACode:(id)shacode sandboxExtension:(id)extension;
+// 0x19f214e4c
+- (void)setWeightURL:(id)url;
+// 0x19f214b8c
+- (void)updateWeightURL:(id)url;
+// 0x19f214e3c
+- (id)weightSymbol;
+// 0x19f214e44
+- (id)weightURL;
+
+@end
+
+@interface NSFileManager (ANE) // 0x1f0410b98
+
+/* class methods */
+// 0x19f2156cc
++ (_Bool)ane_addWriteModeForPath:(id)path;
+// 0x19f215580
++ (_Bool)ane_addWriteModeIfMissing:(id)missing originalMode:(unsigned short)mode;
+
+@end
+

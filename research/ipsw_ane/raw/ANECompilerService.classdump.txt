@@ -1,0 +1,321 @@
+@protocol NSObject
+
+@required
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* required instance methods */
+-[NSObject isEqual:];
+-[NSObject class];
+-[NSObject self];
+-[NSObject performSelector:];
+-[NSObject performSelector:withObject:];
+-[NSObject performSelector:withObject:withObject:];
+-[NSObject isProxy];
+-[NSObject isKindOfClass:];
+-[NSObject isMemberOfClass:];
+-[NSObject conformsToProtocol:];
+-[NSObject respondsToSelector:];
+-[NSObject retain];
+-[NSObject release];
+-[NSObject autorelease];
+-[NSObject retainCount];
+-[NSObject zone];
+-[NSObject hash];
+-[NSObject superclass];
+-[NSObject description];
+
+@optional
+
+/* optional instance methods */
+-[NSObject debugDescription];
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject>
+
+@required
+
+@optional
+
+/* optional instance methods */
+-[NSXPCListenerDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@protocol _ANECompilerServiceProtocol
+
+@required
+
+/* required instance methods */
+-[_ANECompilerServiceProtocol compileModelAt:csIdentity:sandboxExtension:options:tempDirectory:cloneDirectory:outputURL:aotModelBinaryPath:withReply:];
+
+@optional
+
+@end
+
+@protocol _ANEMaintenanceProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEMaintenanceProtocol scheduleMaintenanceWithName:directoryPaths:];
+
+@optional
+
+@end
+
+@protocol _ANEStorageMaintainerProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEStorageMaintainerProtocol purgeDanglingModelsAt:withReply:];
+
+@optional
+
+@end
+
+@interface ServiceDelegate : NSObject <NSXPCListenerDelegate>
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[ServiceDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@interface _ANECVAIRCompiler : NSObject
+
+/* class methods */
++[_ANECVAIRCompiler compileModelAt:csIdentity:plistFilename:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANECompiler : NSObject
+
+/* class methods */
++[_ANECompiler initialize];
++[_ANECompiler createNetworkFromModelAtPath:modelFilename:];
++[_ANECompiler createJITNetworkFromModelAtPath:modelFilename:aotModelAtPath:aotModelFilename:];
++[_ANECompiler createErrorWithUnderlyingError:];
++[_ANECompiler compileModelJIT:ok:error:];
++[_ANECompiler compileModel:options:ok:error:];
++[_ANECompiler createInMemoryConstants:];
+
+@end
+
+@interface _ANECompilerService : NSObject <_ANECompilerServiceProtocol>
+
+/* class methods */
++[_ANECompilerService initialize];
+
+/* instance methods */
+-[_ANECompilerService compileModelAt:csIdentity:sandboxExtension:options:tempDirectory:cloneDirectory:outputURL:aotModelBinaryPath:withReply:];
+
+@end
+
+@interface _ANECoreMLModelCompiler : NSObject
+
+/* class methods */
++[_ANECoreMLModelCompiler initialize];
++[_ANECoreMLModelCompiler createErrorWithString:];
++[_ANECoreMLModelCompiler pathsForModelURL:];
++[_ANECoreMLModelCompiler compileModelAt:csIdentity:key:optionsFilename:tempDirectory:outputURL:saveSourceModelPath:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANEEspressoIRTranslator : NSObject
+
+/* class methods */
++[_ANEEspressoIRTranslator createErrorForPlan:status:];
++[_ANEEspressoIRTranslator translateModelAt:key:outputPath:isEncryptedModel:translationOptions:error:];
++[_ANEEspressoIRTranslator destroyEspresso:ctx:];
+
+@end
+
+@interface _ANEInMemoryModelCacheManager : NSObject {
+    /* instance variables */
+    @"NSURL" _cacheDir;
+}
+
+@property (T@"NSURL",R,N,V_cacheDir) cacheDir;
+
+/* class methods */
++[_ANEInMemoryModelCacheManager new];
++[_ANEInMemoryModelCacheManager removeFilesFromDirectory:notAccessedInSeconds:];
++[_ANEInMemoryModelCacheManager notRecentlyUsedSecondsThreshold];
++[_ANEInMemoryModelCacheManager removeStaleModelsAtPath:];
+
+/* instance methods */
+-[_ANEInMemoryModelCacheManager init];
+-[_ANEInMemoryModelCacheManager initWithURL:createDirectory:];
+-[_ANEInMemoryModelCacheManager initWithURL:];
+-[_ANEInMemoryModelCacheManager URLForBundleID:];
+-[_ANEInMemoryModelCacheManager URLForModelHash:bundleID:];
+-[_ANEInMemoryModelCacheManager cachedModelPathMatchingHash:csIdentity:];
+-[_ANEInMemoryModelCacheManager removeAllModelsForBundleID:];
+-[_ANEInMemoryModelCacheManager getDiskSpaceItemizedByBundleIDAndPurge:];
+-[_ANEInMemoryModelCacheManager getDiskSpaceForBundleID:];
+-[_ANEInMemoryModelCacheManager shouldEnforceSizeLimits];
+-[_ANEInMemoryModelCacheManager removeStaleModels];
+-[_ANEInMemoryModelCacheManager scheduleMaintenanceWithName:directoryPaths:];
+-[_ANEInMemoryModelCacheManager cacheDir];
+
+@end
+
+@interface _ANEMILCompiler : NSObject
+
+/* class methods */
++[_ANEMILCompiler compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANEMLIRCompiler : NSObject
+
+/* class methods */
++[_ANEMLIRCompiler compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:mpsConstants:ok:error:];
+
+@end
+
+@interface _ANEModelCacheManager : NSObject <_ANEMaintenanceProtocol> {
+    /* instance variables */
+    @"NSURL" _cacheDir;
+}
+
+@property (T@"NSURL",R,N,V_cacheDir) cacheDir;
+
+/* class methods */
++[_ANEModelCacheManager initialize];
++[_ANEModelCacheManager new];
++[_ANEModelCacheManager isSystemModelPath:];
++[_ANEModelCacheManager cachedSourceModelStoreNameFor:];
++[_ANEModelCacheManager saveSourceModelPath:outputModelDirectory:];
++[_ANEModelCacheManager cachedModelRetainNameFor:];
++[_ANEModelCacheManager createModelCacheRetain:];
++[_ANEModelCacheManager removeIfStaleBinary:forModelPath:];
+
+/* instance methods */
+-[_ANEModelCacheManager init];
+-[_ANEModelCacheManager initWithURL:createDirectory:];
+-[_ANEModelCacheManager initWithURL:];
+-[_ANEModelCacheManager URLForModel:bundleID:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:];
+-[_ANEModelCacheManager URLForModel:bundleID:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:forAllSegments:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:forAllSegments:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:forAllSegments:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager cacheURLIdentifierForModel:useSourceURL:withReply:];
+-[_ANEModelCacheManager getModelBinaryPathFromURLIdentifier:bundleID:];
+-[_ANEModelCacheManager cachedModelPathFor:csIdentity:useSourceURL:];
+-[_ANEModelCacheManager cachedModelPathFor:csIdentity:];
+-[_ANEModelCacheManager cachedModelAllSegmentsPathFor:csIdentity:];
+-[_ANEModelCacheManager cachedSourceModelStoreNameFor:csIdentity:];
+-[_ANEModelCacheManager cachedModelRetainNameFor:csIdentity:];
+-[_ANEModelCacheManager URLForBundleID:];
+-[_ANEModelCacheManager removeAllModelsForBundleID:];
+-[_ANEModelCacheManager filePathForModel:bundleID:];
+-[_ANEModelCacheManager getDiskSpaceItemizedByBundleIDAndPurge:];
+-[_ANEModelCacheManager getDiskSpaceForBundleID:];
+-[_ANEModelCacheManager shouldEnforceSizeLimits];
+-[_ANEModelCacheManager garbageCollectDanglingModels];
+-[_ANEModelCacheManager startDanglingModelGC];
+-[_ANEModelCacheManager scheduleMaintenanceWithName:directoryPaths:];
+-[_ANEModelCacheManager scanAllPartitionsForModel:csIdentity:expunge:];
+-[_ANEModelCacheManager cacheDir];
+
+@end
+
+@interface _ANESandboxingHelper : NSObject
+
+/* class methods */
++[_ANESandboxingHelper initialize];
++[_ANESandboxingHelper canAccessPathAt:methodName:error:];
++[_ANESandboxingHelper sandboxExtensionPathForModelURL:];
++[_ANESandboxingHelper issueSandboxExtensionForPath:error:];
++[_ANESandboxingHelper issueSandboxExtensionForModel:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forModel:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forPath:error:];
++[_ANESandboxingHelper releaseSandboxExtension:handle:];
+
+@end
+
+@interface _ANEStorageHelper : NSObject
+
+/* class methods */
++[_ANEStorageHelper initialize];
++[_ANEStorageHelper removeDirectoryAtPath:];
++[_ANEStorageHelper removeShapesDirectoryAtPath:];
++[_ANEStorageHelper memoryMapModelAtPath:modelAttributes:];
++[_ANEStorageHelper memoryMapModelAtPath:isPrecompiled:modelAttributes:];
++[_ANEStorageHelper memoryMapWeightAtPath:];
++[_ANEStorageHelper setAccessTime:forModelFilePath:];
++[_ANEStorageHelper getAccessTimeForFilePath:];
++[_ANEStorageHelper updateAccessTimeForFilePath:];
++[_ANEStorageHelper removeFilePath:ifDate:olderThanSecond:];
++[_ANEStorageHelper garbageCollectDanglingModelsAtPath:];
++[_ANEStorageHelper uniqueFirstLevelSubdirectories:];
++[_ANEStorageHelper sizeOfDirectoryAtPath:recursionLevel:];
++[_ANEStorageHelper addSubdirectoryDetails:directoryPath:size:];
++[_ANEStorageHelper createModelCacheDictionary];
++[_ANEStorageHelper sizeOfModelCacheAtPath:purgeSubdirectories:];
++[_ANEStorageHelper mergeModelCacheStorageInformation:with:];
++[_ANEStorageHelper _markPurgeablePath:error:];
++[_ANEStorageHelper markPathAndDirectParentPurgeable:error:];
++[_ANEStorageHelper enableApfsPurging];
+
+@end
+
+@interface _ANETask : NSObject {
+    /* instance variables */
+    Q _periodSeconds;
+    @"NSString" _name;
+    @? _handler;
+    @"NSObject<OS_dispatch_queue>" _queue;
+    @"NSObject<OS_xpc_object>" _executionCriteria;
+}
+
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_queue) queue;
+@property (T@"NSObject<OS_xpc_object>",R,N,V_executionCriteria) executionCriteria;
+@property (TQ,R,N,V_periodSeconds) periodSeconds;
+@property (T@"NSString",R,C,N,V_name) name;
+@property (T@?,R,N,V_handler) handler;
+
+/* class methods */
++[_ANETask new];
++[_ANETask taskWithName:period:handler:];
+
+/* instance methods */
+-[_ANETask init];
+-[_ANETask initWithName:period:handler:];
+-[_ANETask periodSeconds];
+-[_ANETask name];
+-[_ANETask handler];
+-[_ANETask queue];
+-[_ANETask executionCriteria];
+
+@end
+
+@interface _ANETaskManager : NSObject
+
+/* class methods */
++[_ANETaskManager registerTask:];
++[_ANETaskManager unregisterTask:];
+
+@end
+
+@interface NSFileManager (ANE)
+
+/* class methods */
++[NSFileManager  ane_addWriteModeIfMissing:originalMode:];
++[NSFileManager  ane_addWriteModeForPath:];
+
+@end
+

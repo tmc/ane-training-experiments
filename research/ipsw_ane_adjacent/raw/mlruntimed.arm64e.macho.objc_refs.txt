@@ -1,0 +1,71 @@
+Magic         = 64-bit MachO
+Type          = EXECUTE
+CPU           = AARCH64, ARM64e caps: USR00
+Commands      = 27 (Size: 3880)
+Flags         = NoUndefs, DyldLink, TwoLevel, PIE
+000: LC_SEGMENT_64 sz=0x00000000 off=0x00000000-0x00000000 addr=0x000000000-0x100000000 ---/---   __PAGEZERO        
+001: LC_SEGMENT_64 sz=0x00008000 off=0x00000000-0x00008000 addr=0x100000000-0x100008000 r-x/r-x   __TEXT            
+	sz=0x00002ef4 off=0x00000f70-0x00003e64 addr=0x100000f70-0x100003e64               __TEXT.__text            PureInstructions|SomeInstructions 
+	sz=0x00000490 off=0x00003e64-0x000042f4 addr=0x100003e64-0x1000042f4               __TEXT.__auth_stubs      PureInstructions|SomeInstructions (SymbolStubs)
+	sz=0x00000920 off=0x00004300-0x00004c20 addr=0x100004300-0x100004c20               __TEXT.__objc_stubs      PureInstructions|SomeInstructions 
+	sz=0x0000042c off=0x00004c20-0x0000504c addr=0x100004c20-0x10000504c               __TEXT.__objc_methlist    
+	sz=0x00000090 off=0x00005050-0x000050e0 addr=0x100005050-0x1000050e0               __TEXT.__const            
+	sz=0x0000051d off=0x000050e0-0x000055fd addr=0x1000050e0-0x1000055fd               __TEXT.__oslogstring      (CstringLiterals)
+	sz=0x0000020f off=0x000055fd-0x0000580c addr=0x1000055fd-0x10000580c               __TEXT.__cstring          (CstringLiterals)
+	sz=0x000000b6 off=0x0000580c-0x000058c2 addr=0x10000580c-0x1000058c2               __TEXT.__objc_classname   (CstringLiterals)
+	sz=0x00000a6d off=0x000058c2-0x0000632f addr=0x1000058c2-0x10000632f               __TEXT.__objc_methname    (CstringLiterals)
+	sz=0x0000036e off=0x0000632f-0x0000669d addr=0x10000632f-0x10000669d               __TEXT.__objc_methtype    (CstringLiterals)
+	sz=0x00000050 off=0x000066a0-0x000066f0 addr=0x1000066a0-0x1000066f0               __TEXT.__gcc_except_tab   
+	sz=0x000005f2 off=0x000066f0-0x00006ce2 addr=0x1000066f0-0x100006ce2               __TEXT.__info_plist       
+	sz=0x00000128 off=0x00006ce4-0x00006e0c addr=0x100006ce4-0x100006e0c               __TEXT.__unwind_info      
+002: LC_SEGMENT_64 sz=0x00004000 off=0x00008000-0x0000c000 addr=0x100008000-0x10000c000 rw-/rw-   __DATA_CONST      ReadOnly
+	sz=0x00000258 off=0x00008000-0x00008258 addr=0x100008000-0x100008258         __DATA_CONST.__auth_got         (NonLazySymbolPointers)
+	sz=0x00000150 off=0x00008258-0x000083a8 addr=0x100008258-0x1000083a8         __DATA_CONST.__got              (NonLazySymbolPointers)
+	sz=0x00000100 off=0x000083a8-0x000084a8 addr=0x1000083a8-0x1000084a8         __DATA_CONST.__const            
+	sz=0x000000c0 off=0x000084a8-0x00008568 addr=0x1000084a8-0x100008568         __DATA_CONST.__cfstring         
+	sz=0x00000020 off=0x00008568-0x00008588 addr=0x100008568-0x100008588         __DATA_CONST.__objc_classlist  NoDeadStrip 
+	sz=0x00000010 off=0x00008588-0x00008598 addr=0x100008588-0x100008598         __DATA_CONST.__objc_catlist    NoDeadStrip 
+	sz=0x00000020 off=0x00008598-0x000085b8 addr=0x100008598-0x1000085b8         __DATA_CONST.__objc_protolist   
+	sz=0x00000008 off=0x000085b8-0x000085c0 addr=0x1000085b8-0x1000085c0         __DATA_CONST.__objc_imageinfo   
+	sz=0x00000018 off=0x000085c0-0x000085d8 addr=0x1000085c0-0x1000085d8         __DATA_CONST.__objc_superrefs   
+003: LC_SEGMENT_64 sz=0x00004000 off=0x0000c000-0x00010000 addr=0x10000c000-0x100010000 rw-/rw-   __DATA            
+	sz=0x00000808 off=0x0000c000-0x0000c808 addr=0x10000c000-0x10000c808               __DATA.__objc_const       
+	sz=0x00000328 off=0x0000c808-0x0000cb30 addr=0x10000c808-0x10000cb30               __DATA.__objc_selrefs    NoDeadStrip (LiteralPointers)
+	sz=0x0000002c off=0x0000cb30-0x0000cb5c addr=0x10000cb30-0x10000cb5c               __DATA.__objc_ivar        
+	sz=0x00000140 off=0x0000cb60-0x0000cca0 addr=0x10000cb60-0x10000cca0               __DATA.__objc_data        
+	sz=0x00000180 off=0x0000cca0-0x0000ce20 addr=0x10000cca0-0x10000ce20               __DATA.__data             
+	sz=0x00000008 off=0x00000000-0x00000008 addr=0x10000ce20-0x10000ce28               __DATA.__bss              (Zerofill)
+004: LC_SEGMENT_64 sz=0x00007900 off=0x00010000-0x00017900 addr=0x100010000-0x100018000 r--/r--   __LINKEDIT        
+005: LC_DYLD_CHAINED_FIXUPS      offset=0x000010000 size=0xdd8
+006: LC_DYLD_EXPORTS_TRIE        offset=0x000010dd8 size=0x130
+007: LC_SYMTAB                   Symbol offset=0x00010F78, Num Syms: 124, String offset=0x00011A30-0x000125E0
+008: LC_DYSYMTAB                 
+	             Local Syms: 1 at 0
+	          External Syms: 1 at 1
+	         Undefined Syms: 122 at 2
+	                    TOC: No
+	                 Modtab: No
+	External symtab Entries: None
+	Indirect symtab Entries: 190 at 0x00011738
+	 External Reloc Entries: None
+	    Local Reloc Entries: None
+009: LC_LOAD_DYLINKER            /usr/lib/dyld
+010: LC_UUID                     78FFBC6B-732B-34E9-B42F-6803498D0E7F
+011: LC_BUILD_VERSION            Platform: macOS, MinOS: 26.3, SDK: 26.3, Tool: ld (1230.4)
+012: LC_SOURCE_VERSION           111.1.0.0.0
+013: LC_MAIN                     Entry Point: 0x000000000000106c, Stack Size: 0x0
+014: LC_LOAD_WEAK_DYLIB          /System/Library/PrivateFrameworks/Trial.framework/Versions/A/Trial (474.2)
+015: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/CoreAnalytics.framework/Versions/A/CoreAnalytics (1)
+016: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/DistributedEvaluation.framework/Versions/A/DistributedEvaluation (1)
+017: LC_LOAD_DYLIB               /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (4302)
+018: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/MLRuntime.framework/Versions/A/MLRuntime (1)
+019: LC_LOAD_DYLIB               /usr/lib/libobjc.A.dylib (228)
+020: LC_LOAD_DYLIB               /usr/lib/libSystem.B.dylib (1356)
+021: LC_LOAD_DYLIB               /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (4302)
+022: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/MobileKeyBag.framework/Versions/A/MobileKeyBag (1)
+023: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/TrialProto.framework/Versions/A/TrialProto (474.2)
+024: LC_FUNCTION_STARTS          offset=0x000010f08 size=0x70
+025: LC_DATA_IN_CODE             offset=0x00010f78-0x00010f78 size=    0 entries=0
+026: LC_CODE_SIGNATURE           offset=0x0000125e0 size=0x5320
+
+

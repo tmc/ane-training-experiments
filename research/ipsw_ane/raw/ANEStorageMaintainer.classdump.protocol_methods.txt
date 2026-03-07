@@ -1,0 +1,31 @@
+@protocol NSObject
+-[NSObject isEqual:];
+-[NSObject class];
+-[NSObject self];
+-[NSObject performSelector:];
+-[NSObject performSelector:withObject:];
+-[NSObject performSelector:withObject:withObject:];
+-[NSObject isProxy];
+-[NSObject isKindOfClass:];
+-[NSObject isMemberOfClass:];
+-[NSObject conformsToProtocol:];
+-[NSObject respondsToSelector:];
+-[NSObject retain];
+-[NSObject release];
+-[NSObject autorelease];
+-[NSObject retainCount];
+-[NSObject zone];
+-[NSObject hash];
+-[NSObject superclass];
+-[NSObject description];
+-[NSObject debugDescription];
+@end
+
+@protocol NSXPCListenerDelegate <NSObject>
+-[NSXPCListenerDelegate listener:shouldAcceptNewConnection:];
+@end
+
+@protocol _ANEStorageMaintainerProtocol
+-[_ANEStorageMaintainerProtocol purgeDanglingModelsAt:withReply:];
+@end
+

@@ -1,0 +1,13 @@
+0x1ed5a1380: class=ETTaskDefinition           protocol=ETTaskContext
+0x1ed5a0a70: class=EspressoFaceDetectedObject protocol=ExternalDetectedObject
+0x1ea2e3a68: protocol=NSCopying
+0x1ec91cbd8: class=EspressoConvolutionWeightsForMPS  protocol=MPSCNNConvolutionDataSource
+0x1ec91cb88: class=EspressoInnerProductWeightsForMPS protocol=MPSCNNConvolutionDataSource
+0x1ed5a1f88: class=ETDataSourceFromFolderData        protocol=ETDataSource
+0x1ed5a2000: class=ETDataSourceBlobF4                protocol=ETDataSource
+0x1ed5a2050: class=ETDataSourceBuf                   protocol=ETDataSource
+0x1ed5a2078: class=ETDataSourceWithExtractor         protocol=ETDataSource
+0x1ed5a20c8: class=ETDataSourceWithCache             protocol=ETDataSource
+0x1ea2e3bb0: protocol=NSObject
+0x1ed5a12e0: class=ETImageFolderDataProvider protocol=ETDataProvider
+0x1ed5a2cd0: class=_ETBufferDataSource       protocol=ETDataProvider

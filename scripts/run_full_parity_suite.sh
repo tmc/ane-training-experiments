@@ -113,7 +113,12 @@ if [[ "$SKIP_BUILD" == "1" ]]; then
   compare_cmd+=("--skip-build")
 fi
 
-echo "[1/2] parity compare" | tee "$PARITY_LOG"
+>"$PARITY_LOG"
+echo "suite_config: steps=$STEPS skip_build=$SKIP_BUILD run_order=$RUN_ORDER strict=$STRICT" | tee -a "$PARITY_LOG"
+echo "suite_config: compare_profile=high-util (resolved via --parity-mode)" | tee -a "$PARITY_LOG"
+echo "suite_config: seq_sweep=min:$SEQ_MIN max:$SEQ_MAX channels:$SEQ_CHANNELS expected_floor:$SEQ_EXPECTED_MIN" | tee -a "$PARITY_LOG"
+
+echo "[1/2] parity compare" | tee -a "$PARITY_LOG"
 printf 'cmd:' | tee -a "$PARITY_LOG"
 printf ' %q' "${compare_cmd[@]}" | tee -a "$PARITY_LOG"
 echo | tee -a "$PARITY_LOG"

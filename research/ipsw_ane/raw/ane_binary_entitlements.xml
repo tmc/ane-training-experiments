@@ -1,0 +1,128 @@
+=== /System/Library/PrivateFrameworks/AppleNeuralEngine.framework/XPCServices/ANECompilerService.xpc/Contents/MacOS/ANECompilerService ===
+[Dict]
+	[Key] com.apple.PerfPowerServices.data-donation
+	[Value]
+		[Bool] true
+	[Key] com.apple.developer.hardened-process
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.coreml.decypt_allowed
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.security.storage.MobileAssetGenerativeModels
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.ane_model_cache
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.triald
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.exception.mach-lookup.global-name
+	[Value]
+		[Array]
+			[String] com.apple.powerlog.plxpclogger.xpc
+			[String] com.apple.PerfPowerTelemetryClientRegistrationService
+	[Key] com.apple.security.temporary-exception.mach-lookup.global-name
+	[Value]
+		[Array]
+			[String] com.apple.powerlog.plxpclogger.xpc
+			[String] com.apple.PerfPowerTelemetryClientRegistrationService
+	[Key] platform-application
+	[Value]
+		[Bool] true
+	[Key] seatbelt-profiles
+	[Value]
+		[Array]
+			[String] ANECompilerService
+
+=== /System/Library/PrivateFrameworks/AppleNeuralEngine.framework/XPCServices/ANEStorageMaintainer.xpc/Contents/MacOS/ANEStorageMaintainer ===
+[Dict]
+	[Key] com.apple.rootless.storage.ane_model_cache
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.triald
+	[Value]
+		[Bool] true
+	[Key] platform-application
+	[Value]
+		[Bool] true
+
+=== /usr/libexec/aned ===
+[Dict]
+	[Key] com.apple.ANECompilerService.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.PerfPowerServices.data-donation
+	[Value]
+		[Bool] true
+	[Key] com.apple.ane.iokit-user-access
+	[Value]
+		[Bool] true
+	[Key] com.apple.developer.hardened-process
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.ANEStorageMaintainer.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.kernel.override-cpumon
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.security.storage.MobileAssetGenerativeModels
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.ane_model_cache
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.triald
+	[Value]
+		[Bool] true
+	[Key] com.apple.security.exception.mach-lookup.global-name
+	[Value]
+		[Array]
+			[String] com.apple.powerlog.plxpclogger.xpc
+			[String] com.apple.PerfPowerTelemetryClientRegistrationService
+	[Key] com.apple.security.temporary-exception.mach-lookup.global-name
+	[Value]
+		[Array]
+			[String] com.apple.powerlog.plxpclogger.xpc
+			[String] com.apple.PerfPowerTelemetryClientRegistrationService
+	[Key] platform-application
+	[Value]
+		[Bool] true
+	[Key] seatbelt-profiles
+	[Value]
+		[Array]
+			[String] aned
+
+=== /usr/libexec/aneuserd ===
+[Dict]
+	[Key] com.apple.ANECompilerService.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.ane.iokit-user-access
+	[Value]
+		[Bool] true
+	[Key] com.apple.aneuserd.private.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.ANEStorageMaintainer.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.kernel.override-cpumon
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.ane_model_cache
+	[Value]
+		[Bool] true
+	[Key] com.apple.rootless.storage.triald
+	[Value]
+		[Bool] true
+	[Key] platform-application
+	[Value]
+		[Bool] true
+	[Key] seatbelt-profiles
+	[Value]
+		[Array]
+			[String] aneuserd
+

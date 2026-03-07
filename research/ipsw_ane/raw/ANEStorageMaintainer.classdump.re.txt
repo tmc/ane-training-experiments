@@ -1,0 +1,145 @@
+Flags = SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 3
+  __objc_nlclslist  = 0
+  __objc_catlist    = 0
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 3
+  __objc_classrefs  = 0
+  __objc_superrefs  = 0
+  __objc_selrefs    = 102
+
+@protocol NSObject // 0x1000107e0
+
+@required
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+
+/* required instance methods */
+- (_Bool)isEqual:(id)equal;
+- (Class)class;
+- (id)self;
+- (id)performSelector:(SEL)selector;
+- (id)performSelector:(SEL)selector withObject:(id)object;
+- (id)performSelector:(SEL)selector withObject:(id)object withObject:(id)object;
+- (_Bool)isProxy;
+- (_Bool)isKindOfClass:(Class)_class;
+- (_Bool)isMemberOfClass:(Class)_class;
+- (_Bool)conformsToProtocol:(id)protocol;
+- (_Bool)respondsToSelector:(SEL)selector;
+- (id)retain;
+- (oneway void)release;
+- (id)autorelease;
+- (unsigned long long)retainCount;
+- (struct _NSZone *)zone;
+- (unsigned long long)hash;
+- (Class)superclass;
+- (id)description;
+
+@optional
+
+@property (readonly, copy) NSString *debugDescription;
+
+/* optional instance methods */
+- (id)debugDescription;
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject> // 0x100010840
+
+@required
+
+@optional
+
+/* optional instance methods */
+- (_Bool)listener:(id)listener shouldAcceptNewConnection:(id)connection;
+
+@end
+
+@protocol _ANEStorageMaintainerProtocol // 0x100010780
+
+@required
+
+/* required instance methods */
+- (void)purgeDanglingModelsAt:(id)at withReply:(id /* block */)reply;
+
+@optional
+
+@end
+
+@interface ServiceDelegate : NSObject <NSXPCListenerDelegate> // 0x1000106b8
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* instance methods */
+// 0x100000ec8
+- (_Bool)listener:(id)listener shouldAcceptNewConnection:(id)connection;
+
+@end
+
+@interface _ANEStorageHelper : NSObject // 0x1000106e0
+
+/* class methods */
+// 0x100001110
++ (void)initialize;
+// 0x1000011d0
++ (_Bool)removeDirectoryAtPath:(id)path;
+// 0x100001328
++ (_Bool)removeShapesDirectoryAtPath:(id)path;
+// 0x100001544
++ (id)memoryMapModelAtPath:(id)path modelAttributes:(id *)attributes;
+// 0x100001550
++ (id)memoryMapModelAtPath:(id)path isPrecompiled:(_Bool)precompiled modelAttributes:(id *)attributes;
+// 0x100001fa0
++ (id)memoryMapWeightAtPath:(id)path;
+// 0x100002928
++ (_Bool)setAccessTime:(id)time forModelFilePath:(id)path;
+// 0x100002ae4
++ (id)getAccessTimeForFilePath:(id)path;
+// 0x100002d4c
++ (_Bool)updateAccessTimeForFilePath:(id)path;
+// 0x100002eb0
++ (void)removeFilePath:(id)path ifDate:(id)date olderThanSecond:(id)second;
+// 0x100002fc8
++ (_Bool)garbageCollectDanglingModelsAtPath:(id)path;
+// 0x100003df0
++ (id)uniqueFirstLevelSubdirectories:(id)subdirectories;
+// 0x100003f8c
++ (id)sizeOfDirectoryAtPath:(id)path recursionLevel:(unsigned long long)level;
+// 0x10000458c
++ (void)addSubdirectoryDetails:(id)details directoryPath:(id)path size:(unsigned long long)size;
+// 0x100004680
++ (id)createModelCacheDictionary;
+// 0x100004740
++ (id)sizeOfModelCacheAtPath:(id)path purgeSubdirectories:(_Bool)subdirectories;
+// 0x100004dac
++ (id)mergeModelCacheStorageInformation:(id)information with:(id)with;
+// 0x100005140
++ (_Bool)_markPurgeablePath:(id)path error:(id *)error;
+// 0x100005410
++ (_Bool)markPathAndDirectParentPurgeable:(id)purgeable error:(id *)error;
+// 0x1000054a8
++ (_Bool)enableApfsPurging;
+
+@end
+
+@interface _ANEStorageMaintainer : NSObject <_ANEStorageMaintainerProtocol> // 0x100010758
+
+/* class methods */
+// 0x1000054dc
++ (void)initialize;
+
+/* instance methods */
+// 0x100005524
+- (void)purgeDanglingModelsAt:(id)at withReply:(id /* block */)reply;
+
+@end
+

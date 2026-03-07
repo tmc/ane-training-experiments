@@ -1,0 +1,32 @@
+## Espresso
+file=research/ipsw_ane_adjacent/raw/Espresso.dsc.classdump.txt
+lines=2531 interfaces=128 protocols=7 objc_methods=855 selectors=1177
+
+## RemoteCoreML
+file=research/ipsw_ane_adjacent/raw/RemoteCoreML.dsc.classdump.txt
+lines=247 interfaces=9 protocols=0 objc_methods=118 selectors=130
+
+## MLRuntime
+file=research/ipsw_ane_adjacent/raw/MLRuntime.dsc.classdump.txt
+lines=505 interfaces=19 protocols=11 objc_methods=151 selectors=205
+
+## PrivateMLClient
+file=research/ipsw_ane_adjacent/raw/PrivateMLClient.dsc.classdump.txt
+lines=141 interfaces=11 protocols=0 objc_methods=0 selectors=21
+
+## mlruntimed (arm64e)
+file=research/ipsw_ane_adjacent/raw/mlruntimed.arm64e.classdump.txt
+lines=211 interfaces=6 protocols=4 objc_methods=76
+
+## mlruntimed (x86_64)
+file=research/ipsw_ane_adjacent/raw/mlruntimed.x86_64.classdump.txt
+lines=211 interfaces=6 protocols=4 objc_methods=76
+
+## PrivateMLClientInferenceProviderService (arm64e)
+file=research/ipsw_ane_adjacent/raw/PrivateMLClientInferenceProviderService.arm64e.classdump.txt
+lines=8 interfaces=1 protocols=0 objc_methods=0
+
+## PrivateMLClientInferenceProviderService (x86_64)
+file=research/ipsw_ane_adjacent/raw/PrivateMLClientInferenceProviderService.x86_64.classdump.txt
+lines=8 interfaces=1 protocols=0 objc_methods=0
+

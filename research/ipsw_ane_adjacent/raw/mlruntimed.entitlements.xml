@@ -1,0 +1,53 @@
+[Dict]
+	[Key] application-identifier
+	[Value]
+		[String] com.apple.mlruntimed
+	[Key] com.apple.coreduetd.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.duet.activityscheduler.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.photos.bourgeoisie
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.biome.read-write
+	[Value]
+		[Array]
+			[String] Lighthouse.Ledger.MlruntimedEvent
+			[String] Lighthouse.Ledger.LighthousePluginEvent
+			[String] Lighthouse.Ledger.TrialdEvent
+	[Key] com.apple.private.des-service
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.dprivacyd.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.dprivacyd.metadata.allow
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.photoanalysisd.access
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.speech-model-training
+	[Value]
+		[Bool] true
+	[Key] com.apple.private.xpc.domain-extension
+	[Value]
+		[Bool] true
+	[Key] com.apple.proactive.PersonalizationPortrait.Contact
+	[Value]
+		[Bool] true
+	[Key] com.apple.proactive.PersonalizationPortrait.NamedEntity.readOnly
+	[Value]
+		[Bool] true
+	[Key] com.apple.siriinferenced
+	[Value]
+		[Bool] true
+	[Key] com.apple.trial.client
+	[Value]
+		[Array]
+			[String] 1580
+	[Key] com.apple.trial.status.evaluation.mlruntime.allow
+	[Value]
+		[Bool] true

@@ -26,3 +26,11 @@ func (p *Pool) RestoreInternalFrameStorage(uint64) error {
 func (p *Pool) RestoreAllInternalStorage() error {
 	return fmt.Errorf("espressoio requires darwin")
 }
+
+func (p *Pool) WriteFrame(uint64, []byte) error {
+	return fmt.Errorf("espressoio requires darwin")
+}
+
+func (p *Pool) ReadFrame(uint64, []byte) error {
+	return fmt.Errorf("espressoio requires darwin")
+}

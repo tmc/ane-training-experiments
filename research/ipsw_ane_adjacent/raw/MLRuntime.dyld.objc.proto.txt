@@ -1,0 +1,14 @@
+0x296a871d8: protocol=NSObject
+0x29a060c20: class=MLRExtensionService_Subsystem protocol=PKModularService
+0x296a87298: protocol=NSCoding
+0x2992ec280: class=MLRTaskAttachments protocol=NSSecureCoding
+0x2992ec2d0: class=MLRTaskParameters  protocol=NSSecureCoding
+0x2992ec370: class=MLRTaskResult      protocol=NSSecureCoding
+0x2992ec410: class=MLRTask            protocol=NSSecureCoding
+0x296a87358: protocol=MLROnDemandTaskPerforming
+0x2992ec320: class=MLROnDemandConnectionHandler protocol=MLROnDemandRemoteProtocol
+0x296a87418: protocol=_EXConnectionHandler
+0x2992ec320: class=MLROnDemandConnectionHandler protocol=_EXMainConnectionHandler
+0x29a060e78: class=MLRExtensionPrincipalClass   protocol=NSExtensionRequestHandling
+0x296a87538: protocol=MLRExtensionHostProtocol
+0x29a060ea0: class=MLRExtensionRemoteContext protocol=MLRExtensionRemoteProtocol

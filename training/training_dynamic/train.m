@@ -4,6 +4,9 @@
 #include "mil_dynamic.h"
 #include "cpu_ops.h"
 
+#define CKPT_PATH_DEFAULT "ane_stories110M_dyn_ckpt.bin"
+#define MODEL_PATH_DEFAULT "../../../assets/models/stories110M.bin"
+#define DATA_PATH_DEFAULT "../tinystories_data00.bin"
 // Dynamic kernel set per layer
 typedef struct {
     Kern *sdpaFwd;     // QKV matmul + RoPE + GQA tile + SDPA (no Wo)
@@ -189,7 +192,9 @@ int main(int argc, char *argv[]) {
         float min_lr_frac = 0.1f;
 
         bool do_resume = false, from_scratch = false;
-        const char *data_path = DEFAULT_DATA_PATH;
+        const char *model_path = MODEL_PATH_DEFAULT;
+        const char *data_path = DATA_PATH_DEFAULT;
+        const char *ckpt_path = CKPT_PATH_DEFAULT;
         for (int i=1; i<argc; i++) {
             if (strcmp(argv[i], "--resume") == 0) do_resume = true;
             else if (strcmp(argv[i], "--scratch") == 0) from_scratch = true;
@@ -198,7 +203,9 @@ int main(int argc, char *argv[]) {
             else if (strcmp(argv[i], "--accum") == 0 && i+1<argc) accum_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--warmup") == 0 && i+1<argc) warmup_steps = atoi(argv[++i]);
             else if (strcmp(argv[i], "--clip") == 0 && i+1<argc) grad_clip = atof(argv[++i]);
+            else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
             else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
+            else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
         }
         float lr = max_lr;
 
@@ -220,7 +227,7 @@ int main(int argc, char *argv[]) {
         float resume_loss = 0;
         bool resuming = false;
         if (do_resume) {
-            resuming = load_checkpoint(CKPT_PATH, &start_step, &total_steps, &lr, &resume_loss,
+            resuming = load_checkpoint(ckpt_path, &start_step, &total_steps, &lr, &resume_loss,
                 &cum_train, &cum_wall, &cum_steps, &adam_t,
                 lw, la, rms_final, &arms_final, embed, &aembed);
             if (resuming) printf("[RESUMED step %d, loss=%.4f]\n", start_step, resume_loss);
@@ -235,11 +242,15 @@ int main(int argc, char *argv[]) {
             printf("Params: %.1fM (transformer %.1fM + embed %.1fM)\n", xformer_m+embed_m, xformer_m, embed_m);
             printf("Kernels: 10 compiled (sdpaFwd+woFwd, ffnFused, ffnBwdW2t+W13t, wotBwd, sdpaBwd1+2, qBwd+kvBwd)\n");
             printf("Accum %d steps, LR=%g\n", accum_steps, max_lr);
-            double fwd_flops = 2.0*NLAYERS*((double)WQ_SZ + WK_SZ + WV_SZ + WO_SZ + W1_SZ + W2_SZ + W3_SZ) * SEQ;
-            double total_flops = 3.0 * fwd_flops;
-            printf("FLOPs/step: fwd=%.1fM total=%.1fM\n", fwd_flops/1e6, total_flops/1e6);
-            if (from_scratch) {
-                printf("  Training from scratch (random init)\n");
+            // FLOPs estimate: 6*N*B*T for transformer (forward+backward ≈ 3x forward)
+            double fwd_flops = 2.0*NLAYERS*(4.0*WQ_SZ + 2.0*W1_SZ + W2_SZ + W3_SZ) * SEQ;
+            double total_flops = 3.0 * fwd_flops;  // fwd + bwd ≈ 3x fwd
+            printf("FLOPs/step: fwd=%.1fM bwd_dx=%.1fM bwd_dW=%.1fM sdpa_bwd=0.0M total=%.1fM\n",
+                   fwd_flops/1e6, fwd_flops/1e6, fwd_flops/1e6, total_flops/1e6);
+            printf("ANE FLOPs/step: %.1fM\n", total_flops/1e6);
+            if (from_scratch || !load_pretrained(lw, rms_final, embed, model_path)) {
+                if (from_scratch) printf("  Training from scratch (random init)\n");
+                else printf("  Pretrained load failed, using random init\n");
                 srand48(42);
                 float scale_d=1.0f/sqrtf(DIM), scale_qd=1.0f/sqrtf(Q_DIM), scale_h=1.0f/sqrtf(HIDDEN);
                 float res_scale = 1.0f/sqrtf(2.0f*NLAYERS);
@@ -880,7 +891,7 @@ int main(int argc, char *argv[]) {
                 if ((step+1) % 100 == 0 && last_loss < best_loss) {
                     best_loss = last_loss;
                     double wall = tb_ms(mach_absolute_time() - t_wall_start);
-                    save_checkpoint(CKPT_PATH, step+1, total_steps, lr, last_loss,
+                    save_checkpoint(ckpt_path, step+1, total_steps, lr, last_loss,
                         total_train_ms+cum_train, wall+cum_wall, total_steps_done+cum_steps, adam_t,
                         lw, la, rms_final, &arms_final, embed, &aembed);
                     printf("  [ckpt saved, best_loss=%.4f]\n", best_loss);

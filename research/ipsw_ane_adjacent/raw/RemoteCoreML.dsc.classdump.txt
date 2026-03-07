@@ -1,0 +1,247 @@
+@interface _MLLog : NSObject
+
+/* class methods */
++[_MLLog daemon];
++[_MLLog tool];
++[_MLLog common];
++[_MLLog clientFramework];
++[_MLLog serverFramework];
+
+@end
+
+@interface _MLNetworkHeaderEncoding : NSObject
+
+/* class methods */
++[_MLNetworkHeaderEncoding loadModel:];
++[_MLNetworkHeaderEncoding getHeaderSize];
++[_MLNetworkHeaderEncoding custom:];
++[_MLNetworkHeaderEncoding unLoadModel:];
++[_MLNetworkHeaderEncoding isHeaderCustom:];
++[_MLNetworkHeaderEncoding isHeaderUnLoad:];
++[_MLNetworkHeaderEncoding predictFeature:];
++[_MLNetworkHeaderEncoding acknowledgeFailData];
++[_MLNetworkHeaderEncoding acknowledgeSucessData];
++[_MLNetworkHeaderEncoding constructDataPacket:HeaderEncoding:];
++[_MLNetworkHeaderEncoding getHeaderDataSize:];
++[_MLNetworkHeaderEncoding getHeaderDataStart:];
++[_MLNetworkHeaderEncoding getHeaderEncoding:];
++[_MLNetworkHeaderEncoding getHeaderEnd:];
++[_MLNetworkHeaderEncoding isHeaderAcknowledgeFailData:];
++[_MLNetworkHeaderEncoding isHeaderAcknowledgeSucessData:];
++[_MLNetworkHeaderEncoding isHeaderError:];
++[_MLNetworkHeaderEncoding isHeaderIncomingData:];
++[_MLNetworkHeaderEncoding isHeaderLoad:];
++[_MLNetworkHeaderEncoding isHeaderPredictFeature:];
++[_MLNetworkHeaderEncoding isHeaderText:];
++[_MLNetworkHeaderEncoding textDebug:];
+
+@end
+
+@interface _MLNetworkOptions : NSObject {
+    /* instance variables */
+    @"NSMutableDictionary" _networkOptions;
+    q _receiveTimeout;
+}
+
+@property (T@"NSMutableDictionary",R,N,V_networkOptions) networkOptions;
+@property (Tq,R,N,V_receiveTimeout) receiveTimeout;
+
+/* instance methods */
+-[_MLNetworkOptions family];
+-[_MLNetworkOptions useAWDL];
+-[_MLNetworkOptions initWithOptions:];
+-[_MLNetworkOptions port];
+-[_MLNetworkOptions networkOptions];
+-[_MLNetworkOptions localPort];
+-[_MLNetworkOptions psk];
+-[_MLNetworkOptions localAddr];
+-[_MLNetworkOptions networkNameIdentifier];
+-[_MLNetworkOptions receiveTimeout];
+-[_MLNetworkOptions receiveTimeoutValue];
+-[_MLNetworkOptions useBonjour];
+-[_MLNetworkOptions useTLS];
+-[_MLNetworkOptions useUDP];
+
+@end
+
+@interface _MLNetworkPacket : NSObject {
+    /* instance variables */
+    @"NSMutableData" _buffer;
+    @"NSMutableData" _doubleBuffer;
+    Q _sizeOfPacket;
+    Q _command;
+}
+
+@property (T@"NSMutableData",&,N,V_buffer) buffer;
+@property (T@"NSMutableData",&,N,V_doubleBuffer) doubleBuffer;
+@property (TQ,N,V_sizeOfPacket) sizeOfPacket;
+@property (TQ,N,V_command) command;
+
+/* instance methods */
+-[_MLNetworkPacket setCommand:];
+-[_MLNetworkPacket setBuffer:];
+-[_MLNetworkPacket buffer];
+-[_MLNetworkPacket init];
+-[_MLNetworkPacket reset];
+-[_MLNetworkPacket command];
+-[_MLNetworkPacket setSizeOfPacket:];
+-[_MLNetworkPacket sizeOfPacket];
+-[_MLNetworkPacket cleanupDoubleBuffer];
+-[_MLNetworkPacket doubleBuffer];
+-[_MLNetworkPacket resetDoubleBuffer];
+-[_MLNetworkPacket resetMetadata];
+-[_MLNetworkPacket setDoubleBuffer:];
+
+@end
+
+@interface _MLNetworkUtilities : NSObject
+
+/* class methods */
++[_MLNetworkUtilities bindEndPoints:localAddr:localPort:];
++[_MLNetworkUtilities configureTLS:];
++[_MLNetworkUtilities createSecureConnectionParameter:useUDP:];
++[_MLNetworkUtilities doInitNetwork:];
++[_MLNetworkUtilities setAWDL:useAWDL:];
++[_MLNetworkUtilities setProtocolStack:family:];
++[_MLNetworkUtilities setupBonjour:name:useBonjour:useUDP:];
++[_MLNetworkUtilities setupListenerStateChangeHandler:useUDP:];
+
+@end
+
+@interface _MLNetworking : NSObject {
+    /* instance variables */
+    B _isClient;
+    @"NSObject<OS_nw_connection>" _connection;
+    @"NSObject<OS_nw_listener>" _listener;
+    @"_MLNetworkOptions" _nwOptions;
+    @"NSObject<OS_nw_protocol_stack>" _protocol_stack;
+    @"NSObject<OS_nw_parameters>" _parameters;
+    @"NSObject<OS_os_log>" _logType;
+    @"NSObject<OS_dispatch_queue>" _q;
+}
+
+@property (T@"NSObject<OS_nw_connection>",&,N,V_connection) connection;
+@property (T@"NSObject<OS_nw_listener>",R,N,V_listener) listener;
+@property (T@"_MLNetworkOptions",R,N,V_nwOptions) nwOptions;
+@property (T@"NSObject<OS_nw_protocol_stack>",R,N,V_protocol_stack) protocol_stack;
+@property (T@"NSObject<OS_nw_parameters>",R,N,V_parameters) parameters;
+@property (TB,R,N,V_isClient) isClient;
+@property (T@"NSObject<OS_os_log>",R,N,V_logType) logType;
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_q) q;
+
+/* instance methods */
+-[_MLNetworking logType];
+-[_MLNetworking listener];
+-[_MLNetworking stop];
+-[_MLNetworking setConnection:];
+-[_MLNetworking connection];
+-[_MLNetworking isClient];
+-[_MLNetworking startConnection];
+-[_MLNetworking parameters];
+-[_MLNetworking q];
+-[_MLNetworking sendData:];
+-[_MLNetworking initConnection:];
+-[_MLNetworking receiveLoop:];
+-[_MLNetworking setListenerReceiveDataCallBack:];
+-[_MLNetworking initListener:];
+-[_MLNetworking nwOptions];
+-[_MLNetworking protocol_stack];
+-[_MLNetworking restartConnection];
+-[_MLNetworking setReceiveDataCallBack:];
+
+@end
+
+@interface _MLRemoteConnection : NSObject {
+    /* instance variables */
+    @"NSObject<OS_nw_connection>" _connection;
+    @"_MLNetworking" _nwObj;
+    @"_MLNetworkOptions" _nwOptions;
+    @"_MLNetworkPacket" _packet;
+    @"NSMutableData" _outputResult;
+    Q _jobCount;
+    @"NSObject<OS_dispatch_semaphore>" _semaphore;
+    @"NSObject<OS_dispatch_queue>" _q;
+}
+
+@property (T@"NSObject<OS_nw_connection>",R,N,V_connection) connection;
+@property (T@"_MLNetworking",R,N,V_nwObj) nwObj;
+@property (T@"_MLNetworkOptions",R,N,V_nwOptions) nwOptions;
+@property (T@"_MLNetworkPacket",R,N,V_packet) packet;
+@property (T@"NSMutableData",&,N,V_outputResult) outputResult;
+@property (TQ,R,N,V_jobCount) jobCount;
+@property (T@"NSObject<OS_dispatch_semaphore>",R,N,V_semaphore) semaphore;
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_q) q;
+
+/* instance methods */
+-[_MLRemoteConnection initWithOptions:];
+-[_MLRemoteConnection semaphore];
+-[_MLRemoteConnection connection];
+-[_MLRemoteConnection q];
+-[_MLRemoteConnection outputResult];
+-[_MLRemoteConnection jobCount];
+-[_MLRemoteConnection loadFromURL:options:error:];
+-[_MLRemoteConnection packet];
+-[_MLRemoteConnection doReceive:context:isComplete:error:];
+-[_MLRemoteConnection nwObj];
+-[_MLRemoteConnection nwOptions];
+-[_MLRemoteConnection predictionFromURL:features:output:options:error:];
+-[_MLRemoteConnection send:options:];
+-[_MLRemoteConnection sendDataAndWaitForAcknowledgementOrTimeout:];
+-[_MLRemoteConnection setOutputResult:];
+-[_MLRemoteConnection unloadFromURL:options:error:];
+
+@end
+
+@interface _MLRemoteCoreMLErrors : NSObject
+
+/* class methods */
++[_MLRemoteCoreMLErrors createErrorWithCode:description:];
++[_MLRemoteCoreMLErrors clientTimeoutErrorForMethod:];
+
+@end
+
+@interface _MLServer : NSObject {
+    /* instance variables */
+    @"_MLNetworking" _nwObj;
+    @"_MLNetworkOptions" _nwOptions;
+    @"_MLNetworkPacket" _packet;
+    @? _loadFunction;
+    @? _predictFunction;
+    @? _unLoadFunction;
+    @? _textFunction;
+    @"NSObject<OS_dispatch_queue>" _q;
+}
+
+@property (T@"_MLNetworking",R,N,V_nwObj) nwObj;
+@property (T@"_MLNetworkOptions",R,N,V_nwOptions) nwOptions;
+@property (T@"_MLNetworkPacket",R,N,V_packet) packet;
+@property (T@?,C,N,V_loadFunction) loadFunction;
+@property (T@?,C,N,V_predictFunction) predictFunction;
+@property (T@?,C,N,V_unLoadFunction) unLoadFunction;
+@property (T@?,C,N,V_textFunction) textFunction;
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_q) q;
+
+/* instance methods */
+-[_MLServer initWithOptions:];
+-[_MLServer start];
+-[_MLServer stop];
+-[_MLServer q];
+-[_MLServer packet];
+-[_MLServer predictFunction];
+-[_MLServer setTextCommand:];
+-[_MLServer setLoadCommand:];
+-[_MLServer doReceive:context:isComplete:error:];
+-[_MLServer loadFunction];
+-[_MLServer nwObj];
+-[_MLServer nwOptions];
+-[_MLServer setLoadFunction:];
+-[_MLServer setPredictCommand:];
+-[_MLServer setPredictFunction:];
+-[_MLServer setTextFunction:];
+-[_MLServer setUnLoadCommand:];
+-[_MLServer setUnLoadFunction:];
+-[_MLServer textFunction];
+-[_MLServer unLoadFunction];
+
+@end
+

@@ -3,13 +3,33 @@
 #include "config.h"
 
 static float *g_rms_tmp = NULL;
+static int g_rms_tmp_cap = 0;
+static float *g_ce_col = NULL;
+static int g_ce_col_cap = 0;
+
+static float *ensure_tmp_buf(float **buf, int *cap, int n) {
+    if (*cap >= n && *buf) return *buf;
+    float *p = (float*)realloc(*buf, (size_t)n * sizeof(float));
+    if (!p) return NULL;
+    *buf = p;
+    *cap = n;
+    return p;
+}
+
+static float *must_tmp_buf(float **buf, int *cap, int n, const char *name) {
+    float *p = ensure_tmp_buf(buf, cap, n);
+    if (p) return p;
+    fprintf(stderr, "oom allocating %s (%d floats)\n", name, n);
+    abort();
+}
 
 static void rmsnorm(float *out, const float *x, const float *w, int d, int S) {
-    if (!g_rms_tmp) g_rms_tmp = (float*)malloc(S*4);
-    float *ss = (float*)calloc(S, sizeof(float));
+    float *tmp = must_tmp_buf(&g_rms_tmp, &g_rms_tmp_cap, S, "rms_tmp");
+    float ss[S];
+    memset(ss, 0, (size_t)S * sizeof(float));
     for (int i=0; i<d; i++) {
-        vDSP_vmul(x+i*S, 1, x+i*S, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vadd(g_rms_tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
+        vDSP_vmul(x+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vadd(tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
     }
     float invd = 1.0f/d, eps=1e-5f;
     vDSP_vsmsa(ss, 1, &invd, &eps, ss, 1, (vDSP_Length)S);
@@ -18,39 +38,37 @@ static void rmsnorm(float *out, const float *x, const float *w, int d, int S) {
         vDSP_vmul(x+i*S, 1, ss, 1, out+i*S, 1, (vDSP_Length)S);
         vDSP_vsmul(out+i*S, 1, &w[i], out+i*S, 1, (vDSP_Length)S);
     }
-    free(ss);
 }
 
 static void rmsnorm_bwd(float *dx, float *dw, const float *dy, const float *x, const float *w, int d, int S) {
-    if (!g_rms_tmp) g_rms_tmp = (float*)malloc(S*4);
-    float *ss = (float*)calloc(S, sizeof(float));
+    float *tmp = must_tmp_buf(&g_rms_tmp, &g_rms_tmp_cap, S, "rms_tmp");
+    float ss[S], rrms[S], dot[S];
+    memset(ss, 0, (size_t)S * sizeof(float));
+    memset(dot, 0, (size_t)S * sizeof(float));
     for (int i=0; i<d; i++) {
-        vDSP_vmul(x+i*S, 1, x+i*S, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vadd(g_rms_tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
+        vDSP_vmul(x+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vadd(tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
     }
     float invd = 1.0f/d, eps=1e-5f;
     vDSP_vsmsa(ss, 1, &invd, &eps, ss, 1, (vDSP_Length)S);
-    float *rrms = (float*)malloc(S*4);
     int n = S; vvrsqrtf(rrms, ss, &n);
-    float *dot = (float*)calloc(S, sizeof(float));
     for (int i=0; i<d; i++) {
-        vDSP_vmul(dy+i*S, 1, x+i*S, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vsma(g_rms_tmp, 1, &w[i], dot, 1, dot, 1, (vDSP_Length)S);
+        vDSP_vmul(dy+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vsma(tmp, 1, &w[i], dot, 1, dot, 1, (vDSP_Length)S);
     }
     vDSP_vmul(rrms, 1, rrms, 1, ss, 1, (vDSP_Length)S);
     vDSP_vsmul(ss, 1, &invd, ss, 1, (vDSP_Length)S);
     vDSP_vmul(dot, 1, ss, 1, dot, 1, (vDSP_Length)S);
     for (int i=0; i<d; i++) {
-        vDSP_vmul(x+i*S, 1, dot, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vsub(g_rms_tmp, 1, dy+i*S, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vmul(g_rms_tmp, 1, rrms, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vsmul(g_rms_tmp, 1, &w[i], dx+i*S, 1, (vDSP_Length)S);
-        vDSP_vmul(dy+i*S, 1, x+i*S, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        vDSP_vmul(g_rms_tmp, 1, rrms, 1, g_rms_tmp, 1, (vDSP_Length)S);
-        float s; vDSP_sve(g_rms_tmp, 1, &s, (vDSP_Length)S);
+        vDSP_vmul(x+i*S, 1, dot, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vsub(tmp, 1, dy+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vmul(tmp, 1, rrms, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vsmul(tmp, 1, &w[i], dx+i*S, 1, (vDSP_Length)S);
+        vDSP_vmul(dy+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vmul(tmp, 1, rrms, 1, tmp, 1, (vDSP_Length)S);
+        float s; vDSP_sve(tmp, 1, &s, (vDSP_Length)S);
         dw[i] += s;
     }
-    free(ss); free(rrms); free(dot);
 }
 
 static void adam_update(float *w, const float *g, AdamState *s, int t, float lr, float b1, float b2, float eps, float wd) {
@@ -66,7 +84,7 @@ static void adam_update(float *w, const float *g, AdamState *s, int t, float lr,
 // Cross-entropy loss: operates on logits[V, S] column-major (each column = one token)
 // Avoids transposing by using a per-token temp buffer
 static float cross_entropy_loss(float *dlogits, const float *logits, const uint16_t *targets, int V, int S) {
-    float *col = (float*)malloc(V * 4);  // single column buffer
+    float *col = must_tmp_buf(&g_ce_col, &g_ce_col_cap, V, "ce_col");
     float total_loss = 0;
     float invS = 1.0f / S;
     for (int t = 0; t < S; t++) {
@@ -88,7 +106,6 @@ static float cross_entropy_loss(float *dlogits, const float *logits, const uint1
         // Scatter back: dlogits[v*S + t] = col[v]
         cblas_scopy(V, col, 1, dlogits + t, S);
     }
-    free(col);
     return total_loss / S;
 }
 

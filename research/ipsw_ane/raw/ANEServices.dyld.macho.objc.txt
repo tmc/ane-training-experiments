@@ -1,0 +1,10 @@
+@interface ANEServicesLog : NSObject
+
+/* class methods */
++[ANEServicesLog verbose];
++[ANEServicesLog test];
++[ANEServicesLog services];
++[ANEServicesLog handle];
+
+@end
+

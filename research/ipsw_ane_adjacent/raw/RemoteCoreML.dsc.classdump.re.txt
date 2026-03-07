@@ -1,0 +1,389 @@
+Flags = DyldCategoriesOptimized, OptimizedByDyld, SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 9
+  __objc_nlclslist  = 0
+  __objc_catlist    = 0
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 0
+  __objc_classrefs  = 0
+  __objc_superrefs  = 5
+  __objc_selrefs    = 130
+
+@interface _MLLog : NSObject // 0x29a16f428
+
+/* class methods */
+// 0x261150038
++ (id)daemon;
+// 0x261150150
++ (id)tool;
+// 0x26114ff20
++ (id)common;
+// 0x26114ffac
++ (id)clientFramework;
+// 0x2611500c4
++ (id)serverFramework;
+
+@end
+
+@interface _MLNetworkHeaderEncoding : NSObject // 0x29a16f4a0
+
+/* class methods */
+// 0x261150968
++ (id)loadModel:(id)model;
+// 0x261150b6c
++ (unsigned long long)getHeaderSize;
+// 0x2611509a4
++ (id)custom:(id)custom;
+// 0x26115097c
++ (id)unLoadModel:(id)model;
+// 0x261150ce8
++ (_Bool)isHeaderCustom:(unsigned long long)custom;
+// 0x261150cc0
++ (_Bool)isHeaderUnLoad:(unsigned long long)load;
+// 0x261150990
++ (id)predictFeature:(id)feature;
+// 0x261150a58
++ (id)acknowledgeFailData;
+// 0x2611509b8
++ (id)acknowledgeSucessData;
+// 0x2611508ac
++ (id)constructDataPacket:(id)packet HeaderEncoding:(unsigned long long)encoding;
+// 0x261150b74
++ (unsigned long long)getHeaderDataSize:(id)size;
+// 0x261150bcc
++ (void *)getHeaderDataStart:(id)start;
+// 0x261150af8
++ (unsigned long long)getHeaderEncoding:(id)encoding;
+// 0x261150c24
++ (void *)getHeaderEnd:(id)end;
+// 0x261150d10
++ (_Bool)isHeaderAcknowledgeFailData:(unsigned long long)data;
+// 0x261150cfc
++ (_Bool)isHeaderAcknowledgeSucessData:(unsigned long long)data;
+// 0x261150d38
++ (_Bool)isHeaderError:(unsigned long long)error;
+// 0x261150d24
++ (_Bool)isHeaderIncomingData:(unsigned long long)data;
+// 0x261150cac
++ (_Bool)isHeaderLoad:(unsigned long long)load;
+// 0x261150cd4
++ (_Bool)isHeaderPredictFeature:(unsigned long long)feature;
+// 0x261150c98
++ (_Bool)isHeaderText:(unsigned long long)text;
+// 0x261150954
++ (id)textDebug:(id)debug;
+
+@end
+
+@interface _MLNetworkOptions : NSObject { // 0x29a16f450
+    /* instance variables */              // +size   offset
+    NSMutableDictionary *_networkOptions; // +0x8    0x8
+    long long _receiveTimeout;            // +0x8    0x10
+}
+
+@property (readonly, nonatomic) NSMutableDictionary *networkOptions;
+@property (readonly, nonatomic) long long receiveTimeout;
+
+/* instance methods */
+// 0x261150570
+- (unsigned long long)family;
+// 0x2611503c0
+- (_Bool)useAWDL;
+// 0x2611501dc
+- (id)initWithOptions:(id)options;
+// 0x2611507fc
+- (const char *)port;
+// 0x2611508a0
+- (void).cxx_destruct;
+// 0x261150890
+- (id)networkOptions;
+// 0x2611506bc
+- (const char *)localPort;
+// 0x2611505dc
+- (const char *)psk;
+// 0x26115064c
+- (const char *)localAddr;
+// 0x26115072c
+- (const char *)networkNameIdentifier;
+// 0x261150898
+- (long long)receiveTimeout;
+// 0x26115086c
+- (long long)receiveTimeoutValue;
+// 0x26115042c
+- (_Bool)useBonjour;
+// 0x261150504
+- (_Bool)useTLS;
+// 0x261150498
+- (_Bool)useUDP;
+
+@end
+
+@interface _MLNetworkPacket : NSObject { // 0x29a16f4f0
+    /* instance variables */          // +size   offset
+    NSMutableData *_buffer;           // +0x8    0x8
+    NSMutableData *_doubleBuffer;     // +0x8    0x10
+    unsigned long long _sizeOfPacket; // +0x8    0x18
+    unsigned long long _command;      // +0x8    0x20
+}
+
+@property (retain, nonatomic) NSMutableData *buffer;
+@property (retain, nonatomic) NSMutableData *doubleBuffer;
+@property (nonatomic) unsigned long long sizeOfPacket;
+@property (nonatomic) unsigned long long command;
+
+/* instance methods */
+// 0x261150f50
+- (void)setCommand:(unsigned long long)command;
+// 0x261150f18
+- (void)setBuffer:(id)buffer;
+// 0x261150f10
+- (id)buffer;
+// 0x261150d4c
+- (id)init;
+// 0x261150f58
+- (void).cxx_destruct;
+// 0x261150dd0
+- (void)reset;
+// 0x261150f48
+- (unsigned long long)command;
+// 0x261150f40
+- (void)setSizeOfPacket:(unsigned long long)packet;
+// 0x261150f38
+- (unsigned long long)sizeOfPacket;
+// 0x261150e58
+- (void)cleanupDoubleBuffer;
+// 0x261150f24
+- (id)doubleBuffer;
+// 0x261150e94
+- (void)resetDoubleBuffer;
+// 0x261150e18
+- (void)resetMetadata;
+// 0x261150f2c
+- (void)setDoubleBuffer:(id)buffer;
+
+@end
+
+@interface _MLNetworkUtilities : NSObject // 0x29a16f270
+
+/* class methods */
+// 0x26114c664
++ (void)bindEndPoints:(id)points localAddr:(const char *)addr localPort:(const char *)port;
+// 0x26114c360
++ (id /* block */)configureTLS:(id)tls;
+// 0x26114c51c
++ (id)createSecureConnectionParameter:(id /* block */)parameter useUDP:(_Bool)udp;
+// 0x26114be38
++ (id)doInitNetwork:(id)network;
+// 0x26114c560
++ (void)setAWDL:(id)awdl useAWDL:(_Bool)awdl;
+// 0x26114c5d4
++ (id)setProtocolStack:(id)stack family:(unsigned long long)family;
+// 0x26114bf20
++ (void)setupBonjour:(id)bonjour name:(const char *)name useBonjour:(_Bool)bonjour useUDP:(_Bool)udp;
+// 0x26114c194
++ (void)setupListenerStateChangeHandler:(id)handler useUDP:(_Bool)udp;
+
+@end
+
+@interface _MLNetworking : NSObject { // 0x29a16f2c0
+    /* instance variables */                         // +size   offset
+    _Bool _isClient;                                 // +0x1    0x8
+    NSObject<OS_nw_connection> *_connection;         // +0x8    0x10
+    NSObject<OS_nw_listener> *_listener;             // +0x8    0x18
+    _MLNetworkOptions *_nwOptions;                   // +0x8    0x20
+    NSObject<OS_nw_protocol_stack> *_protocol_stack; // +0x8    0x28
+    NSObject<OS_nw_parameters> *_parameters;         // +0x8    0x30
+    NSObject<OS_os_log> *_logType;                   // +0x8    0x38
+    NSObject<OS_dispatch_queue> *_q;                 // +0x8    0x40
+}
+
+@property (retain, nonatomic) NSObject<OS_nw_connection> *connection;
+@property (readonly, nonatomic) NSObject<OS_nw_listener> *listener;
+@property (readonly, nonatomic) _MLNetworkOptions *nwOptions;
+@property (readonly, nonatomic) NSObject<OS_nw_protocol_stack> *protocol_stack;
+@property (readonly, nonatomic) NSObject<OS_nw_parameters> *parameters;
+@property (readonly, nonatomic) _Bool isClient;
+@property (readonly, nonatomic) NSObject<OS_os_log> *logType;
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *q;
+
+/* instance methods */
+// 0x26114d778
+- (id)logType;
+// 0x26114d750
+- (id)listener;
+// 0x26114d734
+- (void)stop;
+// 0x26114d744
+- (void)setConnection:(id)connection;
+// 0x26114d73c
+- (id)connection;
+// 0x26114d788
+- (void).cxx_destruct;
+// 0x26114d770
+- (_Bool)isClient;
+// 0x26114cac0
+- (void)startConnection;
+// 0x26114d768
+- (id)parameters;
+// 0x26114d780
+- (id)q;
+// 0x26114d15c
+- (void)sendData:(id)data;
+// 0x26114c724
+- (id)initConnection:(id)connection;
+// 0x26114d2f4
+- (void)receiveLoop:(id /* block */)loop;
+// 0x26114cf8c
+- (void)setListenerReceiveDataCallBack:(id /* block */)back;
+// 0x26114c8fc
+- (id)initListener:(id)listener;
+// 0x26114d758
+- (id)nwOptions;
+// 0x26114d760
+- (id)protocol_stack;
+// 0x26114cabc
+- (void)restartConnection;
+// 0x26114cf38
+- (void)setReceiveDataCallBack:(id /* block */)back;
+
+@end
+
+@interface _MLRemoteConnection : NSObject { // 0x29a16f310
+    /* instance variables */                     // +size   offset
+    NSObject<OS_nw_connection> *_connection;     // +0x8    0x8
+    _MLNetworking *_nwObj;                       // +0x8    0x10
+    _MLNetworkOptions *_nwOptions;               // +0x8    0x18
+    _MLNetworkPacket *_packet;                   // +0x8    0x20
+    NSMutableData *_outputResult;                // +0x8    0x28
+    unsigned long long _jobCount;                // +0x8    0x30
+    NSObject<OS_dispatch_semaphore> *_semaphore; // +0x8    0x38
+    NSObject<OS_dispatch_queue> *_q;             // +0x8    0x40
+}
+
+@property (readonly, nonatomic) NSObject<OS_nw_connection> *connection;
+@property (readonly, nonatomic) _MLNetworking *nwObj;
+@property (readonly, nonatomic) _MLNetworkOptions *nwOptions;
+@property (readonly, nonatomic) _MLNetworkPacket *packet;
+@property (retain, nonatomic) NSMutableData *outputResult;
+@property (readonly, nonatomic) unsigned long long jobCount;
+@property (readonly, nonatomic) NSObject<OS_dispatch_semaphore> *semaphore;
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *q;
+
+/* instance methods */
+// 0x26114d84c
+- (id)initWithOptions:(id)options;
+// 0x26114ec10
+- (id)semaphore;
+// 0x26114ebd4
+- (id)connection;
+// 0x26114ec20
+- (void).cxx_destruct;
+// 0x26114ec18
+- (id)q;
+// 0x26114ebf4
+- (id)outputResult;
+// 0x26114ec08
+- (unsigned long long)jobCount;
+// 0x26114e33c
+- (_Bool)loadFromURL:(id)url options:(id)options error:(id *)error;
+// 0x26114ebec
+- (id)packet;
+// 0x26114db24
+- (void)doReceive:(id)receive context:(id)context isComplete:(_Bool)complete error:(id)error;
+// 0x26114ebdc
+- (id)nwObj;
+// 0x26114ebe4
+- (id)nwOptions;
+// 0x26114e3d4
+- (_Bool)predictionFromURL:(id)url features:(id)features output:(id)output options:(id)options error:(id *)error;
+// 0x26114e724
+- (void)send:(id)send options:(id)options;
+// 0x26114e7e8
+- (_Bool)sendDataAndWaitForAcknowledgementOrTimeout:(id)timeout;
+// 0x26114ebfc
+- (void)setOutputResult:(id)result;
+// 0x26114e68c
+- (_Bool)unloadFromURL:(id)url options:(id)options error:(id *)error;
+
+@end
+
+@interface _MLRemoteCoreMLErrors : NSObject // 0x29a16f388
+
+/* class methods */
+// 0x26114ece8
++ (id)createErrorWithCode:(long long)code description:(id)description;
+// 0x26114ee40
++ (id)clientTimeoutErrorForMethod:(id)method;
+
+@end
+
+@interface _MLServer : NSObject { // 0x29a16f3b0
+    /* instance variables */         // +size   offset
+    _MLNetworking *_nwObj;           // +0x8    0x8
+    _MLNetworkOptions *_nwOptions;   // +0x8    0x10
+    _MLNetworkPacket *_packet;       // +0x8    0x18
+    id /* block */ _loadFunction;    // +0x8    0x20
+    id /* block */ _predictFunction; // +0x8    0x28
+    id /* block */ _unLoadFunction;  // +0x8    0x30
+    id /* block */ _textFunction;    // +0x8    0x38
+    NSObject<OS_dispatch_queue> *_q; // +0x8    0x40
+}
+
+@property (readonly, nonatomic) _MLNetworking *nwObj;
+@property (readonly, nonatomic) _MLNetworkOptions *nwOptions;
+@property (readonly, nonatomic) _MLNetworkPacket *packet;
+@property (copy, nonatomic) id /* block */ loadFunction;
+@property (copy, nonatomic) id /* block */ predictFunction;
+@property (copy, nonatomic) id /* block */ unLoadFunction;
+@property (copy, nonatomic) id /* block */ textFunction;
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *q;
+
+/* instance methods */
+// 0x26114eec4
+- (id)initWithOptions:(id)options;
+// 0x26114fe18
+- (void)start;
+// 0x26114fe1c
+- (void)stop;
+// 0x26114fe80
+- (void).cxx_destruct;
+// 0x26114fe78
+- (id)q;
+// 0x26114fe30
+- (id)packet;
+// 0x26114fe48
+- (id /* block */)predictFunction;
+// 0x26114fe14
+- (void)setTextCommand:(id /* block */)command;
+// 0x26114fe08
+- (void)setLoadCommand:(id /* block */)command;
+// 0x26114f170
+- (void)doReceive:(id)receive context:(id)context isComplete:(_Bool)complete error:(id)error;
+// 0x26114fe38
+- (id /* block */)loadFunction;
+// 0x26114fe20
+- (id)nwObj;
+// 0x26114fe28
+- (id)nwOptions;
+// 0x26114fe40
+- (void)setLoadFunction:(id /* block */)function;
+// 0x26114fe0c
+- (void)setPredictCommand:(id /* block */)command;
+// 0x26114fe50
+- (void)setPredictFunction:(id /* block */)function;
+// 0x26114fe70
+- (void)setTextFunction:(id /* block */)function;
+// 0x26114fe10
+- (void)setUnLoadCommand:(id /* block */)command;
+// 0x26114fe60
+- (void)setUnLoadFunction:(id /* block */)function;
+// 0x26114fe68
+- (id /* block */)textFunction;
+// 0x26114fe58
+- (id /* block */)unLoadFunction;
+
+@end
+

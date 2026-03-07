@@ -1,0 +1,456 @@
+Flags = SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 14
+  __objc_nlclslist  = 0
+  __objc_catlist    = 1
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 5
+  __objc_classrefs  = 0
+  __objc_superrefs  = 3
+  __objc_selrefs    = 245
+
+@protocol NSObject // 0x100025a38
+
+@required
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+
+/* required instance methods */
+- (_Bool)isEqual:(id)equal;
+- (Class)class;
+- (id)self;
+- (id)performSelector:(SEL)selector;
+- (id)performSelector:(SEL)selector withObject:(id)object;
+- (id)performSelector:(SEL)selector withObject:(id)object withObject:(id)object;
+- (_Bool)isProxy;
+- (_Bool)isKindOfClass:(Class)_class;
+- (_Bool)isMemberOfClass:(Class)_class;
+- (_Bool)conformsToProtocol:(id)protocol;
+- (_Bool)respondsToSelector:(SEL)selector;
+- (id)retain;
+- (oneway void)release;
+- (id)autorelease;
+- (unsigned long long)retainCount;
+- (struct _NSZone *)zone;
+- (unsigned long long)hash;
+- (Class)superclass;
+- (id)description;
+
+@optional
+
+@property (readonly, copy) NSString *debugDescription;
+
+/* optional instance methods */
+- (id)debugDescription;
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject> // 0x100025a98
+
+@required
+
+@optional
+
+/* optional instance methods */
+- (_Bool)listener:(id)listener shouldAcceptNewConnection:(id)connection;
+
+@end
+
+@protocol _ANECompilerServiceProtocol // 0x1000259d8
+
+@required
+
+/* required instance methods */
+- (void)compileModelAt:(id)at csIdentity:(id)identity sandboxExtension:(id)extension options:(id)options tempDirectory:(id)directory cloneDirectory:(id)directory outputURL:(id)url aotModelBinaryPath:(id)path withReply:(id /* block */)reply;
+
+@optional
+
+@end
+
+@protocol _ANEMaintenanceProtocol // 0x100025968
+
+@required
+
+/* required instance methods */
+- (void)scheduleMaintenanceWithName:(id)name directoryPaths:(id)paths;
+
+@optional
+
+@end
+
+@protocol _ANEStorageMaintainerProtocol // 0x100025908
+
+@required
+
+/* required instance methods */
+- (void)purgeDanglingModelsAt:(id)at withReply:(id /* block */)reply;
+
+@optional
+
+@end
+
+@interface ServiceDelegate : NSObject <NSXPCListenerDelegate> // 0x100025728
+
+@property (readonly) unsigned long long hash;
+@property (readonly) Class superclass;
+@property (readonly, copy) NSString *description;
+@property (readonly, copy) NSString *debugDescription;
+
+/* instance methods */
+// 0x100010cf0
+- (_Bool)listener:(id)listener shouldAcceptNewConnection:(id)connection;
+
+@end
+
+@interface _ANECVAIRCompiler : NSObject // 0x1000253b8
+
+/* class methods */
+// 0x100004024
++ (id)compileModelAt:(id)at csIdentity:(id)identity plistFilename:(id)filename optionsFilename:(id)filename outputURL:(id)url saveSourceURL:(id)url aotModelBinaryPath:(id)path isEncryptedModel:(_Bool)model options:(id)options ok:(_Bool *)ok error:(id *)error;
+
+@end
+
+@interface _ANECompiler : NSObject // 0x100025660
+
+/* class methods */
+// 0x10000c464
++ (void)initialize;
+// 0x10000c4ac
++ (id)createNetworkFromModelAtPath:(id)path modelFilename:(id)filename;
+// 0x10000c5a8
++ (id)createJITNetworkFromModelAtPath:(id)path modelFilename:(id)filename aotModelAtPath:(id)path aotModelFilename:(id)filename;
+// 0x10000c714
++ (id)createErrorWithUnderlyingError:(id)error;
+// 0x10000c998
++ (id)compileModelJIT:(struct { id x0; id x1; id x2; id x3; id x4; id x5; id x6; _Bool x7; _Bool x8; _Bool x9; id x10; } *)jit ok:(_Bool *)ok error:(id *)error;
+// 0x10000e17c
++ (id)compileModel:(struct { id x0; id x1; id x2; id x3; id x4; id x5; id x6; _Bool x7; _Bool x8; _Bool x9; id x10; } *)model options:(id)options ok:(_Bool *)ok error:(id *)error;
+// 0x10000f8dc
++ (id)createInMemoryConstants:(id)constants;
+
+@end
+
+@interface _ANECompilerService : NSObject <_ANECompilerServiceProtocol> // 0x100025778
+
+/* class methods */
+// 0x10001126c
++ (void)initialize;
+
+/* instance methods */
+// 0x1000112d8
+- (void)compileModelAt:(id)at csIdentity:(id)identity sandboxExtension:(id)extension options:(id)options tempDirectory:(id)directory cloneDirectory:(id)directory outputURL:(id)url aotModelBinaryPath:(id)path withReply:(id /* block */)reply;
+
+@end
+
+@interface _ANECoreMLModelCompiler : NSObject // 0x1000256d8
+
+/* class methods */
+// 0x10000fdb4
++ (void)initialize;
+// 0x10000fdfc
++ (id)createErrorWithString:(id)string;
+// 0x10000ff60
++ (id)pathsForModelURL:(id)url;
+// 0x1000101a0
++ (id)compileModelAt:(id)at csIdentity:(id)identity key:(id)key optionsFilename:(id)filename tempDirectory:(id)directory outputURL:(id)url saveSourceModelPath:(id)path aotModelBinaryPath:(id)path isEncryptedModel:(_Bool)model options:(id)options ok:(_Bool *)ok error:(id *)error;
+
+@end
+
+@interface _ANEEspressoIRTranslator : NSObject // 0x1000254f8
+
+/* class methods */
+// 0x10000a1dc
++ (id)createErrorForPlan:(void *)plan status:(int)status;
+// 0x10000a370
++ (_Bool)translateModelAt:(id)at key:(id)key outputPath:(id)path isEncryptedModel:(_Bool)model translationOptions:(id)options error:(id *)error;
+// 0x10000a7b0
++ (void)destroyEspresso:(void *)espresso ctx:(void *)ctx;
+
+@end
+
+@interface _ANEInMemoryModelCacheManager : NSObject { // 0x100025520
+    /* instance variables */ // +size   offset
+    NSURL *_cacheDir;        // +0x8    0x8
+}
+
+@property (readonly, nonatomic) NSURL *cacheDir;
+
+/* class methods */
+// 0x10000a808
++ (id)new;
+// 0x10000adac
++ (_Bool)removeFilesFromDirectory:(id)directory notAccessedInSeconds:(double)seconds;
+// 0x10000b004
++ (unsigned long long)notRecentlyUsedSecondsThreshold;
+// 0x10000b010
++ (_Bool)removeStaleModelsAtPath:(id)path;
+
+/* instance methods */
+// 0x10000a7ec
+- (id)init;
+// 0x10000a810
+- (id)initWithURL:(id)url createDirectory:(_Bool)directory;
+// 0x10000a9dc
+- (id)initWithURL:(id)url;
+// 0x10000a9e4
+- (id)URLForBundleID:(id)id;
+// 0x10000aa68
+- (id)URLForModelHash:(id)hash bundleID:(id)id;
+// 0x10000ab20
+- (id)cachedModelPathMatchingHash:(id)hash csIdentity:(id)identity;
+// 0x10000ac1c
+- (_Bool)removeAllModelsForBundleID:(id)id;
+// 0x10000ac8c
+- (id)getDiskSpaceItemizedByBundleIDAndPurge:(_Bool)purge;
+// 0x10000ad18
+- (id)getDiskSpaceForBundleID:(id)id;
+// 0x10000ada4
+- (_Bool)shouldEnforceSizeLimits;
+// 0x10000b084
+- (_Bool)removeStaleModels;
+// 0x10000b0f4
+- (void)scheduleMaintenanceWithName:(id)name directoryPaths:(id)paths;
+// 0x10000b248
+- (id)cacheDir;
+// 0x10000b250
+- (void).cxx_destruct;
+
+@end
+
+@interface _ANEMILCompiler : NSObject // 0x100025458
+
+/* class methods */
+// 0x100008ef8
++ (id)compileModelAt:(id)at modelName:(id)name csIdentity:(id)identity optionsFilename:(id)filename outputURL:(id)url saveSourceURL:(id)url aotModelBinaryPath:(id)path isEncryptedModel:(_Bool)model options:(id)options ok:(_Bool *)ok error:(id *)error;
+
+@end
+
+@interface _ANEMLIRCompiler : NSObject // 0x100025638
+
+/* class methods */
+// 0x10000bd04
++ (id)compileModelAt:(id)at modelName:(id)name csIdentity:(id)identity optionsFilename:(id)filename outputURL:(id)url saveSourceURL:(id)url aotModelBinaryPath:(id)path isEncryptedModel:(_Bool)model options:(id)options mpsConstants:(id)constants ok:(_Bool *)ok error:(id *)error;
+
+@end
+
+@interface _ANEModelCacheManager : NSObject <_ANEMaintenanceProtocol> { // 0x100025340
+    /* instance variables */ // +size   offset
+    NSURL *_cacheDir;        // +0x8    0x8
+}
+
+@property (readonly, nonatomic) NSURL *cacheDir;
+
+/* class methods */
+// 0x1000011b8
++ (void)initialize;
+// 0x100001294
++ (id)new;
+// 0x100001470
++ (_Bool)isSystemModelPath:(id)path;
+// 0x1000021d8
++ (id)cachedSourceModelStoreNameFor:(id)_for;
+// 0x100002260
++ (_Bool)saveSourceModelPath:(id)path outputModelDirectory:(id)directory;
+// 0x1000024b0
++ (id)cachedModelRetainNameFor:(id)_for;
+// 0x100002538
++ (_Bool)createModelCacheRetain:(id)retain;
+// 0x1000025e8
++ (_Bool)removeIfStaleBinary:(id)binary forModelPath:(id)path;
+
+/* instance methods */
+// 0x100001278
+- (id)init;
+// 0x10000129c
+- (id)initWithURL:(id)url createDirectory:(_Bool)directory;
+// 0x100001468
+- (id)initWithURL:(id)url;
+// 0x1000014e0
+- (id)URLForModel:(id)model bundleID:(id)id;
+// 0x1000014ec
+- (id)URLForModel:(id)model bundleID:(id)id useSourceURL:(_Bool)url;
+// 0x1000014f8
+- (id)URLForModel:(id)model bundleID:(id)id aotCacheUrlIdentifier:(id)identifier;
+// 0x100001504
+- (id)URLForModel:(id)model bundleID:(id)id forAllSegments:(_Bool)segments;
+// 0x10000150c
+- (id)URLForModel:(id)model bundleID:(id)id useSourceURL:(_Bool)url aotCacheUrlIdentifier:(id)identifier;
+// 0x100001518
+- (id)URLForModel:(id)model bundleID:(id)id useSourceURL:(_Bool)url forAllSegments:(_Bool)segments aotCacheUrlIdentifier:(id)identifier;
+// 0x100001ba8
+- (id)URLForModel:(id)model bundleID:(id)id forAllSegments:(_Bool)segments aotCacheUrlIdentifier:(id)identifier;
+// 0x100001bb8
+- (_Bool)cacheURLIdentifierForModel:(id)model useSourceURL:(_Bool)url withReply:(id /* block */)reply;
+// 0x100001e6c
+- (id)getModelBinaryPathFromURLIdentifier:(id)urlidentifier bundleID:(id)id;
+// 0x100001f40
+- (id)cachedModelPathFor:(id)_for csIdentity:(id)identity useSourceURL:(_Bool)url;
+// 0x10000203c
+- (id)cachedModelPathFor:(id)_for csIdentity:(id)identity;
+// 0x100002044
+- (id)cachedModelAllSegmentsPathFor:(id)_for csIdentity:(id)identity;
+// 0x100002100
+- (id)cachedSourceModelStoreNameFor:(id)_for csIdentity:(id)identity;
+// 0x1000023d8
+- (id)cachedModelRetainNameFor:(id)_for csIdentity:(id)identity;
+// 0x1000029f0
+- (id)URLForBundleID:(id)id;
+// 0x100002a74
+- (_Bool)removeAllModelsForBundleID:(id)id;
+// 0x100002ae4
+- (id)filePathForModel:(id)model bundleID:(id)id;
+// 0x100002c18
+- (id)getDiskSpaceItemizedByBundleIDAndPurge:(_Bool)purge;
+// 0x100002ca4
+- (id)getDiskSpaceForBundleID:(id)id;
+// 0x100002d30
+- (_Bool)shouldEnforceSizeLimits;
+// 0x100002d38
+- (_Bool)garbageCollectDanglingModels;
+// 0x100002d88
+- (void)startDanglingModelGC;
+// 0x1000030c8
+- (void)scheduleMaintenanceWithName:(id)name directoryPaths:(id)paths;
+// 0x100003294
+- (_Bool)scanAllPartitionsForModel:(id)model csIdentity:(id)identity expunge:(_Bool)expunge;
+// 0x100004004
+- (id)cacheDir;
+// 0x10000400c
+- (void).cxx_destruct;
+
+@end
+
+@interface _ANESandboxingHelper : NSObject // 0x1000254a8
+
+/* class methods */
+// 0x100009638
++ (void)initialize;
+// 0x100009680
++ (_Bool)canAccessPathAt:(id)at methodName:(id)name error:(id *)error;
+// 0x100009738
++ (id)sandboxExtensionPathForModelURL:(id)url;
+// 0x10000983c
++ (id)issueSandboxExtensionForPath:(id)path error:(id *)error;
+// 0x100009b94
++ (id)issueSandboxExtensionForModel:(id)model error:(id *)error;
+// 0x100009df0
++ (long long)consumeSandboxExtension:(id)extension forModel:(id)model error:(id *)error;
+// 0x100009eb8
++ (long long)consumeSandboxExtension:(id)extension forPath:(id)path error:(id *)error;
+// 0x10000a190
++ (_Bool)releaseSandboxExtension:(id)extension handle:(long long)handle;
+
+@end
+
+@interface _ANEStorageHelper : NSObject // 0x1000253e0
+
+/* class methods */
+// 0x1000047e0
++ (void)initialize;
+// 0x1000048a0
++ (_Bool)removeDirectoryAtPath:(id)path;
+// 0x1000049f8
++ (_Bool)removeShapesDirectoryAtPath:(id)path;
+// 0x100004c14
++ (id)memoryMapModelAtPath:(id)path modelAttributes:(id *)attributes;
+// 0x100004c20
++ (id)memoryMapModelAtPath:(id)path isPrecompiled:(_Bool)precompiled modelAttributes:(id *)attributes;
+// 0x100005670
++ (id)memoryMapWeightAtPath:(id)path;
+// 0x100005ff8
++ (_Bool)setAccessTime:(id)time forModelFilePath:(id)path;
+// 0x1000061b4
++ (id)getAccessTimeForFilePath:(id)path;
+// 0x10000641c
++ (_Bool)updateAccessTimeForFilePath:(id)path;
+// 0x100006580
++ (void)removeFilePath:(id)path ifDate:(id)date olderThanSecond:(id)second;
+// 0x100006698
++ (_Bool)garbageCollectDanglingModelsAtPath:(id)path;
+// 0x1000074c0
++ (id)uniqueFirstLevelSubdirectories:(id)subdirectories;
+// 0x10000765c
++ (id)sizeOfDirectoryAtPath:(id)path recursionLevel:(unsigned long long)level;
+// 0x100007c5c
++ (void)addSubdirectoryDetails:(id)details directoryPath:(id)path size:(unsigned long long)size;
+// 0x100007d50
++ (id)createModelCacheDictionary;
+// 0x100007e10
++ (id)sizeOfModelCacheAtPath:(id)path purgeSubdirectories:(_Bool)subdirectories;
+// 0x10000847c
++ (id)mergeModelCacheStorageInformation:(id)information with:(id)with;
+// 0x100008810
++ (_Bool)_markPurgeablePath:(id)path error:(id *)error;
+// 0x100008ae0
++ (_Bool)markPathAndDirectParentPurgeable:(id)purgeable error:(id *)error;
+// 0x100008b78
++ (_Bool)enableApfsPurging;
+
+@end
+
+@interface _ANETask : NSObject { // 0x100025570
+    /* instance variables */                     // +size   offset
+    unsigned long long _periodSeconds;           // +0x8    0x8
+    NSString *_name;                             // +0x8    0x10
+    id /* block */ _handler;                     // +0x8    0x18
+    NSObject<OS_dispatch_queue> *_queue;         // +0x8    0x20
+    NSObject<OS_xpc_object> *_executionCriteria; // +0x8    0x28
+}
+
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *queue;
+@property (readonly, nonatomic) NSObject<OS_xpc_object> *executionCriteria;
+@property (readonly, nonatomic) unsigned long long periodSeconds;
+@property (readonly, copy, nonatomic) NSString *name;
+@property (readonly, nonatomic) id /* block */ handler;
+
+/* class methods */
+// 0x10000b25c
++ (id)new;
+// 0x10000b4fc
++ (id)taskWithName:(id)name period:(unsigned long long)period handler:(id /* block */)handler;
+
+/* instance methods */
+// 0x10000b264
+- (id)init;
+// 0x10000b280
+- (id)initWithName:(id)name period:(unsigned long long)period handler:(id /* block */)handler;
+// 0x10000b584
+- (unsigned long long)periodSeconds;
+// 0x10000b58c
+- (id)name;
+// 0x10000b594
+- (id /* block */)handler;
+// 0x10000b59c
+- (id)queue;
+// 0x10000b5a4
+- (id)executionCriteria;
+// 0x10000b5ac
+- (void).cxx_destruct;
+
+@end
+
+@interface _ANETaskManager : NSObject // 0x1000255e8
+
+/* class methods */
+// 0x10000b608
++ (void)registerTask:(id)task;
+// 0x10000bcb4
++ (void)unregisterTask:(id)task;
+
+@end
+
+@interface NSFileManager (ANE) // 0x100024218
+
+/* class methods */
+// 0x100008bac
++ (_Bool)ane_addWriteModeIfMissing:(id)missing originalMode:(unsigned short)mode;
+// 0x100008cf8
++ (_Bool)ane_addWriteModeForPath:(id)path;
+
+@end
+

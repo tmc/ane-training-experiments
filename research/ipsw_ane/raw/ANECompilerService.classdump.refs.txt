@@ -1,0 +1,584 @@
+@protocol NSObject
+
+@required
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* required instance methods */
+-[NSObject isEqual:];
+-[NSObject class];
+-[NSObject self];
+-[NSObject performSelector:];
+-[NSObject performSelector:withObject:];
+-[NSObject performSelector:withObject:withObject:];
+-[NSObject isProxy];
+-[NSObject isKindOfClass:];
+-[NSObject isMemberOfClass:];
+-[NSObject conformsToProtocol:];
+-[NSObject respondsToSelector:];
+-[NSObject retain];
+-[NSObject release];
+-[NSObject autorelease];
+-[NSObject retainCount];
+-[NSObject zone];
+-[NSObject hash];
+-[NSObject superclass];
+-[NSObject description];
+
+@optional
+
+/* optional instance methods */
+-[NSObject debugDescription];
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject>
+
+@required
+
+@optional
+
+/* optional instance methods */
+-[NSXPCListenerDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@protocol _ANECompilerServiceProtocol
+
+@required
+
+/* required instance methods */
+-[_ANECompilerServiceProtocol compileModelAt:csIdentity:sandboxExtension:options:tempDirectory:cloneDirectory:outputURL:aotModelBinaryPath:withReply:];
+
+@optional
+
+@end
+
+@protocol _ANEMaintenanceProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEMaintenanceProtocol scheduleMaintenanceWithName:directoryPaths:];
+
+@optional
+
+@end
+
+@protocol _ANEStorageMaintainerProtocol
+
+@required
+
+/* required instance methods */
+-[_ANEStorageMaintainerProtocol purgeDanglingModelsAt:withReply:];
+
+@optional
+
+@end
+
+@interface ServiceDelegate : NSObject <NSXPCListenerDelegate>
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[ServiceDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@interface _ANECVAIRCompiler : NSObject
+
+/* class methods */
++[_ANECVAIRCompiler compileModelAt:csIdentity:plistFilename:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANECompiler : NSObject
+
+/* class methods */
++[_ANECompiler initialize];
++[_ANECompiler createNetworkFromModelAtPath:modelFilename:];
++[_ANECompiler createJITNetworkFromModelAtPath:modelFilename:aotModelAtPath:aotModelFilename:];
++[_ANECompiler createErrorWithUnderlyingError:];
++[_ANECompiler compileModelJIT:ok:error:];
++[_ANECompiler compileModel:options:ok:error:];
++[_ANECompiler createInMemoryConstants:];
+
+@end
+
+@interface _ANECompilerService : NSObject <_ANECompilerServiceProtocol>
+
+/* class methods */
++[_ANECompilerService initialize];
+
+/* instance methods */
+-[_ANECompilerService compileModelAt:csIdentity:sandboxExtension:options:tempDirectory:cloneDirectory:outputURL:aotModelBinaryPath:withReply:];
+
+@end
+
+@interface _ANECoreMLModelCompiler : NSObject
+
+/* class methods */
++[_ANECoreMLModelCompiler initialize];
++[_ANECoreMLModelCompiler createErrorWithString:];
++[_ANECoreMLModelCompiler pathsForModelURL:];
++[_ANECoreMLModelCompiler compileModelAt:csIdentity:key:optionsFilename:tempDirectory:outputURL:saveSourceModelPath:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANEEspressoIRTranslator : NSObject
+
+/* class methods */
++[_ANEEspressoIRTranslator createErrorForPlan:status:];
++[_ANEEspressoIRTranslator translateModelAt:key:outputPath:isEncryptedModel:translationOptions:error:];
++[_ANEEspressoIRTranslator destroyEspresso:ctx:];
+
+@end
+
+@interface _ANEInMemoryModelCacheManager : NSObject {
+    /* instance variables */
+    @"NSURL" _cacheDir;
+}
+
+@property (T@"NSURL",R,N,V_cacheDir) cacheDir;
+
+/* class methods */
++[_ANEInMemoryModelCacheManager new];
++[_ANEInMemoryModelCacheManager removeFilesFromDirectory:notAccessedInSeconds:];
++[_ANEInMemoryModelCacheManager notRecentlyUsedSecondsThreshold];
++[_ANEInMemoryModelCacheManager removeStaleModelsAtPath:];
+
+/* instance methods */
+-[_ANEInMemoryModelCacheManager init];
+-[_ANEInMemoryModelCacheManager initWithURL:createDirectory:];
+-[_ANEInMemoryModelCacheManager initWithURL:];
+-[_ANEInMemoryModelCacheManager URLForBundleID:];
+-[_ANEInMemoryModelCacheManager URLForModelHash:bundleID:];
+-[_ANEInMemoryModelCacheManager cachedModelPathMatchingHash:csIdentity:];
+-[_ANEInMemoryModelCacheManager removeAllModelsForBundleID:];
+-[_ANEInMemoryModelCacheManager getDiskSpaceItemizedByBundleIDAndPurge:];
+-[_ANEInMemoryModelCacheManager getDiskSpaceForBundleID:];
+-[_ANEInMemoryModelCacheManager shouldEnforceSizeLimits];
+-[_ANEInMemoryModelCacheManager removeStaleModels];
+-[_ANEInMemoryModelCacheManager scheduleMaintenanceWithName:directoryPaths:];
+-[_ANEInMemoryModelCacheManager cacheDir];
+
+@end
+
+@interface _ANEMILCompiler : NSObject
+
+/* class methods */
++[_ANEMILCompiler compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:];
+
+@end
+
+@interface _ANEMLIRCompiler : NSObject
+
+/* class methods */
++[_ANEMLIRCompiler compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:mpsConstants:ok:error:];
+
+@end
+
+@interface _ANEModelCacheManager : NSObject <_ANEMaintenanceProtocol> {
+    /* instance variables */
+    @"NSURL" _cacheDir;
+}
+
+@property (T@"NSURL",R,N,V_cacheDir) cacheDir;
+
+/* class methods */
++[_ANEModelCacheManager initialize];
++[_ANEModelCacheManager new];
++[_ANEModelCacheManager isSystemModelPath:];
++[_ANEModelCacheManager cachedSourceModelStoreNameFor:];
++[_ANEModelCacheManager saveSourceModelPath:outputModelDirectory:];
++[_ANEModelCacheManager cachedModelRetainNameFor:];
++[_ANEModelCacheManager createModelCacheRetain:];
++[_ANEModelCacheManager removeIfStaleBinary:forModelPath:];
+
+/* instance methods */
+-[_ANEModelCacheManager init];
+-[_ANEModelCacheManager initWithURL:createDirectory:];
+-[_ANEModelCacheManager initWithURL:];
+-[_ANEModelCacheManager URLForModel:bundleID:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:];
+-[_ANEModelCacheManager URLForModel:bundleID:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:forAllSegments:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:useSourceURL:forAllSegments:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager URLForModel:bundleID:forAllSegments:aotCacheUrlIdentifier:];
+-[_ANEModelCacheManager cacheURLIdentifierForModel:useSourceURL:withReply:];
+-[_ANEModelCacheManager getModelBinaryPathFromURLIdentifier:bundleID:];
+-[_ANEModelCacheManager cachedModelPathFor:csIdentity:useSourceURL:];
+-[_ANEModelCacheManager cachedModelPathFor:csIdentity:];
+-[_ANEModelCacheManager cachedModelAllSegmentsPathFor:csIdentity:];
+-[_ANEModelCacheManager cachedSourceModelStoreNameFor:csIdentity:];
+-[_ANEModelCacheManager cachedModelRetainNameFor:csIdentity:];
+-[_ANEModelCacheManager URLForBundleID:];
+-[_ANEModelCacheManager removeAllModelsForBundleID:];
+-[_ANEModelCacheManager filePathForModel:bundleID:];
+-[_ANEModelCacheManager getDiskSpaceItemizedByBundleIDAndPurge:];
+-[_ANEModelCacheManager getDiskSpaceForBundleID:];
+-[_ANEModelCacheManager shouldEnforceSizeLimits];
+-[_ANEModelCacheManager garbageCollectDanglingModels];
+-[_ANEModelCacheManager startDanglingModelGC];
+-[_ANEModelCacheManager scheduleMaintenanceWithName:directoryPaths:];
+-[_ANEModelCacheManager scanAllPartitionsForModel:csIdentity:expunge:];
+-[_ANEModelCacheManager cacheDir];
+
+@end
+
+@interface _ANESandboxingHelper : NSObject
+
+/* class methods */
++[_ANESandboxingHelper initialize];
++[_ANESandboxingHelper canAccessPathAt:methodName:error:];
++[_ANESandboxingHelper sandboxExtensionPathForModelURL:];
++[_ANESandboxingHelper issueSandboxExtensionForPath:error:];
++[_ANESandboxingHelper issueSandboxExtensionForModel:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forModel:error:];
++[_ANESandboxingHelper consumeSandboxExtension:forPath:error:];
++[_ANESandboxingHelper releaseSandboxExtension:handle:];
+
+@end
+
+@interface _ANEStorageHelper : NSObject
+
+/* class methods */
++[_ANEStorageHelper initialize];
++[_ANEStorageHelper removeDirectoryAtPath:];
++[_ANEStorageHelper removeShapesDirectoryAtPath:];
++[_ANEStorageHelper memoryMapModelAtPath:modelAttributes:];
++[_ANEStorageHelper memoryMapModelAtPath:isPrecompiled:modelAttributes:];
++[_ANEStorageHelper memoryMapWeightAtPath:];
++[_ANEStorageHelper setAccessTime:forModelFilePath:];
++[_ANEStorageHelper getAccessTimeForFilePath:];
++[_ANEStorageHelper updateAccessTimeForFilePath:];
++[_ANEStorageHelper removeFilePath:ifDate:olderThanSecond:];
++[_ANEStorageHelper garbageCollectDanglingModelsAtPath:];
++[_ANEStorageHelper uniqueFirstLevelSubdirectories:];
++[_ANEStorageHelper sizeOfDirectoryAtPath:recursionLevel:];
++[_ANEStorageHelper addSubdirectoryDetails:directoryPath:size:];
++[_ANEStorageHelper createModelCacheDictionary];
++[_ANEStorageHelper sizeOfModelCacheAtPath:purgeSubdirectories:];
++[_ANEStorageHelper mergeModelCacheStorageInformation:with:];
++[_ANEStorageHelper _markPurgeablePath:error:];
++[_ANEStorageHelper markPathAndDirectParentPurgeable:error:];
++[_ANEStorageHelper enableApfsPurging];
+
+@end
+
+@interface _ANETask : NSObject {
+    /* instance variables */
+    Q _periodSeconds;
+    @"NSString" _name;
+    @? _handler;
+    @"NSObject<OS_dispatch_queue>" _queue;
+    @"NSObject<OS_xpc_object>" _executionCriteria;
+}
+
+@property (T@"NSObject<OS_dispatch_queue>",R,N,V_queue) queue;
+@property (T@"NSObject<OS_xpc_object>",R,N,V_executionCriteria) executionCriteria;
+@property (TQ,R,N,V_periodSeconds) periodSeconds;
+@property (T@"NSString",R,C,N,V_name) name;
+@property (T@?,R,N,V_handler) handler;
+
+/* class methods */
++[_ANETask new];
++[_ANETask taskWithName:period:handler:];
+
+/* instance methods */
+-[_ANETask init];
+-[_ANETask initWithName:period:handler:];
+-[_ANETask periodSeconds];
+-[_ANETask name];
+-[_ANETask handler];
+-[_ANETask queue];
+-[_ANETask executionCriteria];
+
+@end
+
+@interface _ANETaskManager : NSObject
+
+/* class methods */
++[_ANETaskManager registerTask:];
++[_ANETaskManager unregisterTask:];
+
+@end
+
+@interface NSFileManager (ANE)
+
+/* class methods */
++[NSFileManager  ane_addWriteModeIfMissing:originalMode:];
++[NSFileManager  ane_addWriteModeForPath:];
+
+@end
+
+
+@protocol refs
+0x00100021470 => 0x001000259d8: _ANECompilerServiceProtocol
+0x00100021438 => 0x00100025908: _ANEStorageMaintainerProtocol
+0x00100021440 => 0x00100025968: _ANEMaintenanceProtocol
+0x00100021448 => 0x001000259d8: _ANECompilerServiceProtocol
+0x00100021450 => 0x00100025a38: NSObject
+0x00100021458 => 0x00100025a98: NSXPCListenerDelegate
+0x00100021468 => 0x00100025908: _ANEStorageMaintainerProtocol
+
+@class refs
+
+@super refs
+0x00100021478 => 0x00100025340: _ANEModelCacheManager
+0x00100021480 => 0x00100025520: _ANEInMemoryModelCacheManager
+0x00100021488 => 0x00100025570: _ANETask
+
+@selectors refs
+0x00100024de0 => 0x00000019442: executionCriteria
+0x00100024e20 => 0x000000194fb: firstObject
+0x00100024ed8 => 0x000000197a0: lastPathComponent
+0x00100024f58 => 0x00000018894: numberWithBool:
+0x00100024d28 => 0x000000191db: createModelCacheDictionary
+0x00100024db0 => 0x00000019396: enableApfsPurging
+0x00100024e30 => 0x00000019548: getAccessTimeForFilePath:
+0x00100024e98 => 0x000000196e1: internalLibraryPath
+0x00100024f20 => 0x000000198e9: moveItemAtPath:toPath:error:
+0x001000250e8 => 0x00000019ecf: stringWithUTF8String:
+0x00100025288 => 0x00000018cfb: class
+0x00100024f08 => 0x000000198b3: modelDataVaultDirectory
+0x00100024f68 => 0x00000019954: numberWithInteger:
+0x00100025020 => 0x00000019bf6: reportTelemetryToPPS:playload:
+0x00100025178 => 0x0000001a0b5: writeToFile:atomically:encoding:error:
+0x001000251c0 => 0x00000018c6b: cachedModelRetainNameFor:csIdentity:
+0x00100024c60 => 0x00000018c90: cachedSourceModelStoreNameFor:
+0x00100024d20 => 0x0000001918c: createJITNetworkFromModelAtPath:modelFilename:aotModelAtPath:aotModelFilename:
+0x00100024e80 => 0x00000019699: initWithURL:createDirectory:
+0x00100024f50 => 0x00000018670: notRecentlyUsedSecondsThreshold
+0x00100024c28 => 0x00000018b3e: attributesOfItemAtPath:error:
+0x00100024b78 => 0x0000001962d: init
+0x00100025018 => 0x00000019bdd: removeStaleModelsAtPath:
+0x001000250b0 => 0x00000019e23: sourceURL
+0x001000251f0 => 0x00000019507: garbageCollectDanglingModels
+0x00100024c90 => 0x00000018d61: compileModelAt:csIdentity:key:optionsFilename:tempDirectory:outputURL:saveSourceModelPath:aotModelBinaryPath:isEncryptedModel:options:ok:error:
+0x00100024e40 => 0x00000018621: handler
+0x00100024f70 => 0x00000019967: numberWithUnsignedInteger:
+0x00100025058 => 0x00000019ced: setAttributes:ofItemAtPath:error:
+0x00100025218 => 0x00000018879: new
+0x00100024d98 => 0x00000019341: defaultManager
+0x00100025030 => 0x00000019c43: sandboxExtensionPathForModelURL:
+0x001000252c8 => 0x00000019044: conformsToProtocol:
+0x00100024ce8 => 0x000000190ac: countByEnumeratingWithState:objects:count:
+0x001000252a0 => 0x00000019a19: performSelector:withObject:
+0x00100024cf8 => 0x0000001911b: createErrorForPlan:status:
+0x001000250c0 => 0x0000001892c: stringByAppendingPathComponent:
+0x001000251e8 => 0x00000019db9: shouldEnforceSizeLimits
+0x001000252c0 => 0x00000019733: isMemberOfClass:
+0x00100024cf0 => 0x000000190d7: createDirectoryAtPath:withIntermediateDirectories:attributes:error:
+0x00100025200 => 0x00000019c8e: scanAllPartitionsForModel:csIdentity:expunge:
+0x00100025260 => 0x0000001896f: unregisterTask:
+0x00100024d48 => 0x0000001924c: daemon
+0x00100024e70 => 0x0000001965a: initWithName:period:handler:
+0x00100024fc0 => 0x00000019a7c: processModelShareAccessEntitlement
+0x00100025108 => 0x00000019f49: systemLibraryPath
+0x00100024bb0 => 0x0000001894c: URLForModel:bundleID:useSourceURL:
+0x00100024ed0 => 0x00000018863: key
+0x00100024f28 => 0x00000019906: mpsConstants
+0x00100024ba0 => 0x000000188ed: URLForModel:bundleID:
+0x00100024c68 => 0x00000018cd9: canAccessPathAt:methodName:error:
+0x00100024d68 => 0x000000192a0: dateWithTimeIntervalSinceNow:
+0x00100024de8 => 0x00000019454: fileAccessErrorForMethod:
+0x00100025130 => 0x00000019fc0: translateModelAt:key:outputPath:isEncryptedModel:translationOptions:error:
+0x00100024c18 => 0x00000018afe: ane_addWriteModeIfMissing:originalMode:
+0x00100024c70 => 0x00000018d01: cloneIfWritable:isEncryptedModel:cloneDirectory:
+0x00100024cc0 => 0x00000019023: compilerServiceAccessEntitlement
+0x00100024dc8 => 0x000000193fb: errorDomainCompiler
+0x00100024f38 => 0x0000001991f: name
+0x00100024be8 => 0x00000018a6d: addSubdirectoryDetails:directoryPath:size:
+0x00100024e08 => 0x000000194c8: fileSize
+0x00100024e18 => 0x000000194ea: fileURLWithPath:
+0x00100025080 => 0x00000019d62: setObject:forKey:
+0x00100025138 => 0x0000001a00b: trimmedModelPath:trimmedPath:
+0x001000252b0 => 0x0000001863a: isProxy
+0x00100024d60 => 0x00000019281: dateWithTimeIntervalSince1970:
+0x00100024fa8 => 0x000000199e8: pathExtension
+0x00100025180 => 0x0000001968c: initWithURL:
+0x00100025248 => 0x00000019757: issueSandboxExtensionForModel:error:
+0x00100024d58 => 0x0000001927c: date
+0x001000251d8 => 0x00000019591: getDiskSpaceItemizedByBundleIDAndPurge:
+0x00100024ca0 => 0x00000018eef: compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:mpsConstants:ok:error:
+0x00100024cc8 => 0x00000019058: consumeSandboxExtension:forModel:error:
+0x00100024d18 => 0x00000019173: createInMemoryConstants:
+0x00100025040 => 0x000000186d4: serviceListener
+0x00100025230 => 0x00000019839: memoryMapModelAtPath:modelAttributes:
+0x001000252f8 => 0x0000001a0dc: zone
+0x00100024c20 => 0x00000018b26: arrayWithObjects:count:
+0x00100024ca8 => 0x00000018f7e: compileModelAt:modelName:csIdentity:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:
+0x00100024e78 => 0x00000019677: initWithServiceName:
+0x001000251a0 => 0x000000195b9: getModelBinaryPathFromURLIdentifier:bundleID:
+0x00100024d78 => 0x000000192e5: defaultCompilerOptionsFilename
+0x00100024fe0 => 0x000000188cd: releaseSandboxExtension:handle:
+0x00100025060 => 0x00000019d0f: setByAddingObjectsFromArray:
+0x00100024e10 => 0x000000194d1: fileSystemRepresentation
+0x00100025078 => 0x00000019d4f: setExportedObject:
+0x00100025220 => 0x00000019b5d: removeIfStaleBinary:forModelPath:
+0x00100025228 => 0x00000019bae: removeShapesDirectoryAtPath:
+0x00100024f48 => 0x0000001992f: noSandboxExtension
+0x00100024ba8 => 0x00000018730: URLForModel:bundleID:forAllSegments:aotCacheUrlIdentifier:
+0x00100024e00 => 0x0000001948f: fileExistsAtPath:isDirectory:
+0x00100024f60 => 0x00000019942: numberWithDouble:
+0x00100025238 => 0x0000001985f: memoryMapWeightAtPath:
+0x00100025280 => 0x0000001970a: isEqual:
+0x00100024da0 => 0x0000001935c: destroyEspresso:ctx:
+0x00100024ec8 => 0x0000001977c: issueSandboxExtensionForPath:error:
+0x00100024ee0 => 0x000000197b2: length
+0x00100024f10 => 0x000000198cb: modelSourceStoreName
+0x001000252b8 => 0x00000019724: isKindOfClass:
+0x00100024df0 => 0x0000001946e: fileAttributes
+0x00100024d40 => 0x0000001923a: currentConnection
+0x00100025158 => 0x0000001a054: unsignedShortValue
+0x00100024cb8 => 0x0000001901a: compiler
+0x00100024ea8 => 0x00000019700: ioSurface
+0x001000252d8 => 0x00000019c30: retain
+0x00100024e50 => 0x000000195f8: hasPrefix:
+0x00100024bb8 => 0x0000001897f: URLForModel:bundleID:useSourceURL:forAllSegments:aotCacheUrlIdentifier:
+0x00100024ef0 => 0x00000019805: memoryMapModelAtPath:isPrecompiled:modelAttributes:
+0x00100024fb8 => 0x00000019a6a: processIdentifier
+0x00100024fd8 => 0x00000019ac6: registerTask:
+0x00100024fc8 => 0x00000019a9f: purgeDanglingModelsAt:withReply:
+0x00100025188 => 0x000000186e4: URLForModel:bundleID:aotCacheUrlIdentifier:
+0x001000251d0 => 0x000000194ad: filePathForModel:bundleID:
+0x00100025290 => 0x00000019ce8: self
+0x00100024bf8 => 0x000000187d2: allKeys
+0x00100024eb0 => 0x00000019713: isEqualToString:
+0x00100024ce0 => 0x000000190a7: copy
+0x00100024d30 => 0x000000191f6: createModelCacheRetain:
+0x00100024e28 => 0x00000019524: garbageCollectDanglingModelsAtPath:
+0x00100025148 => 0x0000001a029: unsignedIntegerValue
+0x00100025250 => 0x00000018c29: cachedModelPathMatchingHash:csIdentity:
+0x00100024d10 => 0x0000001914d: createFileAtPath:contents:attributes:
+0x00100024c10 => 0x00000018ad3: aneSubTypeVariant
+0x00100024bd8 => 0x00000018a48: addEntriesFromDictionary:
+0x00100024fa0 => 0x000000199d9: pathComponents
+0x00100025110 => 0x00000019f5b: systemModelsCacheDirectory
+0x001000251b8 => 0x00000018caf: cachedSourceModelStoreNameFor:csIdentity:
+0x001000251e0 => 0x00000019578: getDiskSpaceForBundleID:
+0x00100025300 => 0x00000019603: hash
+0x00100024be0 => 0x00000018a62: addObject:
+0x00100024cd8 => 0x000000185dd: containsString:
+0x00100024ff8 => 0x00000019b2e: removeFilesFromDirectory:notAccessedInSeconds:
+0x00100025000 => 0x00000019b7f: removeItemAtPath:error:
+0x00100025210 => 0x000000196b6: initialize
+0x00100024bf0 => 0x00000018a98: addValue:forScalarKey:
+0x00100024e88 => 0x000000196c1: intValue
+0x00100025118 => 0x00000019f76: taskWithName:period:handler:
+0x001000251b0 => 0x00000018bb4: cachedModelAllSegmentsPathFor:csIdentity:
+0x00100024c38 => 0x00000018b72: bytes
+0x00100024bc0 => 0x000000189c7: URLForModelHash:bundleID:
+0x00100024d50 => 0x00000019253: dataWithBytesNoCopy:length:freeWhenDone:
+0x00100024fd0 => 0x00000019ac0: queue
+0x00100024b98 => 0x000000185c8: URLForBundleID:
+0x00100024c00 => 0x00000018aaf: aneSubType
+0x00100024c88 => 0x00000018d42: compileModel:options:ok:error:
+0x001000250d8 => 0x00000019e95: stringWithContentsOfURL:encoding:error:
+0x00100025100 => 0x00000019f1b: synchronousRemoteObjectProxyWithErrorHandler:
+0x00100025278 => 0x00000018ae5: ane_addWriteModeForPath:
+0x00100024ef8 => 0x0000001865b: modelBinaryName
+0x00100024fb0 => 0x000000199f6: pathsForModelURL:
+0x00100025310 => 0x00000019350: description
+0x00100024e48 => 0x000000195e7: hasDirectoryPath
+0x00100024fe8 => 0x00000019af0: removeDirectoryAtPath:
+0x00100025008 => 0x00000019b97: removeItemAtURL:error:
+0x00100025298 => 0x00000019a08: performSelector:
+0x00100024eb8 => 0x00000018839: isInternalBuild
+0x001000250c8 => 0x00000019e42: stringByDeletingLastPathComponent
+0x00100025258 => 0x00000019a5c: periodSeconds
+0x001000250a0 => 0x00000019dd1: sizeOfDirectoryAtPath:recursionLevel:
+0x00100024c40 => 0x00000018b78: cacheDir
+0x00100024d80 => 0x00000019304: defaultLLIRBundleName
+0x00100024e90 => 0x000000196ca: interfaceWithProtocol:
+0x00100024bd0 => 0x00000018a12: _markPurgeablePath:error:
+0x00100024f88 => 0x000000199ad: objectForKey:
+0x00100024ff0 => 0x00000019b07: removeFilePath:ifDate:olderThanSecond:
+0x001000250f8 => 0x00000019eef: subpathsOfDirectoryAtPath:error:
+0x00100024cb0 => 0x00000019000: compileModelJIT:ok:error:
+0x00100024cd0 => 0x00000019080: consumeSandboxExtension:forPath:error:
+0x00100025070 => 0x00000019d39: setExportedInterface:
+0x001000251a8 => 0x00000018bde: cachedModelPathFor:csIdentity:
+0x00100025240 => 0x00000019876: mergeModelCacheStorageInformation:with:
+0x00100025268 => 0x000000197b9: listener:shouldAcceptNewConnection:
+0x001000252d0 => 0x00000019c15: respondsToSelector:
+0x00100024c58 => 0x00000018c51: cachedModelRetainNameFor:
+0x00100024d00 => 0x00000019136: createErrorWithString:
+0x001000250e0 => 0x00000019ebd: stringWithFormat:
+0x00100025128 => 0x00000019fa9: timeIntervalSinceDate:
+0x00100024d90 => 0x0000001932d: defaultMLIRFileName
+0x00100024da8 => 0x00000019371: dictionaryWithObjects:forKeys:count:
+0x00100024f00 => 0x0000001989e: modelCacheRetainName
+0x001000250b8 => 0x00000019e2d: startDanglingModelGC
+0x00100024c08 => 0x00000018aba: aneSubTypeProductVariant
+0x00100024dd8 => 0x00000019423: errorWithDomain:code:userInfo:
+0x00100024ec0 => 0x00000019744: isSystemModelPath:
+0x00100024e68 => 0x00000019632: initWithBytesNoCopy:length:deallocator:
+0x00100024f30 => 0x00000019913: mutableCopy
+0x00100025010 => 0x00000019bcb: removeStaleModels
+0x00100025050 => 0x00000018710: setAccessTime:forModelFilePath:
+0x00100025160 => 0x0000001a067: updateAccessTimeForFilePath:
+0x001000251c8 => 0x00000019ad4: removeAllModelsForBundleID:
+0x00100024c48 => 0x00000018b81: cacheURLIdentifierForModel:useSourceURL:withReply:
+0x00100024d38 => 0x0000001920e: createNetworkFromModelAtPath:modelFilename:
+0x00100024e60 => 0x0000001961c: identifierSource
+0x00100025068 => 0x00000019d2c: setDelegate:
+0x001000250d0 => 0x00000019e64: stringByReplacingOccurrencesOfString:withString:
+0x00100024f98 => 0x000000199d4: path
+0x00100025270 => 0x00000018e77: compileModelAt:csIdentity:sandboxExtension:options:tempDirectory:cloneDirectory:outputURL:aotModelBinaryPath:withReply:
+0x001000252e8 => 0x00000018b5c: autorelease
+0x00100025308 => 0x00000019f10: superclass
+0x00100024d88 => 0x0000001931a: defaultMILFileName
+0x00100024f80 => 0x0000001999e: objectAtIndex:
+0x00100025098 => 0x00000019dab: setWithArray:
+0x00100025208 => 0x000000187c4: .cxx_destruct
+0x00100024b90 => 0x000000186b5: URLByDeletingLastPathComponent
+0x00100024e58 => 0x00000019608: hexStringForString:
+0x00100025038 => 0x00000019c64: saveSourceModelPath:outputModelDirectory:
+0x001000252f0 => 0x00000019c37: retainCount
+0x00100025318 => 0x000000192be: debugDescription
+0x00100024c30 => 0x00000018b68: boolValue
+0x00100024db8 => 0x000000193a8: enumeratorAtPath:
+0x00100025048 => 0x00000018903: set
+0x00100024c50 => 0x00000018bfd: cachedModelPathFor:csIdentity:useSourceURL:
+0x00100024b80 => 0x00000018690: URLByAppendingPathComponent:
+0x00100024c80 => 0x00000018d39: compare:
+0x00100024d70 => 0x000000192cf: defaultANECIRFileName
+0x001000250a8 => 0x00000019df7: sizeOfModelCacheAtPath:purgeSubdirectories:
+0x00100025168 => 0x0000001a084: userModelDataVaultDirectory
+0x001000252a8 => 0x00000019a35: performSelector:withObject:withObject:
+0x00100024d08 => 0x00000018806: createErrorWithUnderlyingError:
+0x00100024dc0 => 0x000000193ba: enumeratorAtURL:includingPropertiesForKeys:options:errorHandler:
+0x00100024e38 => 0x00000019562: getCacheURLIdentifier
+0x00100025140 => 0x0000001876b: uniqueFirstLevelSubdirectories:
+0x00100024f18 => 0x000000198e0: modelURL
+0x00100024f90 => 0x000000199bb: objectForKeyedSubscript:
+0x00100024f40 => 0x00000019924: nextObject
+0x00100025150 => 0x0000001a03e: unsignedLongLongValue
+0x00100024b88 => 0x000000188a4: URLByAppendingPathComponent:isDirectory:
+0x00100024dd0 => 0x0000001940f: errorDomainEspresso
+0x00100024ee8 => 0x000000197dd: markPathAndDirectParentPurgeable:error:
+0x001000250f0 => 0x00000019ee5: string_id
+0x00100025190 => 0x00000018907: URLForModel:bundleID:forAllSegments:
+0x00100024f78 => 0x00000019982: numberWithUnsignedLongLong:
+0x00100025028 => 0x00000019c29: resume
+0x00100025198 => 0x0000001878b: URLForModel:bundleID:useSourceURL:aotCacheUrlIdentifier:
+0x001000251f8 => 0x00000019cbc: scheduleMaintenanceWithName:directoryPaths:
+0x00100024bc8 => 0x000000189e1: UTF8String
+0x00100025088 => 0x00000019d74: setObject:forKeyedSubscript:
+0x00100025120 => 0x00000019f93: timeIntervalSince1970
+0x00100025170 => 0x0000001a0a0: valueForEntitlement:
+0x00100024df8 => 0x0000001947d: fileExistsAtPath:
+0x00100024ea0 => 0x000000196f5: invalidate
+0x00100025090 => 0x00000019d91: setRemoteObjectInterface:
+0x001000252e0 => 0x000000186ad: release
+0x00100024c78 => 0x00000018d32: common
+0x00100024c98 => 0x00000018df1: compileModelAt:csIdentity:plistFilename:optionsFilename:outputURL:saveSourceURL:aotModelBinaryPath:isEncryptedModel:options:ok:error:

@@ -1,0 +1,211 @@
+@protocol DESFullService <NSObject>
+
+@required
+
+/* required instance methods */
+-[DESFullService donateJSONResult:identifier:completion:];
+
+@optional
+
+@end
+
+@protocol MLRXPCActivityTask <NSObject>
+
+@required
+
+@property (T@"NSString",R,N) identifier;
+@property (T@"NSObject<OS_xpc_object>",&,N) activity;
+@property (Tc,N) activityDeferred;
+@property (Tc,R,N) bypassDiagnosticsUsage;
+@property (Tc,R,N) dynamicallyRegistered;
+@property (T^{_xpc_activity_eligibility_changed_handler_s=},N) eligibilityHandler;
+@property (Tc,?,N) shouldRegister;
+
+/* required instance methods */
+-[MLRXPCActivityTask criteria];
+-[MLRXPCActivityTask startTaskWithCompletion:];
+-[MLRXPCActivityTask stop];
+-[MLRXPCActivityTask identifier];
+-[MLRXPCActivityTask activity];
+-[MLRXPCActivityTask setActivity:];
+-[MLRXPCActivityTask activityDeferred];
+-[MLRXPCActivityTask setActivityDeferred:];
+-[MLRXPCActivityTask bypassDiagnosticsUsage];
+-[MLRXPCActivityTask dynamicallyRegistered];
+-[MLRXPCActivityTask eligibilityHandler];
+-[MLRXPCActivityTask setEligibilityHandler:];
+
+@optional
+
+/* optional instance methods */
+-[MLRXPCActivityTask shouldRegister];
+-[MLRXPCActivityTask setShouldRegister:];
+
+@end
+
+@protocol NSObject
+
+@required
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* required instance methods */
+-[NSObject isEqual:];
+-[NSObject class];
+-[NSObject self];
+-[NSObject performSelector:];
+-[NSObject performSelector:withObject:];
+-[NSObject performSelector:withObject:withObject:];
+-[NSObject isProxy];
+-[NSObject isKindOfClass:];
+-[NSObject isMemberOfClass:];
+-[NSObject conformsToProtocol:];
+-[NSObject respondsToSelector:];
+-[NSObject retain];
+-[NSObject release];
+-[NSObject autorelease];
+-[NSObject retainCount];
+-[NSObject zone];
+-[NSObject hash];
+-[NSObject superclass];
+-[NSObject description];
+
+@optional
+
+/* optional instance methods */
+-[NSObject debugDescription];
+
+@end
+
+@protocol NSXPCListenerDelegate <NSObject>
+
+@required
+
+@optional
+
+/* optional instance methods */
+-[NSXPCListenerDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@interface MLRListenerDelegate : NSObject <NSXPCListenerDelegate> {
+    /* instance variables */
+    @"MLRXPCActivityManager" _XPCActivityManager;
+}
+
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[MLRListenerDelegate initWithXPCActivityManager:];
+-[MLRListenerDelegate listener:shouldAcceptNewConnection:];
+
+@end
+
+@interface MLRServiceConnection : NSObject <DESFullService> {
+    /* instance variables */
+    d _connectionStartTime;
+    @"NSXPCConnection" _connection;
+    @"NSObject<OS_dispatch_queue>" _queue;
+    @"NSObject<OS_xpc_object>" _activity;
+}
+
+@property (T@"NSObject<OS_xpc_object>",R,N,V_activity) activity;
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[MLRServiceConnection initWithXPCConnection:];
+-[MLRServiceConnection donateJSONResult:identifier:completion:];
+-[MLRServiceConnection taskIsDeferred];
+-[MLRServiceConnection activity];
+
+@end
+
+@interface MLRXPCActivityManager : NSObject {
+    /* instance variables */
+    c _submissionWasAllowed;
+    c _hasRegistered;
+}
+
+/* instance methods */
+-[MLRXPCActivityManager init];
+-[MLRXPCActivityManager handleCompleteActivityTask:withError:];
+-[MLRXPCActivityManager handleDeferActivityTask:withStartTime:];
+-[MLRXPCActivityManager runActivityTask:];
+-[MLRXPCActivityManager _registerXPCActivityTasks:];
+-[MLRXPCActivityManager createXPCActivityTasks];
+-[MLRXPCActivityManager registerIfNeeded];
+-[MLRXPCActivityManager submissionAllowed];
+-[MLRXPCActivityManager setStateForXPCActivity:state:];
+-[MLRXPCActivityManager getStateForForXPCActivity:];
+-[MLRXPCActivityManager addEligibilityChangedHandlerForActivity:handler:];
+-[MLRXPCActivityManager removeEligibilityChangedHandler:];
+-[MLRXPCActivityManager shouldDeferForXPCActivity:];
+-[MLRXPCActivityManager unregisterXPCActivityWithIdentifier:];
+-[MLRXPCActivityManager registerWithIdentifier:criteria:handler:];
+-[MLRXPCActivityManager setCriteriaForXPCActivityIfNeeded:criteria:];
+
+@end
+
+@interface MLRXPCActivityTaskWithLockedDevice : NSObject <MLRXPCActivityTask> {
+    /* instance variables */
+    c _activityDeferred;
+    c _dynamicallyRegistered;
+    @"NSObject<OS_xpc_object>" _activity;
+    ^{_xpc_activity_eligibility_changed_handler_s=} _eligibilityHandler;
+}
+
+@property (T@"NSString",R,N) identifier;
+@property (T@"NSObject<OS_xpc_object>",&,N,V_activity) activity;
+@property (Tc,N,V_activityDeferred) activityDeferred;
+@property (Tc,R,N) bypassDiagnosticsUsage;
+@property (Tc,R,N,V_dynamicallyRegistered) dynamicallyRegistered;
+@property (T^{_xpc_activity_eligibility_changed_handler_s=},N,V_eligibilityHandler) eligibilityHandler;
+@property (Tc,?,N) shouldRegister;
+@property (TQ,R) hash;
+@property (T#,R) superclass;
+@property (T@"NSString",R,C) description;
+@property (T@"NSString",?,R,C) debugDescription;
+
+/* instance methods */
+-[MLRXPCActivityTaskWithLockedDevice bypassDiagnosticsUsage];
+-[MLRXPCActivityTaskWithLockedDevice identifier];
+-[MLRXPCActivityTaskWithLockedDevice description];
+-[MLRXPCActivityTaskWithLockedDevice criteria];
+-[MLRXPCActivityTaskWithLockedDevice startTaskWithCompletion:];
+-[MLRXPCActivityTaskWithLockedDevice stop];
+-[MLRXPCActivityTaskWithLockedDevice activity];
+-[MLRXPCActivityTaskWithLockedDevice setActivity:];
+-[MLRXPCActivityTaskWithLockedDevice activityDeferred];
+-[MLRXPCActivityTaskWithLockedDevice setActivityDeferred:];
+-[MLRXPCActivityTaskWithLockedDevice dynamicallyRegistered];
+-[MLRXPCActivityTaskWithLockedDevice eligibilityHandler];
+-[MLRXPCActivityTaskWithLockedDevice setEligibilityHandler:];
+
+@end
+
+@interface TRIPBValue (MLRTestUtils)
+
+/* class methods */
++[TRIPBValue  mlr_listValueWithNSArray:];
++[TRIPBValue  mlr_valueWithObject:];
++[TRIPBValue  mlr_valueWithBoolValue:];
++[TRIPBValue  mlr_valueWithNullValue];
+
+@end
+
+@interface TRIPBStruct (MLRTestUtils)
+
+/* class methods */
++[TRIPBStruct  mlr_structWithDictionary:];
+
+@end
+

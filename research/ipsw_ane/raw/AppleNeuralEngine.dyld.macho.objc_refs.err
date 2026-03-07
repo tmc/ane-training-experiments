@@ -1,0 +1,32 @@
+Usage:
+  ipsw dyld macho <DSC> <DYLIB> [flags]
+
+Aliases:
+  macho, m
+
+Flags:
+  -a, --all             Parse ALL dylibs
+      --demangle        Demangle symbol names
+  -x, --extract         🚧 Extract the dylib
+      --force           Overwrite existing extracted dylib(s)
+  -h, --help            help for macho
+  -j, --json            Print the TOC as JSON
+  -l, --loads           Print the load commands
+  -o, --objc            Print ObjC info
+  -r, --objc-refs       Print ObjC references
+      --output string   Directory to extract the dylib(s)
+      --search string   Search for byte pattern
+  -f, --starts          Print function starts
+  -s, --strings         Print cstrings
+  -b, --stubs           Print stubs
+  -w, --swift           Print Swift info
+      --swift-all       Print all other Swift sections info
+  -n, --symbols         Print symbols
+
+Global Flags:
+      --color           colorize output
+      --config string   config file (default is $HOME/.config/ipsw/config.yaml)
+      --no-color        disable colorize output
+  -V, --verbose         verbose output
+
+   ⨯ you must use --objc flag to use --objc-refs

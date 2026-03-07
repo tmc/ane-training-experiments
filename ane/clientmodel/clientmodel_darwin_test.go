@@ -55,6 +55,12 @@ func TestKernelDiagnosticsNil(t *testing.T) {
 	if got, ok := k.QueueDepth(); got != 0 || ok {
 		t.Fatalf("QueueDepth on nil kernel = (%d,%v), want (0,false)", got, ok)
 	}
+	if ref, err := k.InputSurfaceRef(0); err == nil || ref != 0 {
+		t.Fatalf("InputSurfaceRef on nil kernel = (%#x,%v), want error", ref, err)
+	}
+	if ref, err := k.OutputSurfaceRef(0); err == nil || ref != 0 {
+		t.Fatalf("OutputSurfaceRef on nil kernel = (%#x,%v), want error", ref, err)
+	}
 	if code, ok := k.VirtualClientConnect(); code != 0 || ok {
 		t.Fatalf("VirtualClientConnect on nil kernel = (%d,%v), want (0,false)", code, ok)
 	}

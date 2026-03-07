@@ -1,0 +1,70 @@
+Magic         = 64-bit MachO
+Type          = EXECUTE
+CPU           = AARCH64, ARM64e caps: USR00
+Commands      = 28 (Size: 3688)
+Flags         = NoUndefs, DyldLink, TwoLevel, PIE
+000: LC_SEGMENT_64 sz=0x00000000 off=0x00000000-0x00000000 addr=0x000000000-0x100000000 ---/---   __PAGEZERO        
+001: LC_SEGMENT_64 sz=0x0000c000 off=0x00000000-0x0000c000 addr=0x100000000-0x10000c000 r-x/r-x   __TEXT            
+	sz=0x00004ecc off=0x00000ec8-0x00005d94 addr=0x100000ec8-0x100005d94               __TEXT.__text            PureInstructions|SomeInstructions 
+	sz=0x000002a0 off=0x00005d94-0x00006034 addr=0x100005d94-0x100006034               __TEXT.__auth_stubs      PureInstructions|SomeInstructions (SymbolStubs)
+	sz=0x000008e0 off=0x00006040-0x00006920 addr=0x100006040-0x100006920               __TEXT.__objc_stubs      PureInstructions|SomeInstructions 
+	sz=0x00000274 off=0x00006920-0x00006b94 addr=0x100006920-0x100006b94               __TEXT.__objc_methlist    
+	sz=0x000000c0 off=0x00006b98-0x00006c58 addr=0x100006b98-0x100006c58               __TEXT.__const            
+	sz=0x00000765 off=0x00006c58-0x000073bd addr=0x100006c58-0x1000073bd               __TEXT.__oslogstring      (CstringLiterals)
+	sz=0x00000076 off=0x000073bd-0x00007433 addr=0x1000073bd-0x100007433               __TEXT.__objc_classname   (CstringLiterals)
+	sz=0x00000910 off=0x00007433-0x00007d43 addr=0x100007433-0x100007d43               __TEXT.__objc_methname    (CstringLiterals)
+	sz=0x000001a3 off=0x00007d43-0x00007ee6 addr=0x100007d43-0x100007ee6               __TEXT.__objc_methtype    (CstringLiterals)
+	sz=0x000001ec off=0x00007ee8-0x000080d4 addr=0x100007ee8-0x1000080d4               __TEXT.__gcc_except_tab   
+	sz=0x00000078 off=0x000080d4-0x0000814c addr=0x1000080d4-0x10000814c               __TEXT.__cstring          (CstringLiterals)
+	sz=0x00000138 off=0x0000814c-0x00008284 addr=0x10000814c-0x100008284               __TEXT.__unwind_info      
+002: LC_SEGMENT_64 sz=0x00004000 off=0x0000c000-0x00010000 addr=0x10000c000-0x100010000 rw-/rw-   __DATA_CONST      ReadOnly
+	sz=0x00000160 off=0x0000c000-0x0000c160 addr=0x10000c000-0x10000c160         __DATA_CONST.__auth_got         (NonLazySymbolPointers)
+	sz=0x000000a0 off=0x0000c160-0x0000c200 addr=0x10000c160-0x10000c200         __DATA_CONST.__got              (NonLazySymbolPointers)
+	sz=0x000000e0 off=0x0000c200-0x0000c2e0 addr=0x10000c200-0x10000c2e0         __DATA_CONST.__const            
+	sz=0x00000080 off=0x0000c2e0-0x0000c360 addr=0x10000c2e0-0x10000c360         __DATA_CONST.__cfstring         
+	sz=0x00000018 off=0x0000c360-0x0000c378 addr=0x10000c360-0x10000c378         __DATA_CONST.__objc_classlist  NoDeadStrip 
+	sz=0x00000018 off=0x0000c378-0x0000c390 addr=0x10000c378-0x10000c390         __DATA_CONST.__objc_protolist   
+	sz=0x00000008 off=0x0000c390-0x0000c398 addr=0x10000c390-0x10000c398         __DATA_CONST.__objc_imageinfo   
+	sz=0x00000008 off=0x0000c398-0x0000c3a0 addr=0x10000c398-0x10000c3a0         __DATA_CONST.__objc_protorefs   
+	sz=0x00000018 off=0x0000c3a0-0x0000c3b8 addr=0x10000c3a0-0x10000c3b8         __DATA_CONST.__objc_intobj      
+003: LC_SEGMENT_64 sz=0x00004000 off=0x00010000-0x00014000 addr=0x100010000-0x100014000 rw-/rw-   __DATA            
+	sz=0x00000360 off=0x00010000-0x00010360 addr=0x100010000-0x100010360               __DATA.__objc_const       
+	sz=0x00000330 off=0x00010360-0x00010690 addr=0x100010360-0x100010690               __DATA.__objc_selrefs    NoDeadStrip (LiteralPointers)
+	sz=0x000000f0 off=0x00010690-0x00010780 addr=0x100010690-0x100010780               __DATA.__objc_data        
+	sz=0x00000130 off=0x00010780-0x000108b0 addr=0x100010780-0x1000108b0               __DATA.__data             
+	sz=0x00000020 off=0x00000000-0x00000020 addr=0x1000108b0-0x1000108d0               __DATA.__bss              (Zerofill)
+004: LC_SEGMENT_64 sz=0x000063c0 off=0x00014000-0x0001a3c0 addr=0x100014000-0x10001c000 r--/r--   __LINKEDIT        
+005: LC_DYLD_CHAINED_FIXUPS      offset=0x000014000 size=0x720
+006: LC_DYLD_EXPORTS_TRIE        offset=0x000014720 size=0x160
+007: LC_SYMTAB                   Symbol offset=0x000148D8, Num Syms: 83, String offset=0x00014FB0-0x000156C8
+008: LC_DYSYMTAB                 
+	             Local Syms: 1 at 0
+	          External Syms: 12 at 1
+	         Undefined Syms: 70 at 13
+	                    TOC: No
+	                 Modtab: No
+	External symtab Entries: None
+	Indirect symtab Entries: 106 at 0x00014e08
+	 External Reloc Entries: None
+	    Local Reloc Entries: None
+009: LC_LOAD_DYLINKER            /usr/lib/dyld
+010: LC_UUID                     8FE9A19F-5AF8-3190-A0BB-C50F882283CE
+011: LC_BUILD_VERSION            Platform: macOS, MinOS: 26.3, SDK: 26.3, Tool: ld (1230.4)
+012: LC_SOURCE_VERSION           380.200.3.0.0
+013: LC_MAIN                     Entry Point: 0x00000000000010a8, Stack Size: 0x0
+014: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/AppleNeuralEngine.framework/Versions/A/AppleNeuralEngine (1)
+015: LC_LOAD_WEAK_DYLIB          /System/Library/PrivateFrameworks/PowerLog.framework/Versions/A/PowerLog (1)
+016: LC_LOAD_DYLIB               /usr/lib/libcompression.dylib (1)
+017: LC_LOAD_DYLIB               /System/Library/Frameworks/IOSurface.framework/Versions/A/IOSurface (1)
+018: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/MIL.framework/Versions/A/MIL (3510.2.1)
+019: LC_LOAD_DYLIB               /System/Library/PrivateFrameworks/ANECompiler.framework/Versions/A/ANECompiler (1)
+020: LC_LOAD_DYLIB               /usr/lib/libMobileGestalt.dylib (1)
+021: LC_LOAD_DYLIB               /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (4302)
+022: LC_LOAD_DYLIB               /usr/lib/libobjc.A.dylib (228)
+023: LC_LOAD_DYLIB               /usr/lib/libSystem.B.dylib (1356)
+024: LC_LOAD_DYLIB               /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (4302)
+025: LC_FUNCTION_STARTS          offset=0x000014880 size=0x58
+026: LC_DATA_IN_CODE             offset=0x000148d8-0x000148d8 size=    0 entries=0
+027: LC_CODE_SIGNATURE           offset=0x0000156d0 size=0x4cf0
+
+

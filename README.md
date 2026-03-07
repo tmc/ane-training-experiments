@@ -175,6 +175,44 @@ cd bridge && make
 
 No external dependencies. Uses only system frameworks + private ANE APIs resolved at runtime via `objc_msgSend`.
 
+## Go Path
+
+The repository also includes a Go orchestration layer with direct `_ANEClient`
+execution:
+
+- Typed bridge runtime/client/event API (legacy/experimental): `ane/bridge`
+- Direct-Go Stories trainer control API: `ane/storiestrainer`
+- Asymmetric shared-event pipeline helpers: `ane/pipeline`
+- Training CLI (direct-Go): `cmd/train-stories-ane-go`
+- Pipeline CLI (shared events): `cmd/asymmetric-pipeline-go`
+- Generated-wrapper survey CLI: `cmd/ane-bindings-survey`
+
+Quick smoke commands:
+
+```bash
+go test ./... -count=1
+go run ./cmd/ane-bindings-survey -json=false
+go run ./cmd/train-stories-ane-go -steps 1 -accum-steps 1 -save-every 0 -json=false  # default backend: ane
+go run ./cmd/train-stories-ane-go -steps 1 -accum-steps 1 -save-every 0 -json=false -recompile-every-step=true
+go run ./cmd/train-stories-ane-go -backend ane -model /Volumes/tmc/go/src/github.com/assets/models/stories110M.bin -steps 1 -json=false
+go run ./cmd/train-stories-ane-go -backend ane-dynamic -model /Volumes/tmc/go/src/github.com/assets/models/stories110M.bin -data /Volumes/tmc/go/src/github.com/maderix/ANE/training/tinystories_data00.bin -steps 1 -json=false
+go run ./cmd/train-stories-ane-go -backend full -model /Volumes/tmc/go/src/github.com/assets/models/stories110M.bin -steps 1 -json=false
+go run ./cmd/asymmetric-pipeline-go -iters 1 -json=false
+./scripts/verify_go_parity.sh
+./scripts/compare_c_objc_vs_go_training.sh --steps 20 --skip-build
+./scripts/compare_c_objc_vs_go_training.sh --c-mode ane --go-backend full --steps 20 --skip-build --run-order go-c --warmup-steps 1
+./scripts/compare_c_objc_vs_go_training.sh --profile c-match --c-mode ane --go-backend ane --steps 20 --skip-build
+./scripts/compare_c_objc_vs_go_training.sh --c-mode ane-dynamic --go-backend ane-dynamic --steps 20 --skip-build
+./scripts/compare_c_objc_vs_go_training.sh --c-mode ane-dynamic --go-backend ane-dynamic --dynamic-accum 20 --steps 20 --skip-build
+./scripts/compare_c_objc_vs_go_training.sh --c-mode cpu --go-backend cpu --go-model /Volumes/tmc/go/src/github.com/assets/models/stories110M.bin --steps 5
+./scripts/tune_ane_utilization.sh --steps-list 20,50,100 --runs 2 --skip-build 1
+./scripts/tune_ane_utilization.sh --modes ane-dynamic --steps-list 20 --dynamic-accum-list 10,20,40 --runs 1 --skip-build 1
+./scripts/release_readiness.sh
+./scripts/match_c_perf.sh --runs 4 --steps 20 --seq-override 256 --full-accum 80 --target-ratio 1.05
+```
+
+Release workflow reference: [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
+
 ## How It Works
 
 1. **MIL generation** — Objective-C code constructs MIL program text at runtime, specifying convolutions (for linear layers), matmul (for attention), softmax, element-wise ops

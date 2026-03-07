@@ -1,0 +1,11 @@
+MLRExtensionHostProtocol
+MLRExtensionRemoteProtocol
+MLROnDemandRemoteProtocol
+MLROnDemandTaskPerforming
+NSCoding
+NSExtensionRequestHandling
+NSObject
+NSSecureCoding
+PKModularService
+_EXConnectionHandler
+_EXMainConnectionHandler

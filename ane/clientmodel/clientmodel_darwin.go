@@ -282,16 +282,16 @@ func sharedClient(forceNew, preferPrivate bool) (appleneuralengine.ANEClient, bo
 	cls := appleneuralengine.GetANEClientClass()
 	if !forceNew {
 		if preferPrivate {
-			if c := cls.SharedPrivateConnection(); c != nil && c.GetID() != 0 {
-				return *c, false
+			if c := cls.SharedPrivateConnection(); c.GetID() != 0 {
+				return c, false
 			}
 		}
-		if c := cls.SharedConnection(); c != nil && c.GetID() != 0 {
-			return *c, false
+		if c := cls.SharedConnection(); c.GetID() != 0 {
+			return c, false
 		}
 		if !preferPrivate {
-			if c := cls.SharedPrivateConnection(); c != nil && c.GetID() != 0 {
-				return *c, false
+			if c := cls.SharedPrivateConnection(); c.GetID() != 0 {
+				return c, false
 			}
 		}
 	}
@@ -700,7 +700,7 @@ func className(id objc.ID) string {
 	return objc.IDToString(name)
 }
 
-func programForModel(model objc.ID) *appleneuralengine.ANEProgramForEvaluation {
+func programForModel(model objc.ID) appleneuralengine.IANEProgramForEvaluation {
 	if model == 0 {
 		return nil
 	}
@@ -742,6 +742,34 @@ func (k *Kernel) ReadOutput(i int, b []byte) error {
 		return fmt.Errorf("read output: index %d out of range", i)
 	}
 	return k.outputs[i].Read(b)
+}
+
+// InputSurfaceRef returns the underlying IOSurfaceRef handle for input i.
+func (k *Kernel) InputSurfaceRef(i int) (uintptr, error) {
+	if k == nil {
+		return 0, fmt.Errorf("input surface ref: kernel is nil")
+	}
+	if i < 0 || i >= len(k.inputs) {
+		return 0, fmt.Errorf("input surface ref: index %d out of range", i)
+	}
+	if k.inputs[i] == nil {
+		return 0, fmt.Errorf("input surface ref: surface %d is nil", i)
+	}
+	return k.inputs[i].Ref(), nil
+}
+
+// OutputSurfaceRef returns the underlying IOSurfaceRef handle for output i.
+func (k *Kernel) OutputSurfaceRef(i int) (uintptr, error) {
+	if k == nil {
+		return 0, fmt.Errorf("output surface ref: kernel is nil")
+	}
+	if i < 0 || i >= len(k.outputs) {
+		return 0, fmt.Errorf("output surface ref: index %d out of range", i)
+	}
+	if k.outputs[i] == nil {
+		return 0, fmt.Errorf("output surface ref: surface %d is nil", i)
+	}
+	return k.outputs[i].Ref(), nil
 }
 
 func (k *Kernel) Eval() error {
@@ -1005,20 +1033,17 @@ func setRequestCompletionHandler(requestID objc.ID, done chan<- completionResult
 		return nil, fmt.Errorf("request is nil")
 	}
 	var once sync.Once
-	binding := appleneuralengine.ANERequestFromID(requestID).SetCompletionHandlerRetained(func(ok bool, err error) {
+	appleneuralengine.ANERequestFromID(requestID).SetCompletionHandler(func(ok bool, err error) {
 		once.Do(func() {
 			done <- completionResult{ok: ok, err: err}
 		})
 	})
-	if binding == nil {
-		return nil, fmt.Errorf("request is nil")
-	}
 	return func() {
-		binding.Release()
+		objc.Send[struct{}](requestID, objc.Sel("setCompletionHandler:"), objc.ID(0))
 	}, nil
 }
 
-func attachedVirtualClient(client appleneuralengine.ANEClient) *appleneuralengine.ANEVirtualClient {
+func attachedVirtualClient(client appleneuralengine.ANEClient) appleneuralengine.IANEVirtualClient {
 	if client.GetID() == 0 {
 		return nil
 	}
@@ -1029,7 +1054,7 @@ func attachedVirtualClient(client appleneuralengine.ANEClient) *appleneuralengin
 	return vc
 }
 
-func startVirtualCompletionEval(vc *appleneuralengine.ANEVirtualClient, model, request objc.ID, qos uint32, opts objectivec.Object, done chan<- completionResult) (func(), error) {
+func startVirtualCompletionEval(vc appleneuralengine.IANEVirtualClient, model, request objc.ID, qos uint32, opts objectivec.Object, done chan<- completionResult) (func(), error) {
 	if vc == nil || vc.GetID() == 0 {
 		return nil, fmt.Errorf("virtual client unavailable")
 	}
@@ -1039,26 +1064,28 @@ func startVirtualCompletionEval(vc *appleneuralengine.ANEVirtualClient, model, r
 		default:
 		}
 	}
-	ok, release, err := vc.DoEvaluateWithModelOptionsRequestQosCompletionEventHandlerError(
+	block, cleanup := appleneuralengine.NewBoolErrorBlock(handler)
+	ok, err := vc.DoEvaluateWithModelOptionsRequestQosCompletionEventError(
 		idObject(model),
 		opts,
 		idObject(request),
 		qos,
-		handler,
+		idObject(block),
 	)
 	if ok {
-		return release, nil
+		return cleanup, nil
 	}
-	ok, release, legacyErr := vc.DoEvaluateWithModelLegacyOptionsRequestQosCompletionEventHandlerError(
+	ok, legacyErr := vc.DoEvaluateWithModelLegacyOptionsRequestQosCompletionEventError(
 		idObject(model),
 		opts,
 		idObject(request),
 		qos,
-		handler,
+		idObject(block),
 	)
 	if ok {
-		return release, nil
+		return cleanup, nil
 	}
+	cleanup()
 	if legacyErr != nil {
 		return nil, legacyErr
 	}

@@ -269,6 +269,49 @@ done
 		if (best < 0 || v < best) { best=v; row=$0 }
 	}
 	END { if (best < 0) print "n/a"; else print row }' "$CSV"
+	echo
+	echo "best_by_ratio_closeness_to_1:"
+	awk -F, '
+	BEGIN { best=-1 }
+	NR>1 && $9 ~ /^[0-9]+(\.[0-9]+)?$/ {
+		v=$9+0
+		d=v-1.0
+		if (d < 0) d=-d
+		if (best < 0 || d < best) { best=d; row=$0 }
+	}
+	END { if (best < 0) print "n/a"; else print row }' "$CSV"
+	echo
+	echo "best_ratio_with_go_not_slower:"
+	awk -F, '
+	BEGIN { best=-1 }
+	NR>1 && $9 ~ /^[0-9]+(\.[0-9]+)?$/ {
+		r=$9+0
+		if (r > 1.000001) next
+		d=1.0-r
+		if (best < 0 || d < best) { best=d; row=$0 }
+	}
+	END { if (best < 0) print "n/a"; else print row }' "$CSV"
+	echo
+	echo "recommended_compare_cmd (from best_by_ratio_closeness_to_1):"
+	awk -F, '
+	BEGIN { best=-1 }
+	NR>1 && $9 ~ /^[0-9]+(\.[0-9]+)?$/ {
+		r=$9+0
+		d=r-1.0
+		if (d < 0) d=-d
+		if (best < 0 || d < best) {
+			best=d
+			seq=$1
+			acc=$2
+		}
+	}
+	END {
+		if (best < 0) {
+			print "n/a"
+		} else {
+			printf "./scripts/compare_c_objc_vs_go_training.sh --c-mode ane --go-backend ane --steps %d --seq-override %d --full-accum %d --profile high-util --run-order go-c --warmup-steps %d --skip-build\n", '"$STEPS"', seq, acc, '"$WARMUP_STEPS"'
+		}
+	}' "$CSV"
 } | tee "$SUMMARY"
 
 echo

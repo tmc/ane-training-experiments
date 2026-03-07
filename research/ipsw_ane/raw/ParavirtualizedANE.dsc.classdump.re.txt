@@ -1,0 +1,322 @@
+Flags = DyldCategoriesOptimized, OptimizedByDyld, SignedClassRO, HasCategoryClassProperties
+Swift = not swift
+
+ObjC TOC
+--------
+  __objc_classlist  = 2
+  __objc_nlclslist  = 0
+  __objc_catlist    = 0
+  __objc_nlcatlist  = 0
+  __objc_protolist  = 0
+  __objc_classrefs  = 0
+  __objc_superrefs  = 2
+  __objc_selrefs    = 274
+
+@interface _ANEVirtualModel : NSObject { // 0x29a0e5f00
+    /* instance variables */       // +size   offset
+    _ANEModel *_model;             // +0x8    0x8
+    NSString *_tmpModelFilesPath;  // +0x8    0x10
+    NSString *_tmpWeightFilesPath; // +0x8    0x18
+    long long _refcount;           // +0x8    0x20
+}
+
+@property (nonatomic) long long refcount;
+@property (retain, nonatomic) _ANEModel *model;
+@property (retain, nonatomic) NSString *tmpModelFilesPath;
+@property (retain, nonatomic) NSString *tmpWeightFilesPath;
+
+/* class methods */
+// 0x25bc00f50
++ (id)new;
+// 0x25bc00f08
++ (void)initialize;
+// 0x25bc01078
++ (id)objectWithModel:(id)model;
+// 0x25bc010dc
++ (id)objectWithModel:(id)model tmpModelFilesPath:(id)path tmpWeightFilesPath:(id)path;
+
+/* instance methods */
+// 0x25bc013a8
+- (void)setModel:(id)model;
+// 0x25bc00f58
+- (id)init;
+// 0x25bc013a0
+- (id)model;
+// 0x25bc013ec
+- (void).cxx_destruct;
+// 0x25bc0117c
+- (void)addCachedReference;
+// 0x25bc00f74
+- (id)initWithModel:(id)model tmpModelFilesPath:(id)path tmpWeightFilesPath:(id)path;
+// 0x25bc013dc
+- (long long)refcount;
+// 0x25bc01200
+- (_Bool)removeCachedReference;
+// 0x25bc013e4
+- (void)setRefcount:(long long)refcount;
+// 0x25bc013bc
+- (void)setTmpModelFilesPath:(id)path;
+// 0x25bc013d0
+- (void)setTmpWeightFilesPath:(id)path;
+// 0x25bc013b4
+- (id)tmpModelFilesPath;
+// 0x25bc013c8
+- (id)tmpWeightFilesPath;
+// 0x25bc01178
+- (void)updateTmpWeightFilesPath:(id)path;
+
+@end
+
+@interface _ANEVirtualPlatformClient : NSObject { // 0x29a0e5f50
+    /* instance variables */                      // +size   offset
+    _Bool _avpSaveRestoreSupported;               // +0x1    0x8
+    unsigned int _negotiatedDataInterfaceVersion; // +0x4    0xc
+    NSMutableDictionary *_aneModelDict;           // +0x8    0x10
+    _ANEClient *_aneClient;                       // +0x8    0x18
+    NSString *_anebaseDirectory;                  // +0x8    0x20
+    NSObject<OS_dispatch_queue> *_queue;          // +0x8    0x28
+    NSString *_guestBuildVersion;                 // +0x8    0x30
+    unsigned long long _negotiatedCapabilityMask; // +0x8    0x38
+}
+
+@property (readonly, nonatomic) NSMutableDictionary *aneModelDict;
+@property (readonly, nonatomic) _ANEClient *aneClient;
+@property (readonly, nonatomic) NSString *anebaseDirectory;
+@property (readonly, nonatomic) NSObject<OS_dispatch_queue> *queue;
+@property (retain, nonatomic) NSString *guestBuildVersion;
+@property (nonatomic) unsigned int negotiatedDataInterfaceVersion;
+@property (nonatomic) unsigned long long negotiatedCapabilityMask;
+@property (nonatomic) _Bool avpSaveRestoreSupported;
+
+/* class methods */
+// 0x25bc0152c
++ (id)new;
+// 0x25bc014e4
++ (void)initialize;
+// 0x25bc02744
++ (unsigned long long)dictionaryGetUInt64ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x25bc15968
++ (void)printStruct:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)_struct;
+// 0x25bc027b0
++ (signed char)dictionaryGetInt8ForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x25bc01534
++ (id)sharedConnection;
+// 0x25bc0f660
++ (_Bool)createLastModificationTimeStampFile:(id)file fileName:(id)name timeSince1970:(double)since1970;
+// 0x25bc026dc
++ (const char *)dictionaryGetDataBytesForKey:(struct __CFDictionary *)key key:(struct __CFString *)key;
+// 0x25bc1711c
++ (id)generateExpectedBaseDirectoryWith:(id)with withCSIdentity:(id)csidentity withVMID:(id)vmid fileSubDirectory:(id)directory;
+// 0x25bc17210
++ (id)generateExpectedPathForFileName:(id)name withANEBaseDirectory:(id)directory withCSIdentity:(id)csidentity withVMID:(id)vmid fileSubDirectory:(id)directory;
+// 0x25bc0f88c
++ (id)getCodeSigningIdentity:(struct __CFDictionary *)identity;
+// 0x25bc02250
++ (unsigned long long)getCommandInputSize:(unsigned long long)size;
+// 0x25bc02380
++ (unsigned long long)getCommandOutputSize:(unsigned long long)size;
+// 0x25bc0c75c
++ (id)getDataFromIOSurface:(struct __IOSurface *)iosurface withSize:(unsigned long long)size;
+// 0x25bc178f8
++ (id)getPrecompiledModelPath:(id)path error:(id *)error;
+// 0x25bc0f208
++ (_Bool)isFileModificationTimeStampSame:(id)same timeSince1970:(double)since1970;
+// 0x25bc01d18
++ (_Bool)isValidBufferSize:(unsigned long long)size;
+// 0x25bc0f464
++ (_Bool)needToSaveFile:(id)file fileName:(id)name timeSince1970:(double)since1970;
+// 0x25bc16ed8
++ (struct __CFDictionary *)prepareValidationResultForSerialization:(struct __CFDictionary *)serialization;
+// 0x25bc01544
++ (id)sharedConnection:(id)connection;
+
+/* instance methods */
+// 0x25bc07e74
+- (void)compiledModelExistsFor:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)_for;
+// 0x25bc17ce8
+- (unsigned int)negotiatedDataInterfaceVersion;
+// 0x25bc0d7c4
+- (void)printIOSurfaceDataInBytes:(unsigned int)bytes;
+// 0x25bc016f4
+- (id)init:(id)init;
+// 0x25bc17d10
+- (void).cxx_destruct;
+// 0x25bc08bbc
+- (void)purgeCompiledModelMatchingHash:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)hash;
+// 0x25bc0a754
+- (void)echo:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)echo;
+// 0x25bc17cf8
+- (unsigned long long)negotiatedCapabilityMask;
+// 0x25bc0bdc4
+- (void)printDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc01ce0
+- (void)dealloc;
+// 0x25bc088b0
+- (void)compiledModelExistsMatchingHash:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)hash;
+// 0x25bc08418
+- (void)purgeCompiledModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc17ccc
+- (id)queue;
+// 0x25bc034c8
+- (void)loadModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc15170
+- (void)getDeviceInfo:(struct DeviceInfo { unsigned int x0; long long x1; long long x2; _Bool x3; } *)info;
+// 0x25bc172dc
+- (id)generatedExpectedBaseDirectoryWithFileType:(unsigned int)type withInputDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc0a8b4
+- (struct __CFDictionary *)echoDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc177ac
+- (id)generateExpectedModelFilePathFromDictionary:(struct __CFDictionary *)dictionary withFileType:(unsigned int)type error:(id *)error;
+// 0x25bc17cbc
+- (id)aneClient;
+// 0x25bc17cb4
+- (id)aneModelDict;
+// 0x25bc17cc4
+- (id)anebaseDirectory;
+// 0x25bc15fac
+- (void)asyncAvpHoldMessageReceived:(struct AppleVirtIONeuralEngineCFData { unsigned int x0; int x1; unsigned int x2; unsigned int x3; unsigned long long x4; unsigned long long x5; unsigned long long x6[32]; } *)received;
+// 0x25bc17d08
+- (_Bool)avpSaveRestoreSupported;
+// 0x25bc0a6f4
+- (void)beginRealTimeTask:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)task;
+// 0x25bc15a78
+- (void)callCFDictionaryMethod:(struct AppleVirtIONeuralEngineCFData { unsigned int x0; int x1; unsigned int x2; unsigned int x3; unsigned long long x4; unsigned long long x5; unsigned long long x6[32]; } *)method;
+// 0x25bc0b508
+- (struct __CFDictionary *)chunkedDataReceived:(struct __CFDictionary *)received;
+// 0x25bc02534
+- (void)compileModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc03064
+- (struct __CFDictionary *)compileModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc08174
+- (struct __CFDictionary *)compiledModelExistsForDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc089f8
+- (struct __CFDictionary *)compiledModelExistsMatchingHashDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc02a98
+- (id)constructANEModel:(struct __CFDictionary *)anemodel modelDirectory:(id)directory;
+// 0x25bc1576c
+- (void)copyBytesToIOSurface:(char *)iosurface dataLength:(unsigned int)length ioSID:(unsigned int)sid;
+// 0x25bc0d018
+- (_Bool)copyDictionaryUsingJSONSerialization:(id)jsonserialization toIOSurfaceWithID:(unsigned int)id withMaxSize:(unsigned long long)size outWrittentDataSize:(unsigned long long *)size;
+// 0x25bc115f0
+- (id)createANEModelInstanceParameters:(struct __CFDictionary *)parameters modelUUID:(id)uuid;
+// 0x25bc106a4
+- (id)createAllModelFilesOnHost:(struct __CFDictionary *)host;
+// 0x25bc0f91c
+- (_Bool)createLLIRBundleOnDiskFromIOSurfaceWithID:(unsigned int)id destDirectory:(id)directory llirDataSize:(unsigned long long)size;
+// 0x25bc0bdc8
+- (_Bool)createModelFile:(id)file path:(id)path ioSID:(unsigned int)sid length:(unsigned long long)length;
+// 0x25bc0bea8
+- (_Bool)createModelFileAtPath:(id)path fromIOSID:(unsigned int)iosid withDataLength:(unsigned long long)length shouldAppend:(_Bool)append;
+// 0x25bc12250
+- (void)createOptionFilesForCompilation:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)compilation aneModelKey:(id)key options:(id)options;
+// 0x25bc126a0
+- (void)createOptionFilesForCompilationDictionary:(struct __CFDictionary *)dictionary aneModelKey:(id)key options:(id)options modelDirectory:(id)directory;
+// 0x25bc0dab8
+- (id)doCreateModelFile:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)file aneModelKey:(id)key;
+// 0x25bc14c6c
+- (void)doModelAttributeUpdate:(id)update virtualANEModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)anemodel;
+// 0x25bc14d48
+- (void)doModelAttributeUpdateDictionary:(id)dictionary dictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc129f0
+- (void)doRemoveModelFile:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)file;
+// 0x25bc0a724
+- (void)endRealTimeTask:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)task;
+// 0x25bc06d50
+- (void)evaluateWithModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc0704c
+- (void)evaluateWithModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc15370
+- (void)exchangeBuildVersionInfo:(struct BuildVersionInfo { unsigned int x0; unsigned int x1; unsigned long long x2; unsigned char x3[32]; unsigned char x4; unsigned long long x5; unsigned long long x6; unsigned long long x7[15]; } *)info;
+// 0x25bc17848
+- (id)generateExpectedModelFilePathFromDictionary:(struct __CFDictionary *)dictionary error:(id *)error;
+// 0x25bc176f8
+- (id)generateExpectedPathForFileName:(id)name withFileType:(unsigned int)type withInputDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc0238c
+- (id)getANEModelKey:(struct __CFDictionary *)key caller:(id)caller;
+// 0x25bc0d9f8
+- (void)getArrayFromIOSurfaceID:(unsigned int)id localData:(unsigned int *)data localDataLength:(unsigned long long)length;
+// 0x25bc159b8
+- (void)getBytesFromIOSurfaceID:(unsigned int)id dest:(char *)dest dataLength:(unsigned long long)length;
+// 0x25bc0aa6c
+- (struct __CFDictionary *)getDeviceInfoDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc17c50
+- (struct __IOSurface *)getIOSurface:(unsigned long long)iosurface;
+// 0x25bc0cc50
+- (id)getObjectFromIOSurfaceID:(unsigned int)id classType:(Class)type length:(unsigned long long)length;
+// 0x25bc0c938
+- (id)getObjectFromIOSurfaceID:(unsigned int)id classes:(id)classes topLevelClass:(Class)_class length:(unsigned long long)length;
+// 0x25bc02820
+- (id)getOptionsDictFromInputDict:(struct __CFDictionary *)dict;
+// 0x25bc0c74c
+- (unsigned short)getQueueCount;
+// 0x25bc17cd4
+- (id)guestBuildVersion;
+// 0x25bc037b0
+- (struct __CFDictionary *)loadModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc040c0
+- (struct __CFDictionary *)loadModelNewInstance:(struct __CFDictionary *)instance;
+// 0x25bc05634
+- (struct __CFDictionary *)loadModelNewInstanceLegacy:(struct __CFDictionary *)legacy;
+// 0x25bc07c58
+- (void)mapIOSurfacesWithModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc07e70
+- (void)mapIOSurfacesWithModelDictionary:(id)dictionary ioSIDs:(unsigned int *)sids ioSIDsSize:(unsigned long long)size;
+// 0x25bc01d60
+- (void)modelAction:(unsigned short)action buffer:(void *)buffer bufferSize:(unsigned long long)size;
+// 0x25bc17c10
+- (id)objectWithIOSurfaceID:(unsigned int)id;
+// 0x25bc08570
+- (struct __CFDictionary *)purgeCompiledModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc08c4c
+- (struct __CFDictionary *)purgeCompiledModelMatchingHashDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc0834c
+- (id)removeAllModelFiles:(id)files;
+// 0x25bc16080
+- (id)requestWithVirtualANEModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)anemodel;
+// 0x25bc16694
+- (id)requestWithVirtualANEModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc0ac58
+- (struct __CFDictionary *)sessionHintWithModel:(struct __CFDictionary *)model;
+// 0x25bc0c754
+- (void)setAvpSaveRestoreSupported:(_Bool)supported;
+// 0x25bc17cdc
+- (void)setGuestBuildVersion:(id)version;
+// 0x25bc17d00
+- (void)setNegotiatedCapabilityMask:(unsigned long long)mask;
+// 0x25bc17cf0
+- (void)setNegotiatedDataInterfaceVersion:(unsigned int)version;
+// 0x25bc151e4
+- (void)storeGuestBuildVersion:(struct BuildVersionInfoLegacy { unsigned int x0; unsigned char x1[32]; unsigned char x2; } *)version;
+// 0x25bc060b4
+- (void)unLoadModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)model;
+// 0x25bc06418
+- (struct __CFDictionary *)unLoadModelDictionary:(struct __CFDictionary *)dictionary;
+// 0x25bc1446c
+- (void)updateErrorValue:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)value error:(id)error;
+// 0x25bc148f8
+- (void)updateErrorValueDictionary:(struct __CFDictionary *)dictionary error:(id)error;
+// 0x25bc1469c
+- (void)updateErrorValueForIOSID:(unsigned int)iosid error:(id)error dictToUpdate:(id)update maxIOSurfaceSize:(unsigned long long)size;
+// 0x25bc05d18
+- (id)updateOptions:(id)options virtualANEModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)anemodel;
+// 0x25bc05e24
+- (id)updateOptionsDictionary:(id)dictionary directoryPath:(id)path;
+// 0x25bc13bc4
+- (void)updatePerformanceStats:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)stats aneRequest:(id)request;
+// 0x25bc13e98
+- (void)updatePerformanceStatsDictionary:(struct __CFDictionary *)dictionary aneRequest:(id)request;
+// 0x25bc12e74
+- (void)updateVirtualANEModel:(struct VirtANEModel { unsigned int x0; long long x1; unsigned int x2; unsigned int x3; unsigned int x4; unsigned int x5; unsigned long long x6; unsigned long long x7; unsigned long long x8; unsigned long long x9; unsigned int x10[32]; unsigned long long x11[32]; unsigned int x12[32]; unsigned long long x13[32]; unsigned long long x14; unsigned long long x15; unsigned long long x16; signed char x17; unsigned char x18; unsigned int x19; unsigned long long x20; unsigned int x21; unsigned int x22; unsigned int x23; unsigned long long x24; unsigned int x25; unsigned int x26; unsigned long long x27; unsigned int x28; unsigned long long x29; unsigned int x30[64]; unsigned int x31[64]; unsigned int x32[64]; unsigned int x33[64]; unsigned int x34; unsigned long long x35; unsigned long long x36; unsigned int x37[64]; unsigned int x38[64]; unsigned int x39; unsigned int x40; unsigned int x41; unsigned int x42; unsigned int x43; unsigned int x44; unsigned long long x45; long long x46; unsigned int x47; unsigned int x48; unsigned long long x49; unsigned int x50; unsigned long long x51; unsigned int x52; unsigned long long x53; unsigned int x54; unsigned long long x55; unsigned int x56; unsigned long long x57; unsigned int x58; unsigned long long x59; unsigned int x60; unsigned long long x61; } *)anemodel model:(id)model;
+// 0x25bc13308
+- (void)updateVirtualANEModelDictionary:(struct __CFDictionary *)dictionary model:(id)model cacheURLIdentifierToGuest:(_Bool)guest;
+// 0x25bc08d4c
+- (void)validateNetworkCreate:(struct __CFDictionary *)create;
+// 0x25bc0b11c
+- (struct __CFDictionary *)validateNetworkCreateMLIR:(struct __CFDictionary *)mlir;
+// 0x25bc0cddc
+- (_Bool)writeDictionaryToIOSurfaceID:(unsigned int)id dict:(struct __CFDictionary *)dict writtenDataLength:(unsigned long long *)length ioSurfaceMaxSize:(unsigned long long)size;
+// 0x25bc0d474
+- (_Bool)writeObjectToIOSurfaceID:(unsigned int)id obj:(id)obj writtenDataLength:(unsigned long long *)length ioSurfaceMaxSize:(unsigned long long)size;
+
+@end
+
