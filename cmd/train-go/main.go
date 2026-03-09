@@ -25,7 +25,6 @@ func main() {
 		vocabSize   = flag.Int("vocab", 2048, "effective vocab")
 		mapMode     = flag.String("map", "hash", "token mapping mode: hash or strict")
 		engine      = flag.String("engine", "auto", "logits engine: auto, cpu, ane")
-		aneRefresh  = flag.Int("ane-refresh", 1, "ANE kernel refresh interval in steps (ane/auto only)")
 		lr          = flag.Float64("lr", 0.05, "learning rate")
 		seed        = flag.Int64("seed", time.Now().UnixNano(), "rng seed")
 		loadPath    = flag.String("load", "", "optional checkpoint path to load")
@@ -58,9 +57,6 @@ func main() {
 	if *engine != "auto" && *engine != "cpu" && *engine != "ane" {
 		fatalf("invalid -engine=%q (want auto, cpu, ane)", *engine)
 	}
-	if *aneRefresh < 1 {
-		fatalf("ane-refresh must be >= 1")
-	}
 	if *saveEvery < 0 {
 		fatalf("save-every must be >= 0")
 	}
@@ -86,13 +82,13 @@ func main() {
 		fmt.Printf("loaded checkpoint: %s (step=%d avg_loss=%.4f)\n", *loadPath, ckpt.Step, ckpt.AvgLoss)
 	}
 	if *bench {
-		if err := runBenchmarks(tokens, model.w, *steps, *batchSize, *vocabSize, *mapMode == "hash", *lr, *seed, *aneRefresh, *benchList); err != nil {
+		if err := runBenchmarks(tokens, model.w, *steps, *batchSize, *vocabSize, *mapMode == "hash", *lr, *seed, *benchList); err != nil {
 			fatalf("benchmark: %v", err)
 		}
 		return
 	}
 
-	logitsEngine, err := newLogitsEngine(*engine, *vocabSize, *batchSize, *aneRefresh)
+	logitsEngine, err := newLogitsEngine(*engine, *vocabSize, *batchSize)
 	if err != nil {
 		fatalf("init engine: %v", err)
 	}
@@ -293,7 +289,7 @@ func runTrainingStories(opts storiesRunOpts) (trainResult, error) {
 	return res, nil
 }
 
-func runBenchmarks(tokens []uint16, baseW []float32, steps, batch, vocab int, hashMap bool, lr float64, seed int64, aneRefresh int, benchList string) error {
+func runBenchmarks(tokens []uint16, baseW []float32, steps, batch, vocab int, hashMap bool, lr float64, seed int64, benchList string) error {
 	engines := parseBenchEngines(benchList)
 	if len(engines) == 0 {
 		return fmt.Errorf("empty bench engine list")
@@ -303,7 +299,7 @@ func runBenchmarks(tokens []uint16, baseW []float32, steps, batch, vocab int, ha
 		w := append([]float32(nil), baseW...)
 		m := newBigramModelFromWeights(vocab, w)
 		rng := rand.New(rand.NewSource(seed))
-		logitsEngine, err := newLogitsEngine(engine, vocab, batch, aneRefresh)
+		logitsEngine, err := newLogitsEngine(engine, vocab, batch)
 		if err != nil {
 			fmt.Printf("bench engine=%s status=init_error err=%v\n", engine, err)
 			continue
@@ -359,14 +355,14 @@ type weightAwareLogitsProvider interface {
 	WeightsUpdated(w []float32, rows []int, vocab int) error
 }
 
-func newLogitsEngine(name string, vocab, batch, aneRefresh int) (logitsProvider, error) {
+func newLogitsEngine(name string, vocab, batch int) (logitsProvider, error) {
 	switch name {
 	case "cpu":
 		return cpuLogitsProvider{}, nil
 	case "ane":
-		return newANELogitsProvider(vocab, batch, aneRefresh)
+		return newANELogitsProvider(vocab, batch)
 	case "auto":
-		p, err := newANELogitsProvider(vocab, batch, aneRefresh)
+		p, err := newANELogitsProvider(vocab, batch)
 		if err == nil {
 			return p, nil
 		}
@@ -394,41 +390,32 @@ func (cpuLogitsProvider) LogitsInto(dst, w []float32, xs []int, vocab int) (engi
 }
 
 type aneLogitsProvider struct {
-	exStatic    *linear.Executor
 	exDynamic   *linear.DynamicExecutor
 	vocab       int
 	spatial     int
-	refresh     int
-	since       int
-	x           []float32
 	y           []float32
-	active      []int
-	cachedW     []float32
 	weightsIO   []float32
 	weightsSeen bool
 	compileInit time.Duration
 	compileSeen bool
 }
 
-func newANELogitsProvider(vocab, batch, refresh int) (*aneLogitsProvider, error) {
+func newANELogitsProvider(vocab, batch int) (*aneLogitsProvider, error) {
 	spatial := roundUp32(batch)
 	p := &aneLogitsProvider{
 		vocab:   vocab,
 		spatial: spatial,
-		refresh: refresh,
 		y:       make([]float32, vocab*spatial),
 	}
 
 	dyn := linear.NewDynamic(linear.Options{})
 	start := time.Now()
-	if err := dyn.Prepare(spatial, vocab, vocab); err == nil {
-		p.exDynamic = dyn
-		p.compileInit = time.Since(start)
-		return p, nil
+	if err := dyn.Prepare(spatial, vocab, vocab); err != nil {
+		dyn.Close()
+		return nil, fmt.Errorf("ane logits: prepare dynamic executor: %w", err)
 	}
-	dyn.Close()
-	p.exStatic = linear.New(linear.Options{})
-	p.x = make([]float32, vocab*spatial)
+	p.exDynamic = dyn
+	p.compileInit = time.Since(start)
 	return p, nil
 }
 
@@ -437,9 +424,6 @@ func (p *aneLogitsProvider) Name() string { return "ane" }
 func (p *aneLogitsProvider) Close() error {
 	if p.exDynamic != nil {
 		p.exDynamic.Close()
-	}
-	if p.exStatic != nil {
-		p.exStatic.Close()
 	}
 	return nil
 }
@@ -456,62 +440,26 @@ func (p *aneLogitsProvider) LogitsInto(dst, w []float32, xs []int, vocab int) (e
 	if len(dst) != len(xs)*vocab {
 		return est, fmt.Errorf("ane logits: output len=%d want=%d", len(dst), len(xs)*vocab)
 	}
-	if p.exDynamic != nil {
-		evalStart := time.Now()
-		if !p.weightsSeen || len(p.weightsIO) != len(w) {
-			p.weightsIO = growFloat32(p.weightsIO, len(w))
-			transposeWeightsRowMajorOIToIO(p.weightsIO, w, p.vocab, p.vocab)
-			if err := p.exDynamic.PrimeWeightsIO(p.spatial, p.vocab, p.vocab, p.weightsIO); err != nil {
-				return est, fmt.Errorf("ane logits: prime dynamic weights: %w", err)
-			}
-			p.weightsSeen = true
-		}
-		lst, err := p.exDynamic.LinearOneHotIOIntoWithStats(context.Background(), p.y, xs, p.spatial, p.vocab, p.vocab)
-		if err != nil {
-			return est, fmt.Errorf("ane logits: dynamic linear: %w", err)
-		}
-		est.Eval = time.Since(evalStart)
-		est.HWEval = time.Duration(lst.HWExecutionNS) * time.Nanosecond
-		if !p.compileSeen {
-			est.Compile = p.compileInit
-			est.Compiles = 1
-			p.compileSeen = true
-		}
-		for s := range xs {
-			copy(dst[s*vocab:(s+1)*vocab], p.y[s*vocab:(s+1)*vocab])
-		}
-		est.Forward = time.Since(forwardStart)
-		return est, nil
-	}
-
-	if len(p.cachedW) == 0 || p.since >= p.refresh {
-		p.cachedW = append(p.cachedW[:0], w...)
-		p.exStatic.Close()
-		start := time.Now()
-		if err := p.exStatic.Prepare(p.cachedW, p.spatial, p.vocab, p.vocab); err != nil {
-			return est, fmt.Errorf("ane logits: prepare: %w", err)
-		}
-		est.Compile = time.Since(start)
-		est.Compiles = 1
-		p.since = 0
-	}
-	for _, idx := range p.active {
-		p.x[idx] = 0
-	}
-	p.active = p.active[:0]
-	for s, x := range xs {
-		idx := s*p.vocab + x
-		p.x[idx] = 1
-		p.active = append(p.active, idx)
-	}
 	evalStart := time.Now()
-	lst, err := p.exStatic.LinearIntoWithStats(context.Background(), p.y, p.x, p.cachedW, p.spatial, p.vocab, p.vocab)
+	if !p.weightsSeen || len(p.weightsIO) != len(w) {
+		p.weightsIO = growFloat32(p.weightsIO, len(w))
+		transposeWeightsRowMajorOIToIO(p.weightsIO, w, p.vocab, p.vocab)
+		if err := p.exDynamic.PrimeWeightsIO(p.spatial, p.vocab, p.vocab, p.weightsIO); err != nil {
+			return est, fmt.Errorf("ane logits: prime dynamic weights: %w", err)
+		}
+		p.weightsSeen = true
+	}
+	lst, err := p.exDynamic.LinearOneHotIOIntoWithStats(context.Background(), p.y, xs, p.spatial, p.vocab, p.vocab)
 	if err != nil {
-		return est, fmt.Errorf("ane logits: linear: %w", err)
+		return est, fmt.Errorf("ane logits: dynamic linear: %w", err)
 	}
 	est.Eval = time.Since(evalStart)
 	est.HWEval = time.Duration(lst.HWExecutionNS) * time.Nanosecond
-	p.since++
+	if !p.compileSeen {
+		est.Compile = p.compileInit
+		est.Compiles = 1
+		p.compileSeen = true
+	}
 
 	for s := range xs {
 		copy(dst[s*vocab:(s+1)*vocab], p.y[s*vocab:(s+1)*vocab])
