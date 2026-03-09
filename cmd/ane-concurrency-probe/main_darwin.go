@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/maderix/ANE/ane/clientmodel"
+	xane "github.com/tmc/apple/x/ane"
 )
 
 type stats struct {
@@ -36,13 +36,13 @@ const (
 func main() {
 	var (
 		modelPath   = flag.String("compiled", "/Users/tmc/ml-explore/mlx-go/experiment/mlx-go-ane/testdata/chaining/simple_add_nn.mlmodelc", "path to compiled .mlmodelc")
-		inputBytes  = flag.Int("input-bytes", 4096, "single input tensor bytes")
-		outputBytes = flag.Int("output-bytes", 4096, "single output tensor bytes")
+		modelKey    = flag.String("model-key", "s", "model key")
+		inputBytes  = flag.Int("input-bytes", 4096, "single input tensor logical bytes")
+		outputBytes = flag.Int("output-bytes", 4096, "single output tensor logical bytes")
 		workersRaw  = flag.String("workers", "1,2,4,8", "comma-separated worker depths")
 		iters       = flag.Int("iters", 200, "eval iterations per worker")
-		sampleMS    = flag.Int("sample-ms", 2, "diagnostics sampling period in ms")
-		forceNew    = flag.Bool("force-client-new", false, "force dedicated _ANEClient per kernel")
-		preferPriv  = flag.Bool("prefer-private-client", false, "prefer _ANEClient.sharedPrivateConnection")
+		sampleMS    = flag.Int("sample-ms", 2, "in-flight sampling period in ms")
+		qos         = flag.Uint("qos", 21, "ANE QoS")
 		modeRaw     = flag.String("mode", "eval", "run mode: eval|bidir")
 	)
 	flag.Parse()
@@ -59,173 +59,284 @@ func main() {
 		log.Fatalf("parse workers: %v", err)
 	}
 
-	fmt.Printf("model=%s input_bytes=%d output_bytes=%d iters=%d sample_ms=%d mode=%s\n", *modelPath, *inputBytes, *outputBytes, *iters, *sampleMS, *modeRaw)
-	fmt.Printf("force_client_new=%v prefer_private_client=%v\n", *forceNew, *preferPriv)
-	fmt.Println("depth,queue_depth,program_queue_depth,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,evals_per_sec,max_inflight,avg_inflight")
+	rt, err := xane.Open()
+	if err != nil {
+		log.Fatalf("open runtime: %v", err)
+	}
+	defer rt.Close()
+
+	fmt.Printf("model=%s input_bytes=%d output_bytes=%d iters=%d sample_ms=%d mode=%s qos=%d\n", *modelPath, *inputBytes, *outputBytes, *iters, *sampleMS, *modeRaw, *qos)
+	fmt.Printf("runtime: x/ane compile_count=%d\n", rt.CompileCount())
+	fmt.Println("depth,queue_depth,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,evals_per_sec,max_inflight,avg_inflight")
 
 	for _, depth := range workerDepths {
-		ks, err := openKernels(depth, func() (*clientmodel.Kernel, error) {
-			return clientmodel.Compile(clientmodel.CompileOptions{
-				CompiledModelPath: *modelPath,
-				ModelKey:          "s",
-				ForceNewClient:    *forceNew,
-				PreferPrivateConn: *preferPriv,
-				InputBytes:        []int{*inputBytes},
-				OutputBytes:       []int{*outputBytes},
-			})
-		})
+		var (
+			diag        xane.Diagnostics
+			flat        []float64
+			runDur      time.Duration
+			inflightMax int64
+			avgInflight float64
+		)
+		switch mode {
+		case modeEval:
+			diag, flat, runDur, inflightMax, avgInflight, err = runEvalDepth(rt, *modelPath, *modelKey, uint32(*qos), *inputBytes, *outputBytes, depth, *iters, *sampleMS)
+		case modeBidirectional:
+			diag, flat, runDur, inflightMax, avgInflight, err = runBidirectionalDepth(rt, *modelPath, *modelKey, uint32(*qos), *inputBytes, *outputBytes, depth, *iters, *sampleMS)
+		default:
+			err = fmt.Errorf("unsupported mode %q", *modeRaw)
+		}
 		if err != nil {
-			log.Printf("depth=%d open failed: %v", depth, err)
+			log.Printf("depth=%d run failed: %v", depth, err)
 			continue
 		}
 
-		input := make([]byte, *inputBytes)
-		for i := range input {
-			input[i] = byte((i % 251) + 1)
-		}
-		for _, k := range ks {
-			if err := k.WriteInput(0, input); err != nil {
-				closeAll(ks)
-				log.Fatalf("depth=%d write input: %v", depth, err)
-			}
-		}
-
-		d0 := ks[0].Diagnostics()
-		waitEvents := make([]*clientmodel.SharedEvent, depth)
-		signalEvents := make([]*clientmodel.SharedEvent, depth)
-		if mode == modeBidirectional {
-			for i := 0; i < depth; i++ {
-				waitEvents[i], err = clientmodel.NewSharedEvent()
-				if err != nil {
-					closeAll(ks)
-					closeEvents(waitEvents)
-					closeEvents(signalEvents)
-					log.Fatalf("depth=%d create wait event: %v", depth, err)
-				}
-				signalEvents[i], err = clientmodel.NewSharedEvent()
-				if err != nil {
-					closeAll(ks)
-					closeEvents(waitEvents)
-					closeEvents(signalEvents)
-					log.Fatalf("depth=%d create signal event: %v", depth, err)
-				}
-			}
-		}
-		var inflightMax int64
-		var inflightSum int64
-		var inflightSamples int64
-		stopSampler := make(chan struct{})
-		var samplerWG sync.WaitGroup
-		samplerWG.Add(1)
-		go func() {
-			defer samplerWG.Done()
-			tk := time.NewTicker(time.Duration(*sampleMS) * time.Millisecond)
-			defer tk.Stop()
-			for {
-				select {
-				case <-stopSampler:
-					return
-				case <-tk.C:
-					var s int64
-					for _, k := range ks {
-						di := k.Diagnostics()
-						if di.CurrentAsyncRequestsInFlightOK {
-							s += di.CurrentAsyncRequestsInFlight
-						}
-					}
-					for {
-						m := atomic.LoadInt64(&inflightMax)
-						if s <= m || atomic.CompareAndSwapInt64(&inflightMax, m, s) {
-							break
-						}
-					}
-					atomic.AddInt64(&inflightSum, s)
-					atomic.AddInt64(&inflightSamples, 1)
-				}
-			}
-		}()
-
-		allLat := make([][]float64, depth)
-		var runWG sync.WaitGroup
-		runWG.Add(depth)
-		start := make(chan struct{})
-		runStart := time.Now()
-		for i := 0; i < depth; i++ {
-			idx := i
-			go func() {
-				defer runWG.Done()
-				local := make([]float64, 0, *iters)
-				<-start
-				for j := 0; j < *iters; j++ {
-					t0 := time.Now()
-					switch mode {
-					case modeEval:
-						if err := ks[idx].Eval(); err != nil {
-							log.Printf("depth=%d worker=%d iter=%d eval error: %v", depth, idx, j, err)
-							return
-						}
-					case modeBidirectional:
-						v := uint64(j + 1)
-						if err := waitEvents[idx].Signal(v); err != nil {
-							log.Printf("depth=%d worker=%d iter=%d wait signal error: %v", depth, idx, j, err)
-							return
-						}
-						if err := ks[idx].EvalBidirectional(
-							waitEvents[idx].Port(), v,
-							signalEvents[idx].Port(), v,
-							clientmodel.SharedEventEvalOptions{
-								DisableIOFencesUseSharedEvents: true,
-								EnableFWToFWSignal:             false,
-							},
-						); err != nil {
-							log.Printf("depth=%d worker=%d iter=%d bidir eval error: %v", depth, idx, j, err)
-							return
-						}
-						ok, err := signalEvents[idx].Wait(v, 250*time.Millisecond)
-						if err != nil || !ok {
-							log.Printf("depth=%d worker=%d iter=%d signal wait error: ok=%v err=%v", depth, idx, j, ok, err)
-							return
-						}
-					default:
-						log.Printf("depth=%d worker=%d unsupported mode", depth, idx)
-						return
-					}
-					local = append(local, msSince(t0))
-				}
-				allLat[idx] = local
-			}()
-		}
-		close(start)
-		runWG.Wait()
-		runDur := time.Since(runStart)
-		close(stopSampler)
-		samplerWG.Wait()
-
-		flat := flatten(allLat)
 		st := summarize(flat)
 		eps := 0.0
 		if runDur > 0 {
 			eps = float64(len(flat)) / runDur.Seconds()
 		}
-		avgInflight := 0.0
-		if n := atomic.LoadInt64(&inflightSamples); n > 0 {
-			avgInflight = float64(atomic.LoadInt64(&inflightSum)) / float64(n)
+		queueDepth := 0
+		if diag.ModelQueueDepthKnown {
+			queueDepth = diag.ModelQueueDepth
 		}
-
 		fmt.Printf(
-			"%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%.3f\n",
+			"%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%d,%.3f\n",
 			depth,
-			d0.ModelQueueDepth,
-			d0.ProgramQueueDepth,
+			queueDepth,
 			st.Mean, st.P50, st.P95, st.P99, st.Max,
 			eps,
-			atomic.LoadInt64(&inflightMax),
+			inflightMax,
 			avgInflight,
 		)
+	}
+}
 
-		closeEvents(waitEvents)
-		closeEvents(signalEvents)
-		closeAll(ks)
+func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xane.Diagnostics, []float64, time.Duration, int64, float64, error) {
+	k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
+	if err != nil {
+		return xane.Diagnostics{}, nil, 0, 0, 0, err
+	}
+	defer k.Close()
+	diag := k.Diagnostics()
+
+	input := patternedInput(k.InputAllocSize(0))
+	if err := k.WriteInput(0, input); err != nil {
+		return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
+	}
+
+	pool, err := xane.NewRequestPool(k, depth)
+	if err != nil {
+		return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("request pool: %w", err)
+	}
+	defer pool.Close()
+
+	var inflight atomic.Int64
+	stopSampler := startInflightSampler(&inflight, sampleMS)
+
+	allLat := make([][]float64, depth)
+	var runWG sync.WaitGroup
+	runWG.Add(depth)
+	start := make(chan struct{})
+	runStart := time.Now()
+	for i := 0; i < depth; i++ {
+		idx := i
+		go func() {
+			defer runWG.Done()
+			local := make([]float64, 0, iters)
+			<-start
+			for j := 0; j < iters; j++ {
+				req := pool.Acquire()
+				inflight.Add(1)
+				t0 := time.Now()
+				err := req.Eval()
+				ms := msSince(t0)
+				inflight.Add(-1)
+				req.Release()
+				if err != nil {
+					log.Printf("depth=%d worker=%d iter=%d eval error: %v", depth, idx, j, err)
+					return
+				}
+				local = append(local, ms)
+			}
+			allLat[idx] = local
+		}()
+	}
+	close(start)
+	runWG.Wait()
+	runDur := time.Since(runStart)
+	maxInflight, avg := stopSampler()
+
+	return diag, flatten(allLat), runDur, maxInflight, avg, nil
+}
+
+func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xane.Diagnostics, []float64, time.Duration, int64, float64, error) {
+	ks := make([]*xane.Kernel, 0, depth)
+	defer closeKernels(ks)
+	for i := 0; i < depth; i++ {
+		k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
+		if err != nil {
+			return xane.Diagnostics{}, nil, 0, 0, 0, err
+		}
+		if err := k.WriteInput(0, patternedInput(k.InputAllocSize(0))); err != nil {
+			k.Close()
+			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
+		}
+		ks = append(ks, k)
+	}
+	diag := ks[0].Diagnostics()
+
+	waitEvents := make([]*xane.SharedEvent, depth)
+	signalEvents := make([]*xane.SharedEvent, depth)
+	defer closeEvents(waitEvents)
+	defer closeEvents(signalEvents)
+	for i := 0; i < depth; i++ {
+		var err error
+		waitEvents[i], err = xane.NewSharedEvent()
+		if err != nil {
+			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create wait event: %w", err)
+		}
+		signalEvents[i], err = xane.NewSharedEvent()
+		if err != nil {
+			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create signal event: %w", err)
+		}
+	}
+
+	var inflight atomic.Int64
+	stopSampler := startInflightSampler(&inflight, sampleMS)
+
+	allLat := make([][]float64, depth)
+	var runWG sync.WaitGroup
+	runWG.Add(depth)
+	start := make(chan struct{})
+	runStart := time.Now()
+	for i := 0; i < depth; i++ {
+		idx := i
+		go func() {
+			defer runWG.Done()
+			local := make([]float64, 0, iters)
+			<-start
+			for j := 0; j < iters; j++ {
+				v := uint64(j + 1)
+				waitEvents[idx].Signal(v)
+				inflight.Add(1)
+				t0 := time.Now()
+				err := ks[idx].EvalBidirectional(
+					waitEvents[idx].Port(), v,
+					signalEvents[idx].Port(), v,
+					xane.SharedEventEvalOptions{
+						DisableIOFencesUseSharedEvents: true,
+						EnableFWToFWSignal:             false,
+					},
+				)
+				ms := msSince(t0)
+				inflight.Add(-1)
+				if err != nil {
+					log.Printf("depth=%d worker=%d iter=%d bidir eval error: %v", depth, idx, j, err)
+					return
+				}
+				if ok := signalEvents[idx].Wait(v, 250*time.Millisecond); !ok {
+					log.Printf("depth=%d worker=%d iter=%d signal wait timed out", depth, idx, j)
+					return
+				}
+				local = append(local, ms)
+			}
+			allLat[idx] = local
+		}()
+	}
+	close(start)
+	runWG.Wait()
+	runDur := time.Since(runStart)
+	maxInflight, avg := stopSampler()
+
+	return diag, flatten(allLat), runDur, maxInflight, avg, nil
+}
+
+func compileKernel(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes int) (*xane.Kernel, error) {
+	k, err := rt.Compile(xane.CompileOptions{
+		ModelType:   xane.ModelTypePackage,
+		PackagePath: modelPath,
+		ModelKey:    modelKey,
+		QoS:         qos,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if k.NumInputs() != 1 || k.NumOutputs() != 1 {
+		k.Close()
+		return nil, fmt.Errorf("compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs())
+	}
+	if got := k.InputLayout(0).LogicalBytes(); got != inputBytes {
+		k.Close()
+		return nil, fmt.Errorf("input logical bytes = %d, want %d", got, inputBytes)
+	}
+	if got := k.OutputLayout(0).LogicalBytes(); got != outputBytes {
+		k.Close()
+		return nil, fmt.Errorf("output logical bytes = %d, want %d", got, outputBytes)
+	}
+	return k, nil
+}
+
+func patternedInput(n int) []byte {
+	buf := make([]byte, n)
+	for i := range buf {
+		buf[i] = byte((i % 251) + 1)
+	}
+	return buf
+}
+
+func startInflightSampler(inflight *atomic.Int64, sampleMS int) func() (int64, float64) {
+	var inflightMax atomic.Int64
+	var inflightSum atomic.Int64
+	var inflightSamples atomic.Int64
+	stop := make(chan struct{})
+	var samplerWG sync.WaitGroup
+	samplerWG.Add(1)
+	go func() {
+		defer samplerWG.Done()
+		tk := time.NewTicker(time.Duration(sampleMS) * time.Millisecond)
+		defer tk.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-tk.C:
+				s := inflight.Load()
+				for {
+					m := inflightMax.Load()
+					if s <= m || inflightMax.CompareAndSwap(m, s) {
+						break
+					}
+				}
+				inflightSum.Add(s)
+				inflightSamples.Add(1)
+			}
+		}
+	}()
+	return func() (int64, float64) {
+		close(stop)
+		samplerWG.Wait()
+		n := inflightSamples.Load()
+		avg := 0.0
+		if n > 0 {
+			avg = float64(inflightSum.Load()) / float64(n)
+		}
+		return inflightMax.Load(), avg
+	}
+}
+
+func closeKernels(ks []*xane.Kernel) {
+	for _, k := range ks {
+		if k != nil {
+			_ = k.Close()
+		}
+	}
+}
+
+func closeEvents(es []*xane.SharedEvent) {
+	for _, e := range es {
+		if e != nil {
+			_ = e.Close()
+		}
 	}
 }
 
@@ -263,35 +374,6 @@ func parseWorkerList(raw string) ([]int, error) {
 		return nil, fmt.Errorf("no worker depths provided")
 	}
 	return out, nil
-}
-
-func openKernels(n int, open func() (*clientmodel.Kernel, error)) ([]*clientmodel.Kernel, error) {
-	ks := make([]*clientmodel.Kernel, 0, n)
-	for i := 0; i < n; i++ {
-		k, err := open()
-		if err != nil {
-			closeAll(ks)
-			return nil, err
-		}
-		ks = append(ks, k)
-	}
-	return ks, nil
-}
-
-func closeAll(ks []*clientmodel.Kernel) {
-	for _, k := range ks {
-		if k != nil {
-			k.Close()
-		}
-	}
-}
-
-func closeEvents(es []*clientmodel.SharedEvent) {
-	for _, e := range es {
-		if e != nil {
-			_ = e.Close()
-		}
-	}
 }
 
 func msSince(t time.Time) float64 {
@@ -341,10 +423,11 @@ func percentile(sorted []float64, p float64) float64 {
 		return sorted[len(sorted)-1]
 	}
 	pos := p * float64(len(sorted)-1)
-	i := int(math.Floor(pos))
-	f := pos - float64(i)
-	if i+1 >= len(sorted) {
-		return sorted[i]
+	lo := int(math.Floor(pos))
+	hi := int(math.Ceil(pos))
+	if lo == hi {
+		return sorted[lo]
 	}
-	return sorted[i]*(1-f) + sorted[i+1]*f
+	frac := pos - float64(lo)
+	return sorted[lo] + (sorted[hi]-sorted[lo])*frac
 }

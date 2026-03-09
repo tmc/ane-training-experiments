@@ -44,9 +44,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/maderix/ANE/ane/clientmodel"
 	"github.com/maderix/ANE/internal/espressosurface"
 	"github.com/tmc/apple/coregraphics"
+	xane "github.com/tmc/apple/x/ane"
 	xespresso "github.com/tmc/apple/x/espresso"
 )
 
@@ -66,19 +66,33 @@ func main() {
 		panic("set -model and valid bytes/iters/warmup")
 	}
 
-	k, err := clientmodel.Compile(clientmodel.CompileOptions{
-		CompiledModelPath: *model,
-		ModelKey:          *key,
-		InputBytes:        []int{*bytes},
-		OutputBytes:       []int{*bytes},
+	rt, err := xane.Open()
+	if err != nil {
+		panic(err)
+	}
+	defer rt.Close()
+
+	k, err := rt.Compile(xane.CompileOptions{
+		ModelType:   xane.ModelTypePackage,
+		PackagePath: *model,
+		ModelKey:    *key,
 	})
 	if err != nil {
 		panic(err)
 	}
 	defer k.Close()
+	if k.NumInputs() != 1 || k.NumOutputs() != 1 {
+		panic(fmt.Sprintf("compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs()))
+	}
+	if got := k.InputLayout(0).LogicalBytes(); got != *bytes {
+		panic(fmt.Sprintf("input logical bytes = %d, want %d", got, *bytes))
+	}
+	if got := k.OutputLayout(0).LogicalBytes(); got != *bytes {
+		panic(fmt.Sprintf("output logical bytes = %d, want %d", got, *bytes))
+	}
 
-	in := make([]byte, *bytes)
-	out := make([]byte, *bytes)
+	in := make([]byte, k.InputAllocSize(0))
+	out := make([]byte, k.OutputAllocSize(0))
 	for i := range in {
 		in[i] = byte((i % 251) + 1)
 	}
@@ -95,7 +109,7 @@ func main() {
 	}
 }
 
-func runRaw(k *clientmodel.Kernel, in, out []byte, warmup, iters int) error {
+func runRaw(k *xane.Kernel, in, out []byte, warmup, iters int) error {
 	for i := 0; i < warmup; i++ {
 		if err := k.WriteInput(0, in); err != nil {
 			return fmt.Errorf("raw warmup write: %w", err)
@@ -126,15 +140,9 @@ func runRaw(k *clientmodel.Kernel, in, out []byte, warmup, iters int) error {
 	return nil
 }
 
-func runEspressoExternal(k *clientmodel.Kernel, in, out []byte, warmup, iters int, metalProbe bool) error {
-	inRef, err := k.InputSurfaceRef(0)
-	if err != nil {
-		return err
-	}
-	outRef, err := k.OutputSurfaceRef(0)
-	if err != nil {
-		return err
-	}
+func runEspressoExternal(k *xane.Kernel, in, out []byte, warmup, iters int, metalProbe bool) error {
+	inRef := uintptr(k.InputSurface(0))
+	outRef := uintptr(k.OutputSurface(0))
 
 	inPool, err := espressosurface.Open(len(in), 1)
 	if err != nil {

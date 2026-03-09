@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane"
-	"github.com/maderix/ANE/ane/clientmodel"
+	xane "github.com/tmc/apple/x/ane"
 )
 
 type probeCase struct {
@@ -56,7 +56,7 @@ func main() {
 		{channels: 8192, spatial: 32},
 	}
 
-	fmt.Println("=== ANE SRAM Fine Probe (_ANEClient path) ===")
+	fmt.Println("=== ANE SRAM Fine Probe (x/ane path) ===")
 	fmt.Println()
 	fmt.Printf("%-12s %8s %10s %8s %12s\n", "Channels", "W (MB)", "ms/eval", "TFLOPS", "GFLOPS/MB")
 	fmt.Println("--------------------------------------------------------------")
@@ -96,23 +96,36 @@ func benchCase(pattern, compiledPattern string, channels, spatial, warmup, iters
 		compiledPath = fmt.Sprintf(compiledPattern, channels, spatial)
 	}
 	bytes := channels * spatial * 4
-	opts := clientmodel.CompileOptions{
-		CompiledModelPath: compiledPath,
-		ModelPackagePath:  path,
-		QoS:               qos,
-		InputBytes:        []int{bytes},
-		OutputBytes:       []int{bytes},
-	}
+	modelPath := path
 	if compiledPath != "" {
-		opts.ModelPackagePath = ""
+		modelPath = compiledPath
 	}
-	k, err := clientmodel.Compile(opts)
+	rt, err := xane.Open()
+	if err != nil {
+		return benchResult{}, err
+	}
+	defer rt.Close()
+
+	k, err := rt.Compile(xane.CompileOptions{
+		ModelType:   xane.ModelTypePackage,
+		PackagePath: modelPath,
+		QoS:         qos,
+	})
 	if err != nil {
 		return benchResult{}, err
 	}
 	defer k.Close()
+	if k.NumInputs() != 1 || k.NumOutputs() != 1 {
+		return benchResult{}, fmt.Errorf("compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs())
+	}
+	if got := k.InputLayout(0).LogicalBytes(); got != bytes {
+		return benchResult{}, fmt.Errorf("input logical bytes = %d, want %d", got, bytes)
+	}
+	if got := k.OutputLayout(0).LogicalBytes(); got != bytes {
+		return benchResult{}, fmt.Errorf("output logical bytes = %d, want %d", got, bytes)
+	}
 
-	zeros := make([]byte, bytes)
+	zeros := make([]byte, k.InputAllocSize(0))
 	if err := k.WriteInput(0, zeros); err != nil {
 		return benchResult{}, err
 	}
