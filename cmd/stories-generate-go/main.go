@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane/stories"
+	"github.com/maderix/ANE/ane/storiesane"
 )
 
 func main() {
@@ -21,17 +22,13 @@ func main() {
 		temp      = flag.Float64("temperature", 0.8, "sampling temperature (0 for greedy)")
 		seed      = flag.Int64("seed", time.Now().UnixNano(), "sampling seed")
 		maxSeq    = flag.Int("seq", stories.SeqDefault, "max sequence length")
+		useANE    = flag.Bool("ane", false, "use storiesane full-sequence engine")
 	)
 	flag.Parse()
 
 	prompt, err := parseTokenList(*promptIDs)
 	if err != nil {
 		fatalf("parse prompt tokens: %v", err)
-	}
-
-	mw, src, err := loadWeights(*modelPath, *ckptPath)
-	if err != nil {
-		fatalf("load weights: %v", err)
 	}
 
 	var tok *stories.Tokenizer
@@ -42,13 +39,8 @@ func main() {
 		}
 	}
 
-	dec, err := stories.NewDecoder(mw, *maxSeq, *seed)
-	if err != nil {
-		fatalf("init decoder: %v", err)
-	}
-
 	start := time.Now()
-	res, err := dec.Decode(tok, stories.DecodeOptions{
+	res, src, err := decode(*useANE, *modelPath, *ckptPath, *maxSeq, *seed, tok, stories.DecodeOptions{
 		MaxNewTokens: *maxNew,
 		Temperature:  float32(*temp),
 		Seed:         *seed,
@@ -75,11 +67,46 @@ func main() {
 	}
 }
 
+func decode(useANE bool, modelPath, ckptPath string, maxSeq int, seed int64, tok *stories.Tokenizer, opts stories.DecodeOptions) (stories.DecodeResult, string, error) {
+	if useANE {
+		srcPath, src := modelSource(modelPath, ckptPath)
+		eng, err := storiesane.Open(storiesane.Options{
+			ModelPath: srcPath,
+			Seq:       maxSeq,
+			Seed:      seed,
+			UseANE:    true,
+		})
+		if err != nil {
+			return stories.DecodeResult{}, "", err
+		}
+		defer eng.Close()
+		res, err := eng.Decode(tok, opts)
+		return res, src, err
+	}
+
+	mw, src, err := loadWeights(modelPath, ckptPath)
+	if err != nil {
+		return stories.DecodeResult{}, "", err
+	}
+	dec, err := stories.NewDecoder(mw, maxSeq, seed)
+	if err != nil {
+		return stories.DecodeResult{}, "", err
+	}
+	res, err := dec.Decode(tok, opts)
+	return res, src, err
+}
+
+func modelSource(modelPath, ckptPath string) (string, string) {
+	if ckptPath != "" {
+		return ckptPath, "checkpoint"
+	}
+	return modelPath, "pretrained"
+}
+
 func loadWeights(modelPath, ckptPath string) (*stories.ModelWeights, string, error) {
 	if ckptPath != "" {
 		mw := stories.NewModelWeights(stories.Vocab)
-		opt := stories.NewOptimState(stories.Vocab)
-		if _, err := stories.LoadCheckpointV2(ckptPath, mw, opt); err != nil {
+		if _, err := stories.LoadCheckpoint(ckptPath, mw, nil); err != nil {
 			return nil, "", err
 		}
 		return mw, "checkpoint", nil

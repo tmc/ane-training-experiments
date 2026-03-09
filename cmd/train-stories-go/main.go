@@ -41,7 +41,7 @@ func main() {
 	meta := stories.TrainMeta{TotalSteps: *steps, LR: float32(*lr)}
 
 	if *resume {
-		m, err := stories.LoadCheckpointV2(*ckptPath, mw, opt)
+		m, err := stories.LoadCheckpoint(*ckptPath, mw, opt)
 		if err != nil {
 			fatalf("resume load: %v", err)
 		}
@@ -134,7 +134,7 @@ func main() {
 		}
 
 		if *saveEvery > 0 && meta.Step%*saveEvery == 0 {
-			if err := stories.SaveCheckpointV2(*ckptPath, meta, mw, opt); err != nil {
+			if err := stories.SaveCheckpoint(*ckptPath, meta, mw, opt); err != nil {
 				fatalf("save checkpoint: %v", err)
 			}
 		}
@@ -155,7 +155,7 @@ func main() {
 	}
 
 	if *saveFinal {
-		if err := stories.SaveCheckpointV2(*ckptPath, meta, mw, opt); err != nil {
+		if err := stories.SaveCheckpoint(*ckptPath, meta, mw, opt); err != nil {
 			fatalf("save final checkpoint: %v", err)
 		}
 		fmt.Printf("saved checkpoint: %s\n", *ckptPath)

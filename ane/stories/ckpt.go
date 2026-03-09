@@ -9,9 +9,16 @@ import (
 )
 
 const (
-	ckptMagic   int32 = 0x424C5A54
-	ckptVersion int32 = 2
+	ckptMagic     int32 = 0x424C5A54
+	ckptVersionV2 int32 = 2
+	ckptVersionV3 int32 = 3
 )
+
+type LayerOptimState struct {
+	Wq, Wk, Wv, Wo AdamState
+	W1, W2, W3     AdamState
+	RMSAtt, RMSFFN AdamState
+}
 
 type TrainMeta struct {
 	Step       int
@@ -27,18 +34,42 @@ type TrainMeta struct {
 }
 
 type OptimState struct {
+	Layers   []LayerOptimState
 	RMSFinal AdamState
 	Embed    AdamState
 }
 
 func NewOptimState(vocab int) *OptimState {
-	return &OptimState{
+	opt := &OptimState{
+		Layers:   make([]LayerOptimState, NLayers),
 		RMSFinal: NewAdamState(Dim),
 		Embed:    NewAdamState(vocab * Dim),
 	}
+	for i := range opt.Layers {
+		opt.Layers[i] = LayerOptimState{
+			Wq:     NewAdamState(WQSize),
+			Wk:     NewAdamState(WQSize),
+			Wv:     NewAdamState(WQSize),
+			Wo:     NewAdamState(WOSize),
+			W1:     NewAdamState(W1Size),
+			W2:     NewAdamState(W2Size),
+			W3:     NewAdamState(W3Size),
+			RMSAtt: NewAdamState(Dim),
+			RMSFFN: NewAdamState(Dim),
+		}
+	}
+	return opt
+}
+
+func SaveCheckpoint(path string, meta TrainMeta, mw *ModelWeights, opt *OptimState) error {
+	return saveCheckpoint(path, ckptVersionV3, meta, mw, opt)
 }
 
 func SaveCheckpointV2(path string, meta TrainMeta, mw *ModelWeights, opt *OptimState) error {
+	return saveCheckpoint(path, ckptVersionV2, meta, mw, opt)
+}
+
+func saveCheckpoint(path string, version int32, meta TrainMeta, mw *ModelWeights, opt *OptimState) error {
 	if len(mw.Layers) != NLayers {
 		return fmt.Errorf("layers=%d want=%d", len(mw.Layers), NLayers)
 	}
@@ -60,7 +91,7 @@ func SaveCheckpointV2(path string, meta TrainMeta, mw *ModelWeights, opt *OptimS
 	if err := writeI32(ckptMagic); err != nil {
 		return err
 	}
-	if err := writeI32(ckptVersion); err != nil {
+	if err := writeI32(version); err != nil {
 		return err
 	}
 	if err := writeI32(int32(meta.Step)); err != nil {
@@ -147,79 +178,46 @@ func SaveCheckpointV2(path string, meta TrainMeta, mw *ModelWeights, opt *OptimS
 			return err
 		}
 	}
-	for range mw.Layers {
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
+	if version == ckptVersionV3 {
+		for i := range mw.Layers {
+			layerOpt := zeroLayerOptimState()
+			if opt != nil && i < len(opt.Layers) {
+				layerOpt = opt.Layers[i]
+			}
+			if err := writeLayerOptimState(f, layerOpt); err != nil {
+				return err
+			}
 		}
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WQSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WOSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, WOSize); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W1Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W1Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W2Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W2Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W3Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, W3Size); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, Dim); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, Dim); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, Dim); err != nil {
-			return err
-		}
-		if err := writeZerosF32(f, Dim); err != nil {
-			return err
+	} else {
+		for range mw.Layers {
+			if err := writeZeroLayerOptimState(f); err != nil {
+				return err
+			}
 		}
 	}
 
 	if err := writeF32s(f, mw.RMSFinal); err != nil {
 		return err
 	}
-	if err := writeF32s(f, opt.RMSFinal.M); err != nil {
+	finalOpt := NewAdamState(Dim)
+	embedOpt := NewAdamState(len(mw.Embed))
+	if opt != nil {
+		finalOpt = opt.RMSFinal
+		embedOpt = opt.Embed
+	}
+	if err := writeF32s(f, finalOpt.M); err != nil {
 		return err
 	}
-	if err := writeF32s(f, opt.RMSFinal.V); err != nil {
+	if err := writeF32s(f, finalOpt.V); err != nil {
 		return err
 	}
 	if err := writeF32s(f, mw.Embed); err != nil {
 		return err
 	}
-	if err := writeF32s(f, opt.Embed.M); err != nil {
+	if err := writeF32s(f, embedOpt.M); err != nil {
 		return err
 	}
-	if err := writeF32s(f, opt.Embed.V); err != nil {
+	if err := writeF32s(f, embedOpt.V); err != nil {
 		return err
 	}
 
@@ -236,12 +234,23 @@ func SaveCheckpointV2(path string, meta TrainMeta, mw *ModelWeights, opt *OptimS
 	return nil
 }
 
-func LoadCheckpointV2(path string, mw *ModelWeights, opt *OptimState) (TrainMeta, error) {
+func LoadCheckpoint(path string, mw *ModelWeights, opt *OptimState) (TrainMeta, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return TrainMeta{}, err
 	}
 	defer f.Close()
+	return loadCheckpointFile(f, mw, opt)
+}
+
+func LoadCheckpointV2(path string, mw *ModelWeights, opt *OptimState) (TrainMeta, error) {
+	return LoadCheckpoint(path, mw, opt)
+}
+
+func loadCheckpointFile(f *os.File, mw *ModelWeights, opt *OptimState) (TrainMeta, error) {
+	if opt != nil {
+		zeroOptimState(opt)
+	}
 
 	readI32 := func() (int32, error) {
 		var v int32
@@ -267,7 +276,7 @@ func LoadCheckpointV2(path string, mw *ModelWeights, opt *OptimState) (TrainMeta
 	if err != nil {
 		return TrainMeta{}, err
 	}
-	if magic != ckptMagic || ver != ckptVersion {
+	if magic != ckptMagic || (ver != ckptVersionV2 && ver != ckptVersionV3) {
 		return TrainMeta{}, fmt.Errorf("bad checkpoint header magic=%x version=%d", magic, ver)
 	}
 	step, err := readI32()
@@ -373,28 +382,54 @@ func LoadCheckpointV2(path string, mw *ModelWeights, opt *OptimState) (TrainMeta
 			return TrainMeta{}, err
 		}
 	}
-	for range mw.Layers {
-		if err := skipF32(f, WQSize*2+WQSize*2+WQSize*2+WOSize*2+W1Size*2+W2Size*2+W3Size*2+Dim*2+Dim*2); err != nil {
-			return TrainMeta{}, err
+	if ver == ckptVersionV3 {
+		for i := range mw.Layers {
+			if opt == nil || i >= len(opt.Layers) {
+				if err := skipLayerOptimState(f); err != nil {
+					return TrainMeta{}, err
+				}
+				continue
+			}
+			if err := readLayerOptimState(f, &opt.Layers[i]); err != nil {
+				return TrainMeta{}, err
+			}
+		}
+	} else {
+		for range mw.Layers {
+			if err := skipLayerOptimState(f); err != nil {
+				return TrainMeta{}, err
+			}
 		}
 	}
 	if err := readF32s(f, mw.RMSFinal); err != nil {
 		return TrainMeta{}, err
 	}
-	if err := readF32s(f, opt.RMSFinal.M); err != nil {
-		return TrainMeta{}, err
-	}
-	if err := readF32s(f, opt.RMSFinal.V); err != nil {
-		return TrainMeta{}, err
+	if opt == nil {
+		if err := skipF32(f, Dim*2); err != nil {
+			return TrainMeta{}, err
+		}
+	} else {
+		if err := readF32s(f, opt.RMSFinal.M); err != nil {
+			return TrainMeta{}, err
+		}
+		if err := readF32s(f, opt.RMSFinal.V); err != nil {
+			return TrainMeta{}, err
+		}
 	}
 	if err := readF32s(f, mw.Embed); err != nil {
 		return TrainMeta{}, err
 	}
-	if err := readF32s(f, opt.Embed.M); err != nil {
-		return TrainMeta{}, err
-	}
-	if err := readF32s(f, opt.Embed.V); err != nil {
-		return TrainMeta{}, err
+	if opt == nil {
+		if err := skipF32(f, len(mw.Embed)*2); err != nil {
+			return TrainMeta{}, err
+		}
+	} else {
+		if err := readF32s(f, opt.Embed.M); err != nil {
+			return TrainMeta{}, err
+		}
+		if err := readF32s(f, opt.Embed.V); err != nil {
+			return TrainMeta{}, err
+		}
 	}
 
 	return TrainMeta{
@@ -409,6 +444,108 @@ func LoadCheckpointV2(path string, mw *ModelWeights, opt *OptimState) (TrainMeta
 		CumBatches: int(cumBatches),
 		AdamT:      int(adamT),
 	}, nil
+}
+
+func zeroOptimState(opt *OptimState) {
+	for i := range opt.Layers {
+		clear(opt.Layers[i].Wq.M)
+		clear(opt.Layers[i].Wq.V)
+		clear(opt.Layers[i].Wk.M)
+		clear(opt.Layers[i].Wk.V)
+		clear(opt.Layers[i].Wv.M)
+		clear(opt.Layers[i].Wv.V)
+		clear(opt.Layers[i].Wo.M)
+		clear(opt.Layers[i].Wo.V)
+		clear(opt.Layers[i].W1.M)
+		clear(opt.Layers[i].W1.V)
+		clear(opt.Layers[i].W2.M)
+		clear(opt.Layers[i].W2.V)
+		clear(opt.Layers[i].W3.M)
+		clear(opt.Layers[i].W3.V)
+		clear(opt.Layers[i].RMSAtt.M)
+		clear(opt.Layers[i].RMSAtt.V)
+		clear(opt.Layers[i].RMSFFN.M)
+		clear(opt.Layers[i].RMSFFN.V)
+	}
+	clear(opt.RMSFinal.M)
+	clear(opt.RMSFinal.V)
+	clear(opt.Embed.M)
+	clear(opt.Embed.V)
+}
+
+func zeroLayerOptimState() LayerOptimState {
+	return LayerOptimState{
+		Wq:     NewAdamState(WQSize),
+		Wk:     NewAdamState(WQSize),
+		Wv:     NewAdamState(WQSize),
+		Wo:     NewAdamState(WOSize),
+		W1:     NewAdamState(W1Size),
+		W2:     NewAdamState(W2Size),
+		W3:     NewAdamState(W3Size),
+		RMSAtt: NewAdamState(Dim),
+		RMSFFN: NewAdamState(Dim),
+	}
+}
+
+func writeLayerOptimState(w io.Writer, st LayerOptimState) error {
+	for _, vals := range [][]float32{
+		st.Wq.M, st.Wq.V,
+		st.Wk.M, st.Wk.V,
+		st.Wv.M, st.Wv.V,
+		st.Wo.M, st.Wo.V,
+		st.W1.M, st.W1.V,
+		st.W2.M, st.W2.V,
+		st.W3.M, st.W3.V,
+		st.RMSAtt.M, st.RMSAtt.V,
+		st.RMSFFN.M, st.RMSFFN.V,
+	} {
+		if err := writeF32s(w, vals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeZeroLayerOptimState(w io.Writer) error {
+	for _, n := range []int{
+		WQSize, WQSize,
+		WQSize, WQSize,
+		WQSize, WQSize,
+		WOSize, WOSize,
+		W1Size, W1Size,
+		W2Size, W2Size,
+		W3Size, W3Size,
+		Dim, Dim,
+		Dim, Dim,
+	} {
+		if err := writeZerosF32(w, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func readLayerOptimState(r io.Reader, st *LayerOptimState) error {
+	for _, vals := range [][]float32{
+		st.Wq.M, st.Wq.V,
+		st.Wk.M, st.Wk.V,
+		st.Wv.M, st.Wv.V,
+		st.Wo.M, st.Wo.V,
+		st.W1.M, st.W1.V,
+		st.W2.M, st.W2.V,
+		st.W3.M, st.W3.V,
+		st.RMSAtt.M, st.RMSAtt.V,
+		st.RMSFFN.M, st.RMSFFN.V,
+	} {
+		if err := readF32s(r, vals); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func skipLayerOptimState(r io.Reader) error {
+	return skipF32(r, 6*WQSize+2*WOSize+2*W1Size+2*W2Size+2*W3Size+4*Dim)
 }
 
 func writeF32s(w io.Writer, vals []float32) error {

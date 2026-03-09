@@ -7,7 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/maderix/ANE/ane/clientmodel"
+	"github.com/maderix/ANE/ane/model"
+	"github.com/maderix/ANE/ane/storiesane"
 )
 
 func TestNormalizeOptions(t *testing.T) {
@@ -84,6 +85,15 @@ func TestNormalizeOptions(t *testing.T) {
 	}); err == nil {
 		t.Fatalf("normalizeOptions invalid backend succeeded; want error")
 	}
+
+	if _, err := normalizeOptions(Options{
+		ModelPath:   modelPath,
+		DataPath:    dataPath,
+		InputBytes:  4095,
+		OutputBytes: 4096,
+	}); err == nil {
+		t.Fatalf("normalizeOptions non-f32-aligned bytes succeeded; want error")
+	}
 }
 
 func TestClosedTrainerErrors(t *testing.T) {
@@ -136,7 +146,7 @@ func TestOpenBridgeBackendUnsupported(t *testing.T) {
 
 func TestCheckpointRoundTrip(t *testing.T) {
 	tr := &Trainer{
-		k:             &clientmodel.Kernel{},
+		k:             &model.Kernel{},
 		step:          7,
 		totalSteps:    123,
 		tokenPos:      42,
@@ -149,7 +159,7 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	if err := tr.SaveCheckpoint(p); err != nil {
 		t.Fatalf("SaveCheckpoint: %v", err)
 	}
-	other := &Trainer{k: &clientmodel.Kernel{}}
+	other := &Trainer{k: &model.Kernel{}}
 	if err := other.LoadCheckpoint(p); err != nil {
 		t.Fatalf("LoadCheckpoint: %v", err)
 	}
@@ -164,5 +174,40 @@ func TestCheckpointRoundTrip(t *testing.T) {
 	}
 	if math.Abs(float64(other.lastLoss-tr.lastLoss)) > 1e-8 {
 		t.Fatalf("loaded loss mismatch: got=%v want=%v", other.lastLoss, tr.lastLoss)
+	}
+}
+
+func TestMapStoriesANEDiagnostics(t *testing.T) {
+	got := mapStoriesANEDiagnostics(BackendDirect, storiesane.Diagnostics{
+		UseANE:                  true,
+		LayerForwardRequested:   true,
+		LayerForwardEnabled:     true,
+		CompiledLayers:          12,
+		LayerInitError:          "layer fail",
+		FinalHeadOffloadEnabled: true,
+		HasRMSForward:           true,
+		HasClassifierForward:    true,
+		HasSoftmax:              true,
+		HasClassifierBackward:   true,
+		HasRMSBackward:          true,
+		OffloadDiagnostics:      "ok",
+		HybridBackwardRequested: true,
+		HybridBackwardEnabled:   false,
+		BackwardInitError:       "backward fail",
+	})
+	if !got.UseANE || !got.LayerForwardRequested || !got.LayerForwardEnabled {
+		t.Fatalf("unexpected storiesane mapping: %+v", got)
+	}
+	if got.CompiledLayers != 12 {
+		t.Fatalf("CompiledLayers=%d want 12", got.CompiledLayers)
+	}
+	if got.BackwardInitError != "backward fail" {
+		t.Fatalf("BackwardInitError=%q want backward fail", got.BackwardInitError)
+	}
+	if !got.HybridBackwardRequested || got.HybridBackwardEnabled {
+		t.Fatalf("unexpected hybrid mapping: %+v", got)
+	}
+	if got.OffloadDiagnostics != "ok" {
+		t.Fatalf("OffloadDiagnostics=%q want ok", got.OffloadDiagnostics)
 	}
 }

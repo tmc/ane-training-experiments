@@ -13,7 +13,7 @@ const (
 	// BackendBridge is reserved for compatibility, but currently unsupported in pure-Go mode.
 	BackendBridge = "bridge"
 
-	// BackendDirect indicates the direct Go _ANEClient implementation.
+	// BackendDirect indicates the direct Go ANE implementation.
 	BackendDirect = "direct"
 
 	// BackendAuto selects the direct-Go implementation.
@@ -22,7 +22,10 @@ const (
 
 // Options configures an ANE Stories trainer.
 type Options struct {
-	// ModelPath is the .mlmodelc path used by the daemon-backed _ANEClient path.
+	// ModelPath is the direct-Go model path.
+	//
+	// Use a compiled package path such as .mlmodelc for the package-backed ANE
+	// trainer, or a .bin checkpoint/model path for storiesane training.
 	ModelPath string
 
 	// ModelKey is the _ANEModel key (usually "s").
@@ -31,7 +34,7 @@ type Options struct {
 	// DataPath is the TinyStories uint16 token data path.
 	DataPath string
 
-	// InputBytes and OutputBytes define mapped tensor byte sizes.
+	// InputBytes and OutputBytes define model I/O byte sizes for the .mlmodelc path.
 	InputBytes  uint32
 	OutputBytes uint32
 
@@ -51,6 +54,9 @@ type Options struct {
 
 	// DisableANEExtras disables optional ANE extras path.
 	DisableANEExtras bool
+
+	// HybridBackward enables experimental ANE dx propagation for .bin storiesane training.
+	HybridBackward bool
 
 	// CompileBudget enables restart signaling after N compiles.
 	// Zero means "use default" unless DisableCompileBudget is true.
@@ -104,4 +110,20 @@ type Diagnostics struct {
 	CurrentAsyncRequestsKnown    bool
 	RequestsInFlightCount        int
 	RequestsInFlightCountKnown   bool
+
+	UseANE                  bool
+	LayerForwardRequested   bool
+	LayerForwardEnabled     bool
+	CompiledLayers          int
+	LayerInitError          string
+	FinalHeadOffloadEnabled bool
+	HasRMSForward           bool
+	HasClassifierForward    bool
+	HasSoftmax              bool
+	HasClassifierBackward   bool
+	HasRMSBackward          bool
+	OffloadDiagnostics      string
+	HybridBackwardRequested bool
+	HybridBackwardEnabled   bool
+	BackwardInitError       string
 }

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/maderix/ANE/ane/clientmodel"
+	"github.com/maderix/ANE/ane/model"
 	"github.com/maderix/ANE/ane/stories"
 	"github.com/maderix/ANE/ane/storiesane"
 )
@@ -53,14 +53,11 @@ type storiesCkptV2 struct {
 type Trainer struct {
 	backend string
 
-	// _ANEClient-backed .mlmodelc mode.
-	k             *clientmodel.Kernel
-	compileOpts   clientmodel.CompileOptions
+	// x/ane-backed .mlmodelc mode.
+	k             *model.Kernel
+	compileOpts   model.CompileOptions
 	inputBuf      []float32
-	inputBytes    []byte
-	outputBytes   []byte
-	outputCount   uint32
-	compileBase   uint32
+	outputBuf     []float32
 	recompileEach bool
 
 	// Common training state.
@@ -110,17 +107,26 @@ func Open(opts Options) (*Trainer, error) {
 }
 
 func openModelCTrainer(norm Options, tokens []uint16) (*Trainer, error) {
-	baseCompiles := clientmodel.CompileCount()
-	compileOpts := clientmodel.CompileOptions{
-		CompiledModelPath: norm.ModelPath,
-		ModelKey:          norm.ModelKey,
-		QoS:               norm.QoS,
-		InputBytes:        []int{int(norm.InputBytes)},
-		OutputBytes:       []int{int(norm.OutputBytes)},
+	compileOpts := model.CompileOptions{
+		PackagePath: norm.ModelPath,
+		ModelKey:    norm.ModelKey,
+		QoS:         norm.QoS,
 	}
-	k, err := clientmodel.Compile(compileOpts)
+	k, err := model.Compile(compileOpts)
 	if err != nil {
-		return nil, fmt.Errorf("stories trainer open: compile client kernel: %w", err)
+		return nil, fmt.Errorf("stories trainer open: compile kernel: %w", err)
+	}
+	if err := validateModelCBufferSize("input", int(norm.InputBytes), k.InputBytes(0)); err != nil {
+		k.Close()
+		return nil, fmt.Errorf("stories trainer open: %w", err)
+	}
+	if err := validateModelCBufferSize("output", int(norm.OutputBytes), k.OutputBytes(0)); err != nil {
+		k.Close()
+		return nil, fmt.Errorf("stories trainer open: %w", err)
+	}
+	if k.NumInputs() != 1 || k.NumOutputs() != 1 {
+		k.Close()
+		return nil, fmt.Errorf("stories trainer open: compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs())
 	}
 	return &Trainer{
 		backend:       BackendDirect,
@@ -131,15 +137,19 @@ func openModelCTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 		compileBudget: norm.CompileBudget,
 		aneExtras:     !norm.DisableANEExtras,
 		lr:            norm.LearningRate,
-		compiles:      clientmodel.CompileCount() - baseCompiles,
-		compileBase:   baseCompiles,
+		compiles:      1,
 		recompileEach: norm.RecompileEachStep,
-		outputCount:   norm.OutputBytes / 4,
-		inputBuf:      make([]float32, norm.InputBytes/4),
-		inputBytes:    make([]byte, norm.InputBytes),
-		outputBytes:   make([]byte, norm.OutputBytes),
+		inputBuf:      make([]float32, k.InputBytes(0)/4),
+		outputBuf:     make([]float32, k.OutputBytes(0)/4),
 		started:       time.Now(),
 	}, nil
+}
+
+func validateModelCBufferSize(name string, got, want int) error {
+	if got == 0 || got == want {
+		return nil
+	}
+	return fmt.Errorf("%s bytes = %d, want %d", name, got, want)
 }
 
 func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
@@ -148,16 +158,19 @@ func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 		seq = stories.SeqDefault
 	}
 	engine, err := storiesane.Open(storiesane.Options{
-		ModelPath:  norm.ModelPath,
-		Tokens:     tokens,
-		Seq:        seq,
-		AccumSteps: int(norm.AccumSteps),
-		LR:         norm.LearningRate,
-		Seed:       42,
+		ModelPath:      norm.ModelPath,
+		Tokens:         tokens,
+		Seq:            seq,
+		AccumSteps:     int(norm.AccumSteps),
+		LR:             norm.LearningRate,
+		Seed:           42,
+		UseANE:         !norm.DisableANEExtras,
+		HybridBackward: norm.HybridBackward,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stories trainer open: init storiesane engine: %w", err)
 	}
+	engine.Prepare()
 	return &Trainer{
 		backend:       BackendDirect,
 		tokens:        tokens,
@@ -172,6 +185,14 @@ func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 }
 
 func normalizeOptions(opts Options) (Options, error) {
+	if opts.Backend == "" {
+		opts.Backend = BackendAuto
+	}
+	switch opts.Backend {
+	case BackendAuto, BackendBridge, BackendDirect:
+	default:
+		return opts, fmt.Errorf("stories trainer open: backend must be %q, %q, or %q", BackendAuto, BackendBridge, BackendDirect)
+	}
 	if opts.ModelPath == "" {
 		return opts, fmt.Errorf("stories trainer open: model path is empty")
 	}
@@ -187,16 +208,8 @@ func normalizeOptions(opts Options) (Options, error) {
 	if opts.ModelKey == "" {
 		opts.ModelKey = "s"
 	}
-	if opts.Backend == "" {
-		opts.Backend = BackendAuto
-	}
-	switch opts.Backend {
-	case BackendAuto, BackendBridge, BackendDirect:
-	default:
-		return opts, fmt.Errorf("stories trainer open: backend must be %q, %q, or %q", BackendAuto, BackendBridge, BackendDirect)
-	}
-	if opts.InputBytes == 0 || opts.OutputBytes == 0 {
-		return opts, fmt.Errorf("stories trainer open: input and output bytes must be > 0")
+	if opts.InputBytes%4 != 0 || opts.OutputBytes%4 != 0 {
+		return opts, fmt.Errorf("stories trainer open: input and output bytes must be multiples of 4")
 	}
 	if opts.LearningRate <= 0 {
 		opts.LearningRate = 3e-4
@@ -235,7 +248,7 @@ func (t *Trainer) stepModelC() (StepStats, error) {
 	compileDur := time.Duration(0)
 	if t.recompileEach {
 		compileStart := time.Now()
-		nextKernel, err := clientmodel.Compile(t.compileOpts)
+		nextKernel, err := model.Compile(t.compileOpts)
 		compileDur = time.Since(compileStart)
 		if err != nil {
 			return StepStats{}, fmt.Errorf("stories trainer step: recompile: %w", err)
@@ -244,13 +257,13 @@ func (t *Trainer) stepModelC() (StepStats, error) {
 			t.k.Close()
 		}
 		t.k = nextKernel
+		t.compiles++
 	}
 
 	t.fillModelCInput()
-	encodeF32LE(t.inputBuf, t.inputBytes)
 
 	writeStart := time.Now()
-	if err := t.k.WriteInput(0, t.inputBytes); err != nil {
+	if err := t.k.WriteInputF32(0, t.inputBuf); err != nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: write input: %w", err)
 	}
 	writeDur := time.Since(writeStart)
@@ -262,20 +275,19 @@ func (t *Trainer) stepModelC() (StepStats, error) {
 	evalDur := time.Since(evalStart)
 
 	readStart := time.Now()
-	if err := t.k.ReadOutput(0, t.outputBytes); err != nil {
+	if err := t.k.ReadOutputF32(0, t.outputBuf); err != nil {
 		return StepStats{}, fmt.Errorf("stories trainer step: read output: %w", err)
 	}
 	readDur := time.Since(readStart)
 
-	n := int(t.outputCount)
+	n := len(t.outputBuf)
 	if n > 1024 {
 		n = 1024
 	}
 	if n > 0 {
 		var sum float64
 		for i := 0; i < n; i++ {
-			f := math.Float32frombits(binary.LittleEndian.Uint32(t.outputBytes[i*4:]))
-			sum += math.Abs(float64(f))
+			sum += math.Abs(float64(t.outputBuf[i]))
 		}
 		t.lastLoss = float32(sum / float64(n))
 	} else {
@@ -283,7 +295,6 @@ func (t *Trainer) stepModelC() (StepStats, error) {
 	}
 
 	t.step++
-	t.compiles = clientmodel.CompileCount() - t.compileBase
 	t.cumSteps++
 	t.cumTrainMS += float64(time.Since(start)) / float64(time.Millisecond)
 	t.cumWallMS = float64(time.Since(t.started)) / float64(time.Millisecond)
@@ -334,9 +345,9 @@ func (t *Trainer) stepCPU() (StepStats, error) {
 		Step:            t.step,
 		Loss:            t.lastLoss,
 		StepDuration:    res.StepDuration,
-		CompileDuration: 0,
+		CompileDuration: res.CompileDuration,
 		WriteDuration:   0,
-		EvalDuration:    res.StepDuration,
+		EvalDuration:    res.StepDuration - res.CompileDuration,
 		ReadDuration:    0,
 		Compiles:        0,
 		RestartRequired: false,
@@ -490,27 +501,39 @@ func (t *Trainer) Diagnostics() Diagnostics {
 	if t == nil {
 		return Diagnostics{}
 	}
+	if t.cpuMode && t.engine != nil {
+		return mapStoriesANEDiagnostics(t.backend, t.engine.Diagnostics())
+	}
 	if t.k == nil {
 		return Diagnostics{Backend: t.backend}
 	}
 	d := t.k.Diagnostics()
 	return Diagnostics{
-		Backend:                      BackendDirect,
-		HasVirtualClient:             d.HasVirtualClient,
-		VirtualClientClass:           d.VirtualClientClass,
-		AllowRestrictedAccess:        d.AllowRestrictedAccess,
-		AllowRestrictedAccessKnown:   d.AllowRestrictedAccessKnown,
-		IsVirtualClient:              d.IsVirtualClient,
-		IsVirtualClientKnown:         d.IsVirtualClientKnown,
-		ModelQueueDepth:              d.ModelQueueDepth,
-		ModelQueueDepthKnown:         d.ModelQueueDepthKnown,
-		ProgramClass:                 d.ProgramClass,
-		ProgramQueueDepth:            d.ProgramQueueDepth,
-		ProgramQueueDepthKnown:       d.ProgramQueueDepthKnown,
-		CurrentAsyncRequestsInFlight: d.CurrentAsyncRequestsInFlight,
-		CurrentAsyncRequestsKnown:    d.CurrentAsyncRequestsInFlightOK,
-		RequestsInFlightCount:        d.RequestsInFlightCount,
-		RequestsInFlightCountKnown:   d.RequestsInFlightCountKnown,
+		Backend:              BackendDirect,
+		ModelQueueDepth:      d.ModelQueueDepth,
+		ModelQueueDepthKnown: d.ModelQueueDepthKnown,
+		ProgramClass:         d.ProgramClass,
+	}
+}
+
+func mapStoriesANEDiagnostics(backend string, d storiesane.Diagnostics) Diagnostics {
+	return Diagnostics{
+		Backend:                 backend,
+		UseANE:                  d.UseANE,
+		LayerForwardRequested:   d.LayerForwardRequested,
+		LayerForwardEnabled:     d.LayerForwardEnabled,
+		CompiledLayers:          d.CompiledLayers,
+		LayerInitError:          d.LayerInitError,
+		FinalHeadOffloadEnabled: d.FinalHeadOffloadEnabled,
+		HasRMSForward:           d.HasRMSForward,
+		HasClassifierForward:    d.HasClassifierForward,
+		HasSoftmax:              d.HasSoftmax,
+		HasClassifierBackward:   d.HasClassifierBackward,
+		HasRMSBackward:          d.HasRMSBackward,
+		OffloadDiagnostics:      d.OffloadDiagnostics,
+		HybridBackwardRequested: d.HybridBackwardRequested,
+		HybridBackwardEnabled:   d.HybridBackwardEnabled,
+		BackwardInitError:       d.BackwardInitError,
 	}
 }
 
@@ -561,12 +584,6 @@ func (t *Trainer) fillModelCInput() {
 		pos++
 	}
 	t.tokenPos = pos % uint64(len(t.tokens))
-}
-
-func encodeF32LE(src []float32, dst []byte) {
-	for i, v := range src {
-		binary.LittleEndian.PutUint32(dst[i*4:], math.Float32bits(v))
-	}
 }
 
 func boolToUint32(v bool) uint32 {

@@ -69,6 +69,7 @@ func main() {
 		learningRate   = flag.Float64("lr", 3e-4, "learning rate")
 		noANEExtras    = flag.Bool("no-ane-extras", false, "disable ANE extras")
 		aneClsBwd      = flag.Bool("ane-cls-bwd", false, "enable ANE classifier backward (full/ane with .bin model)")
+		aneHybridBwd   = flag.Bool("ane-hybrid-bwd", false, "enable experimental ANE hybrid backward for .bin storiesane training")
 		backend        = flag.String("backend", defaultBackend, "training backend: auto|ane|ane-dynamic|cpu|full")
 		fullBin        = flag.String("full-bin", "", "path to full C/ObjC trainer binary (default: ./training/train_large_ane)")
 		fullAccumSteps = flag.Uint("full-accum-steps", 0, "override full C/ObjC trainer accumulation steps (0 uses trainer default)")
@@ -106,14 +107,7 @@ func main() {
 	if *parityMode && *backend == "ane-dynamic" {
 		fatalf("parity-mode is incompatible with backend=ane-dynamic")
 	}
-	selectedBackend := *backend
-	if selectedBackend == "auto" {
-		if strings.HasSuffix(strings.ToLower(model), ".bin") {
-			selectedBackend = "full"
-		} else {
-			selectedBackend = "ane"
-		}
-	}
+	selectedBackend := resolveSelectedBackend(*backend, model)
 	if *parityMode {
 		selectedBackend = "full"
 		if *seqOverride == 0 {
@@ -239,6 +233,7 @@ func main() {
 		Steps:                uint32(*steps),
 		LearningRate:         float32(*learningRate),
 		DisableANEExtras:     *noANEExtras,
+		HybridBackward:       *aneHybridBwd,
 		CompileBudget:        budget,
 		DisableCompileBudget: *disableBudget,
 		RecompileEachStep:    *recompileEach,
@@ -257,29 +252,51 @@ func main() {
 		fmt.Printf("[RESUMED from %s]\n", *ckptPath)
 	}
 
+	d := trainer.Diagnostics()
 	fmt.Printf("=== ANE Stories Training (Go, backend=%s) ===\n", trainer.Backend())
-	goImplBackend := trainer.Backend()
-	if selectedBackend == "ane" {
-		if strings.HasSuffix(strings.ToLower(model), ".bin") {
-			goImplBackend = "direct_bin_cpu"
-		} else {
-			goImplBackend = "direct_modelc"
-		}
-	}
+	goImplBackend := effectiveGoImplBackend(selectedBackend, model, d)
 	fmt.Printf("go_impl_backend=%s\n", goImplBackend)
 	fmt.Printf("model=%s data=%s steps=%d lr=%.6f input_bytes=%d output_bytes=%d ane_extras=%v compile_budget=%d restart_count=%d auto_restart=%v\n",
 		model, data, *steps, *learningRate, *inputBytes, *outputBytes, !*noANEExtras, budget, restartCount, *autoRestart)
-	if *diagnostics {
-		d := trainer.Diagnostics()
-		fmt.Printf("diagnostics: backend=%s restricted_access=%v known=%v virtual_client=%v known=%v vc_class=%q model_qd=%d qd_known=%v program_class=%q program_qd=%d program_qd_known=%v async_inflight=%d async_known=%v requests_inflight=%d requests_known=%v\n",
-			d.Backend,
-			d.AllowRestrictedAccess, d.AllowRestrictedAccessKnown,
-			d.IsVirtualClient, d.IsVirtualClientKnown, d.VirtualClientClass,
-			d.ModelQueueDepth, d.ModelQueueDepthKnown,
-			d.ProgramClass, d.ProgramQueueDepth, d.ProgramQueueDepthKnown,
-			d.CurrentAsyncRequestsInFlight, d.CurrentAsyncRequestsKnown,
-			d.RequestsInFlightCount, d.RequestsInFlightCountKnown,
+	if isStoriesBinModel(model) && selectedBackend == "ane" {
+		fmt.Printf("storiesane: layer_forward=%v final_head_offload=%v hybrid_backward_requested=%v hybrid_backward=%v\n",
+			d.LayerForwardEnabled,
+			d.FinalHeadOffloadEnabled,
+			d.HybridBackwardRequested,
+			d.HybridBackwardEnabled,
 		)
+	}
+	if *diagnostics {
+		if isStoriesBinModel(model) && selectedBackend == "ane" {
+			fmt.Printf("diagnostics: backend=%s use_ane=%v layer_forward_requested=%v layer_forward_enabled=%v compiled_layers=%d layer_init_error=%q final_head_offload=%v hybrid_backward_requested=%v hybrid_backward=%v backward_init_error=%q offload=%q rms_fwd=%v cls_fwd=%v softmax=%v cls_bwd=%v rms_bwd=%v\n",
+				d.Backend,
+				d.UseANE,
+				d.LayerForwardRequested,
+				d.LayerForwardEnabled,
+				d.CompiledLayers,
+				d.LayerInitError,
+				d.FinalHeadOffloadEnabled,
+				d.HybridBackwardRequested,
+				d.HybridBackwardEnabled,
+				d.BackwardInitError,
+				d.OffloadDiagnostics,
+				d.HasRMSForward,
+				d.HasClassifierForward,
+				d.HasSoftmax,
+				d.HasClassifierBackward,
+				d.HasRMSBackward,
+			)
+		} else {
+			fmt.Printf("diagnostics: backend=%s restricted_access=%v known=%v virtual_client=%v known=%v vc_class=%q model_qd=%d qd_known=%v program_class=%q program_qd=%d program_qd_known=%v async_inflight=%d async_known=%v requests_inflight=%d requests_known=%v\n",
+				d.Backend,
+				d.AllowRestrictedAccess, d.AllowRestrictedAccessKnown,
+				d.IsVirtualClient, d.IsVirtualClientKnown, d.VirtualClientClass,
+				d.ModelQueueDepth, d.ModelQueueDepthKnown,
+				d.ProgramClass, d.ProgramQueueDepth, d.ProgramQueueDepthKnown,
+				d.CurrentAsyncRequestsInFlight, d.CurrentAsyncRequestsKnown,
+				d.RequestsInFlightCount, d.RequestsInFlightCountKnown,
+			)
+		}
 	}
 
 	var (
@@ -389,6 +406,7 @@ func main() {
 					*learningRate,
 					*noANEExtras,
 					*aneClsBwd,
+					*aneHybridBwd,
 					*jsonOut,
 					*accumSteps,
 					*saveEvery,
@@ -470,7 +488,7 @@ func buildRestartArgs(
 	bin, model, modelKey, data, ckpt, backend string,
 	steps uint,
 	lr float64,
-	noANEExtras, aneClsBwd, jsonOut bool,
+	noANEExtras, aneClsBwd, aneHybridBwd, jsonOut bool,
 	accumSteps, saveEvery uint,
 	saveFinal bool,
 	compileBudget uint,
@@ -509,6 +527,9 @@ func buildRestartArgs(
 	}
 	if aneClsBwd {
 		args = append(args, "-ane-cls-bwd=true")
+	}
+	if aneHybridBwd {
+		args = append(args, "-ane-hybrid-bwd=true")
 	}
 	if jsonOut {
 		args = append(args, "-json=true")
@@ -571,6 +592,41 @@ func defaultIfEmpty(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+func resolveSelectedBackend(requested, model string) string {
+	if requested != "auto" {
+		return requested
+	}
+	if isStoriesBinModel(model) {
+		return "ane"
+	}
+	return "ane"
+}
+
+func isStoriesBinModel(model string) bool {
+	return strings.HasSuffix(strings.ToLower(model), ".bin")
+}
+
+func effectiveGoImplBackend(selectedBackend, model string, d storiestrainer.Diagnostics) string {
+	switch selectedBackend {
+	case "full":
+		return "full_c_exec"
+	case "ane-dynamic":
+		return "dynamic_c_exec"
+	case "cpu":
+		return "cpu"
+	case "ane":
+		if isStoriesBinModel(model) {
+			if d.HybridBackwardEnabled {
+				return "storiesane+hybrid-bwd"
+			}
+			return "storiesane"
+		}
+		return "direct_modelc"
+	default:
+		return selectedBackend
+	}
 }
 
 type cpuRunOptions struct {
@@ -823,7 +879,7 @@ func runCPUReference(opts cpuRunOptions) {
 		if strings.TrimSpace(opts.ckptPath) == "" {
 			fatalf("cpu backend: resume requires -ckpt")
 		}
-		m, err := stories.LoadCheckpointV2(opts.ckptPath, mw, opt)
+		m, err := stories.LoadCheckpoint(opts.ckptPath, mw, opt)
 		if err != nil {
 			fatalf("cpu backend: resume load: %v", err)
 		}
@@ -919,7 +975,7 @@ func runCPUReference(opts cpuRunOptions) {
 		}
 
 		if opts.saveEvery > 0 && strings.TrimSpace(opts.ckptPath) != "" && meta.Step%opts.saveEvery == 0 {
-			if err := stories.SaveCheckpointV2(opts.ckptPath, meta, mw, opt); err != nil {
+			if err := stories.SaveCheckpoint(opts.ckptPath, meta, mw, opt); err != nil {
 				fatalf("cpu backend: save checkpoint at step %d: %v", meta.Step, err)
 			}
 		}
@@ -941,7 +997,7 @@ func runCPUReference(opts cpuRunOptions) {
 	}
 
 	if opts.saveFinal && strings.TrimSpace(opts.ckptPath) != "" {
-		if err := stories.SaveCheckpointV2(opts.ckptPath, meta, mw, opt); err != nil {
+		if err := stories.SaveCheckpoint(opts.ckptPath, meta, mw, opt); err != nil {
 			fatalf("cpu backend: save final checkpoint: %v", err)
 		}
 		fmt.Printf("saved checkpoint: %s\n", opts.ckptPath)

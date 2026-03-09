@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/maderix/ANE/ane/storiestrainer"
 )
 
 func TestRestartCountFromEnv(t *testing.T) {
@@ -38,6 +40,7 @@ func TestBuildRestartArgs(t *testing.T) {
 		"ane",
 		100,
 		3e-4,
+		true,
 		true,
 		true,
 		false,
@@ -78,6 +81,7 @@ func TestBuildRestartArgs(t *testing.T) {
 		"-no-ane-extras",
 		"-save-final",
 		"-ane-cls-bwd=true",
+		"-ane-hybrid-bwd=true",
 		"-json=false",
 		"-auto-restart=true",
 		"-recompile-every-step=true",
@@ -135,6 +139,45 @@ func TestDefaultIfEmpty(t *testing.T) {
 func TestDefaultBackendIsANE(t *testing.T) {
 	if defaultBackend != "ane" {
 		t.Fatalf("defaultBackend=%q want %q", defaultBackend, "ane")
+	}
+}
+
+func TestIsStoriesBinModel(t *testing.T) {
+	for _, tt := range []struct {
+		path string
+		want bool
+	}{
+		{path: "stories110M.bin", want: true},
+		{path: "STORIES110M.BIN", want: true},
+		{path: "model.mlmodelc", want: false},
+	} {
+		if got := isStoriesBinModel(tt.path); got != tt.want {
+			t.Fatalf("isStoriesBinModel(%q)=%v want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestResolveSelectedBackend(t *testing.T) {
+	if got := resolveSelectedBackend("auto", "stories110M.bin"); got != "ane" {
+		t.Fatalf("resolveSelectedBackend(auto, .bin)=%q want ane", got)
+	}
+	if got := resolveSelectedBackend("auto", "model.mlmodelc"); got != "ane" {
+		t.Fatalf("resolveSelectedBackend(auto, .mlmodelc)=%q want ane", got)
+	}
+	if got := resolveSelectedBackend("full", "stories110M.bin"); got != "full" {
+		t.Fatalf("resolveSelectedBackend(full)=%q want full", got)
+	}
+}
+
+func TestEffectiveGoImplBackend(t *testing.T) {
+	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{}); got != "storiesane" {
+		t.Fatalf("effectiveGoImplBackend(bin)=%q want storiesane", got)
+	}
+	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{HybridBackwardEnabled: true}); got != "storiesane+hybrid-bwd" {
+		t.Fatalf("effectiveGoImplBackend(bin hybrid)=%q want storiesane+hybrid-bwd", got)
+	}
+	if got := effectiveGoImplBackend("ane", "model.mlmodelc", storiestrainer.Diagnostics{}); got != "direct_modelc" {
+		t.Fatalf("effectiveGoImplBackend(modelc)=%q want direct_modelc", got)
 	}
 }
 

@@ -12,12 +12,14 @@ import (
 
 // Options configures a pure-Go Stories training engine over .bin weights.
 type Options struct {
-	ModelPath  string
-	Tokens     []uint16
-	Seq        int
-	AccumSteps int
-	LR         float32
-	Seed       int64
+	ModelPath      string
+	Tokens         []uint16
+	Seq            int
+	AccumSteps     int
+	LR             float32
+	Seed           int64
+	UseANE         bool // best-effort ANE layer forward plus final-head offload on Darwin
+	HybridBackward bool // best-effort ANE backward dx propagation on Darwin
 }
 
 // State captures resumable engine state.
@@ -34,26 +36,45 @@ type State struct {
 
 // StepResult reports one training step.
 type StepResult struct {
-	Loss         float32
-	StepDuration time.Duration
+	Loss            float32
+	StepDuration    time.Duration
+	CompileDuration time.Duration
 }
 
-// Engine runs the current pure-Go Stories training loop.
+// Engine runs the current Stories training loop.
 //
-// NOTE: This is a baseline implementation. It does not yet mirror train_large_ane
-// topology or ANE-offloaded multi-layer execution.
+// It remains a small single-stage trainer, but on Darwin it can optionally
+// use ANE layer-forward kernels for full-sequence logits evaluation and
+// offload the final RMSNorm, classifier, and softmax kernels.
 type Engine struct {
 	mw  *stories.ModelWeights
 	opt *stories.OptimState
+	off *offload
 
 	tokens     []uint16
 	seq        int
 	accumSteps int
 	lr         float32
 	seed       int64
+	useANE     bool
+	offDirty   bool
 	rng        uint64
 	state      State
 	start      time.Time
+
+	layers                  []*layerForward
+	layersInit              bool
+	layersDirty             bool
+	layerInitErr            error
+	backward                []*layerBackward
+	hybridBackwardRequested bool
+	backwardInit            bool
+	backwardDirty           bool
+	backwardInitErr         error
+	tmpHidden               []float32
+	caches                  []layerCache
+	accum                   *modelGrad
+	layerGrad               stories.LayerWeights
 
 	x           []float32
 	xNorm       []float32
@@ -65,6 +86,16 @@ type Engine struct {
 	gEmbed      []float32
 	accumGRMS   []float32
 	accumGEmbed []float32
+	gradGate    []float32
+	gradH1      []float32
+	gradH3      []float32
+	gradXNorm   []float32
+	gradX2      []float32
+	gradAtt     []float32
+	gradQ       []float32
+	gradK       []float32
+	gradV       []float32
+	gradPrev    []float32
 }
 
 const (
@@ -78,14 +109,11 @@ func Open(opts Options) (*Engine, error) {
 	if opts.ModelPath == "" {
 		return nil, fmt.Errorf("storiesane open: model path is empty")
 	}
-	if len(opts.Tokens) == 0 {
-		return nil, fmt.Errorf("storiesane open: tokens are empty")
-	}
 	seq := opts.Seq
 	if seq <= 0 {
 		seq = stories.SeqDefault
 	}
-	if len(opts.Tokens) < seq+1 {
+	if len(opts.Tokens) > 0 && len(opts.Tokens) < seq+1 {
 		return nil, fmt.Errorf("storiesane open: not enough tokens for seq=%d", seq)
 	}
 	if opts.LR <= 0 {
@@ -98,34 +126,71 @@ func Open(opts Options) (*Engine, error) {
 		opts.Seed = 42
 	}
 
+	var opt *stories.OptimState
+	var accum *modelGrad
+	if len(opts.Tokens) > 0 {
+		opt = stories.NewOptimState(stories.Vocab)
+		if opts.AccumSteps > 1 {
+			accum = newModelGrad(stories.Vocab)
+		}
+	}
 	mw := stories.NewModelWeights(stories.Vocab)
-	opt := stories.NewOptimState(stories.Vocab)
 	loaded, _, err := stories.LoadPretrained(opts.ModelPath)
 	if err != nil {
-		return nil, fmt.Errorf("storiesane open: load pretrained model: %w", err)
+		if _, ckptErr := stories.LoadCheckpoint(opts.ModelPath, mw, opt); ckptErr != nil {
+			return nil, fmt.Errorf("storiesane open: load model: %w", err)
+		}
+	} else {
+		*mw = *loaded
 	}
-	*mw = *loaded
+	var accumGRMS []float32
+	var accumGEmbed []float32
+	if accum != nil {
+		accumGRMS = accum.RMSFinal
+		accumGEmbed = accum.Embed
+	}
+	caches := make([]layerCache, stories.NLayers)
+	for i := range caches {
+		caches[i] = newLayerCache(seq)
+	}
 
 	return &Engine{
-		mw:          mw,
-		opt:         opt,
-		tokens:      opts.Tokens,
-		seq:         seq,
-		accumSteps:  opts.AccumSteps,
-		lr:          opts.LR,
-		seed:        opts.Seed,
-		rng:         drand48Seed(opts.Seed),
-		start:       time.Now(),
-		x:           make([]float32, stories.Dim*seq),
-		xNorm:       make([]float32, stories.Dim*seq),
-		logits:      make([]float32, stories.Vocab*seq),
-		dLogits:     make([]float32, stories.Vocab*seq),
-		dy:          make([]float32, stories.Dim*seq),
-		dx:          make([]float32, stories.Dim*seq),
-		gRMS:        make([]float32, stories.Dim),
-		gEmbed:      make([]float32, len(mw.Embed)),
-		accumGRMS:   make([]float32, stories.Dim),
-		accumGEmbed: make([]float32, len(mw.Embed)),
+		mw:                      mw,
+		opt:                     opt,
+		off:                     newOffload(mw, seq, opts.UseANE),
+		tokens:                  opts.Tokens,
+		seq:                     seq,
+		accumSteps:              opts.AccumSteps,
+		lr:                      opts.LR,
+		seed:                    opts.Seed,
+		useANE:                  opts.UseANE,
+		hybridBackwardRequested: opts.HybridBackward,
+		rng:                     drand48Seed(opts.Seed),
+		start:                   time.Now(),
+		tmpHidden:               make([]float32, stories.Dim*seq),
+		caches:                  caches,
+		accum:                   accum,
+		layerGrad:               newLayerGrad(),
+		x:                       make([]float32, stories.Dim*seq),
+		xNorm:                   make([]float32, stories.Dim*seq),
+		logits:                  make([]float32, stories.Vocab*seq),
+		dLogits:                 make([]float32, stories.Vocab*seq),
+		dy:                      make([]float32, stories.Dim*seq),
+		dx:                      make([]float32, stories.Dim*seq),
+		gRMS:                    make([]float32, stories.Dim),
+		gEmbed:                  make([]float32, len(mw.Embed)),
+		accumGRMS:               accumGRMS,
+		accumGEmbed:             accumGEmbed,
+		gradGate:                make([]float32, stories.Hidden*seq),
+		gradH1:                  make([]float32, stories.Hidden*seq),
+		gradH3:                  make([]float32, stories.Hidden*seq),
+		gradXNorm:               make([]float32, stories.Dim*seq),
+		gradX2:                  make([]float32, stories.Dim*seq),
+		gradAtt:                 make([]float32, stories.Dim*seq),
+		gradQ:                   make([]float32, stories.Dim*seq),
+		gradK:                   make([]float32, stories.Dim*seq),
+		gradV:                   make([]float32, stories.Dim*seq),
+		gradPrev:                make([]float32, stories.Dim*seq),
 	}, nil
 }
 
@@ -150,33 +215,15 @@ func (e *Engine) Step() (StepResult, error) {
 	input := e.tokens[pos : pos+uint64(e.seq)]
 	target := e.tokens[pos+1 : pos+1+uint64(e.seq)]
 	e.state.TokenPos = pos + uint64(e.seq)
-
-	for i := range e.gRMS {
-		e.gRMS[i] = 0
+	finalHidden, err := e.forwardTraining(input)
+	if err != nil {
+		return StepResult{}, err
 	}
-	for i := range e.gEmbed {
-		e.gEmbed[i] = 0
+	loss, err := e.runFinalHead(finalHidden, target)
+	if err != nil {
+		return StepResult{}, err
 	}
-
-	stories.EmbedLookup(e.x, e.mw.Embed, input, stories.Dim, e.seq)
-	stories.RMSNorm(e.xNorm, e.x, e.mw.RMSFinal, stories.Dim, e.seq)
-	stories.MatMulVocabSeq(e.logits, e.mw.Embed, e.xNorm, stories.Vocab, stories.Dim, e.seq)
-	loss := stories.CrossEntropyLoss(e.dLogits, e.logits, target, stories.Vocab, e.seq)
-	stories.MatMulEmbedT(e.dy, e.mw.Embed, e.dLogits, stories.Vocab, stories.Dim, e.seq)
-	stories.MatMulGradEmbed(e.gEmbed, e.dLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq)
-	stories.RMSNormBackward(e.dx, e.gRMS, e.dy, e.x, e.mw.RMSFinal, stories.Dim, e.seq)
-	stories.EmbedBackward(e.gEmbed, e.dx, input, stories.Dim, e.seq)
-
-	for i, v := range e.gRMS {
-		e.accumGRMS[i] += v
-	}
-	for i, v := range e.gEmbed {
-		e.accumGEmbed[i] += v
-	}
-	e.state.PendingSteps++
-	if int(e.state.PendingSteps) >= e.accumSteps {
-		e.flushPending()
-	}
+	compileDur := e.backwardAndUpdate(input)
 
 	dur := time.Since(t0)
 	e.state.LastLoss = loss
@@ -184,7 +231,27 @@ func (e *Engine) Step() (StepResult, error) {
 	e.state.CumTrainMS += float64(dur) / float64(time.Millisecond)
 	e.state.CumWallMS = float64(time.Since(e.start)) / float64(time.Millisecond)
 
-	return StepResult{Loss: loss, StepDuration: dur}, nil
+	return StepResult{Loss: loss, StepDuration: dur, CompileDuration: compileDur}, nil
+}
+
+// EvalLogits evaluates one full sequence and returns per-position logits.
+//
+// The tokens slice must have length equal to the engine sequence length.
+// It uses ANE layer kernels when available and falls back to the CPU path
+// otherwise.
+func (e *Engine) EvalLogits(tokens []uint16) ([]float32, error) {
+	if e == nil || e.mw == nil {
+		return nil, fmt.Errorf("storiesane eval logits: engine is closed")
+	}
+	if len(tokens) != e.seq {
+		return nil, fmt.Errorf("storiesane eval logits: token len=%d want=%d", len(tokens), e.seq)
+	}
+	if err := e.evalLogitsInto(tokens, e.logits); err != nil {
+		return nil, err
+	}
+	out := make([]float32, len(e.logits))
+	copy(out, e.logits)
+	return out, nil
 }
 
 // Flush applies any pending accumulated gradients.
@@ -192,7 +259,7 @@ func (e *Engine) Flush() error {
 	if e == nil || e.mw == nil || e.opt == nil {
 		return fmt.Errorf("storiesane flush: engine is closed")
 	}
-	e.flushPending()
+	_ = e.flushPending()
 	return nil
 }
 
@@ -225,7 +292,7 @@ func (e *Engine) SaveCheckpoint(path string, meta stories.TrainMeta) error {
 	meta.CumSteps = int(e.state.CumSteps)
 	meta.CumBatches = int(e.state.CumBatches)
 	meta.AdamT = int(e.state.AdamT)
-	if err := stories.SaveCheckpointV2(path, meta, e.mw, e.opt); err != nil {
+	if err := stories.SaveCheckpoint(path, meta, e.mw, e.opt); err != nil {
 		return err
 	}
 	return e.appendTrailer(path)
@@ -236,7 +303,7 @@ func (e *Engine) LoadCheckpoint(path string) (stories.TrainMeta, error) {
 	if e == nil || e.mw == nil || e.opt == nil {
 		return stories.TrainMeta{}, fmt.Errorf("storiesane load checkpoint: engine is closed")
 	}
-	meta, err := stories.LoadCheckpointV2(path, e.mw, e.opt)
+	meta, err := stories.LoadCheckpoint(path, e.mw, e.opt)
 	if err != nil {
 		return stories.TrainMeta{}, err
 	}
@@ -249,6 +316,9 @@ func (e *Engine) LoadCheckpoint(path string) (stories.TrainMeta, error) {
 		CumBatches: uint32(meta.CumBatches),
 		AdamT:      uint32(meta.AdamT),
 	}
+	if e.accum != nil {
+		clearModelGrad(e.accum)
+	}
 	clear(e.accumGRMS)
 	clear(e.accumGEmbed)
 	if err := e.loadTrailer(path); err != nil {
@@ -256,6 +326,7 @@ func (e *Engine) LoadCheckpoint(path string) (stories.TrainMeta, error) {
 	}
 	e.rng = drand48Seed(e.seed + int64(meta.Step))
 	e.start = time.Now().Add(-time.Duration(meta.CumWall * float64(time.Millisecond)))
+	_ = e.refreshANERuntimeForWeights()
 	return meta, nil
 }
 
@@ -264,9 +335,29 @@ func (e *Engine) Close() {
 	if e == nil {
 		return
 	}
+	for i := range e.layers {
+		if e.layers[i] != nil {
+			e.layers[i].close()
+		}
+	}
+	e.layers = nil
+	for i := range e.backward {
+		if e.backward[i] != nil {
+			e.backward[i].close()
+		}
+	}
+	e.backward = nil
+	if e.off != nil {
+		e.off.close()
+		e.off = nil
+	}
 	e.mw = nil
 	e.opt = nil
 	e.tokens = nil
+	e.tmpHidden = nil
+	e.caches = nil
+	e.accum = nil
+	e.layerGrad = stories.LayerWeights{}
 	e.x = nil
 	e.xNorm = nil
 	e.logits = nil
@@ -277,31 +368,41 @@ func (e *Engine) Close() {
 	e.gEmbed = nil
 	e.accumGRMS = nil
 	e.accumGEmbed = nil
+	e.gradGate = nil
+	e.gradH1 = nil
+	e.gradH3 = nil
+	e.gradXNorm = nil
+	e.gradX2 = nil
+	e.gradAtt = nil
+	e.gradQ = nil
+	e.gradK = nil
+	e.gradV = nil
+	e.gradPrev = nil
 }
 
-func (e *Engine) flushPending() {
-	if e.state.PendingSteps == 0 {
-		return
+func (e *Engine) flushPending() time.Duration {
+	if e.accum == nil || e.state.PendingSteps == 0 {
+		return 0
 	}
 	scale := float32(1.0 / float64(e.state.PendingSteps))
-	for i := range e.accumGRMS {
-		e.accumGRMS[i] *= scale
-	}
-	for i := range e.accumGEmbed {
-		e.accumGEmbed[i] *= scale
-	}
+	scaleModelGrad(e.accum, scale)
 	e.state.AdamT++
-	stories.AdamUpdate(e.mw.RMSFinal, e.accumGRMS, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
-	stories.AdamUpdate(e.mw.Embed, e.accumGEmbed, &e.opt.Embed, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
-	clear(e.accumGRMS)
-	clear(e.accumGEmbed)
+	for i := range e.mw.Layers {
+		applyLayerAdam(&e.mw.Layers[i], &e.accum.Layers[i], &e.opt.Layers[i], int(e.state.AdamT), e.lr)
+	}
+	stories.AdamUpdate(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	stories.AdamUpdate(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	compileDur := e.refreshANERuntimeForWeights()
+	clearModelGrad(e.accum)
 	e.state.PendingSteps = 0
 	e.state.CumBatches++
+	return compileDur
 }
 
 const (
-	trailerMagic   = "SANE"
-	trailerVersion = uint32(1)
+	trailerMagic     = "SANE"
+	trailerVersionV1 = uint32(1)
+	trailerVersionV2 = uint32(2)
 )
 
 func (e *Engine) appendTrailer(path string) error {
@@ -313,7 +414,11 @@ func (e *Engine) appendTrailer(path string) error {
 	if _, err := f.Write([]byte(trailerMagic)); err != nil {
 		return fmt.Errorf("storiesane append trailer: write magic: %w", err)
 	}
-	if err := binary.Write(f, binary.LittleEndian, trailerVersion); err != nil {
+	version := trailerVersionV1
+	if e.accum != nil {
+		version = trailerVersionV2
+	}
+	if err := binary.Write(f, binary.LittleEndian, version); err != nil {
 		return fmt.Errorf("storiesane append trailer: write version: %w", err)
 	}
 	if err := binary.Write(f, binary.LittleEndian, e.state.TokenPos); err != nil {
@@ -321,6 +426,12 @@ func (e *Engine) appendTrailer(path string) error {
 	}
 	if err := binary.Write(f, binary.LittleEndian, e.state.PendingSteps); err != nil {
 		return fmt.Errorf("storiesane append trailer: write pending steps: %w", err)
+	}
+	if version == trailerVersionV2 {
+		if err := writeModelGrad(f, e.accum); err != nil {
+			return fmt.Errorf("storiesane append trailer: write accum grads: %w", err)
+		}
+		return nil
 	}
 	if err := writeF32Slice(f, e.accumGRMS); err != nil {
 		return fmt.Errorf("storiesane append trailer: write accum rms: %w", err)
@@ -354,20 +465,29 @@ func (e *Engine) loadTrailer(path string) error {
 	if err := binary.Read(f, binary.LittleEndian, &ver); err != nil {
 		return fmt.Errorf("storiesane load trailer: read version: %w", err)
 	}
-	if ver != trailerVersion {
-		return fmt.Errorf("storiesane load trailer: unsupported version %d", ver)
-	}
 	if err := binary.Read(f, binary.LittleEndian, &e.state.TokenPos); err != nil {
 		return fmt.Errorf("storiesane load trailer: read token pos: %w", err)
 	}
 	if err := binary.Read(f, binary.LittleEndian, &e.state.PendingSteps); err != nil {
 		return fmt.Errorf("storiesane load trailer: read pending steps: %w", err)
 	}
-	if err := readF32Slice(f, e.accumGRMS); err != nil {
-		return fmt.Errorf("storiesane load trailer: read accum rms: %w", err)
-	}
-	if err := readF32Slice(f, e.accumGEmbed); err != nil {
-		return fmt.Errorf("storiesane load trailer: read accum embed: %w", err)
+	switch ver {
+	case trailerVersionV1:
+		if err := readF32Slice(f, e.accumGRMS); err != nil {
+			return fmt.Errorf("storiesane load trailer: read accum rms: %w", err)
+		}
+		if err := readF32Slice(f, e.accumGEmbed); err != nil {
+			return fmt.Errorf("storiesane load trailer: read accum embed: %w", err)
+		}
+	case trailerVersionV2:
+		if e.accum == nil {
+			return fmt.Errorf("storiesane load trailer: trailer requires accumulation buffers")
+		}
+		if err := readModelGrad(f, e.accum); err != nil {
+			return fmt.Errorf("storiesane load trailer: read accum grads: %w", err)
+		}
+	default:
+		return fmt.Errorf("storiesane load trailer: unsupported version %d", ver)
 	}
 	return nil
 }
@@ -399,6 +519,44 @@ func readF32Slice(r io.Reader, vals []float32) error {
 	return nil
 }
 
+func writeModelGrad(w io.Writer, g *modelGrad) error {
+	for i := range g.Layers {
+		layer := &g.Layers[i]
+		for _, vals := range [][]float32{
+			layer.Wq, layer.Wk, layer.Wv, layer.Wo,
+			layer.W1, layer.W2, layer.W3,
+			layer.RMSAtt, layer.RMSFFN,
+		} {
+			if err := writeF32Slice(w, vals); err != nil {
+				return err
+			}
+		}
+	}
+	if err := writeF32Slice(w, g.RMSFinal); err != nil {
+		return err
+	}
+	return writeF32Slice(w, g.Embed)
+}
+
+func readModelGrad(r io.Reader, g *modelGrad) error {
+	for i := range g.Layers {
+		layer := &g.Layers[i]
+		for _, vals := range [][]float32{
+			layer.Wq, layer.Wk, layer.Wv, layer.Wo,
+			layer.W1, layer.W2, layer.W3,
+			layer.RMSAtt, layer.RMSFFN,
+		} {
+			if err := readF32Slice(r, vals); err != nil {
+				return err
+			}
+		}
+	}
+	if err := readF32Slice(r, g.RMSFinal); err != nil {
+		return err
+	}
+	return readF32Slice(r, g.Embed)
+}
+
 func drand48Seed(seed int64) uint64 {
 	return ((uint64(seed) & 0xffffffff) << 16) | 0x330E
 }
@@ -406,4 +564,116 @@ func drand48Seed(seed int64) uint64 {
 func (e *Engine) nextFloat64() float64 {
 	e.rng = (drand48Mul*e.rng + drand48Add) & drand48Mask
 	return float64(e.rng) / float64(uint64(1)<<48)
+}
+
+func (e *Engine) evalLogitsInto(tokens []uint16, logits []float32) error {
+	if len(logits) != stories.Vocab*e.seq {
+		return fmt.Errorf("storiesane eval logits: logits len=%d want=%d", len(logits), stories.Vocab*e.seq)
+	}
+	e.ensureOffload()
+	if e.useANE && e.ensureLayers() == nil {
+		err := e.evalLogitsANEInto(tokens, logits)
+		if err == nil {
+			return nil
+		}
+		e.disableLayerForward(err)
+	}
+	return e.evalLogitsCPUInto(tokens, logits)
+}
+
+func (e *Engine) ensureLayers() error {
+	if e.layersInit {
+		return e.layerInitErr
+	}
+	e.layersInit = true
+	if !e.useANE {
+		e.layerInitErr = fmt.Errorf("ane layer forward is disabled")
+		return e.layerInitErr
+	}
+	e.layers = make([]*layerForward, len(e.mw.Layers))
+	for i := range e.mw.Layers {
+		lf, err := compileStoriesLayerForward(e.mw.Layers[i], e.seq)
+		if err != nil {
+			for j := 0; j < i; j++ {
+				if e.layers[j] != nil {
+					e.layers[j].close()
+				}
+			}
+			e.layers = nil
+			e.layerInitErr = fmt.Errorf("storiesane eval logits: compile layer %d: %w", i, err)
+			return e.layerInitErr
+		}
+		e.layers[i] = lf
+	}
+	return nil
+}
+
+func (e *Engine) evalLogitsANEInto(tokens []uint16, logits []float32) error {
+	e.ensureOffload()
+	stories.EmbedLookup(e.x, e.mw.Embed, tokens, stories.Dim, e.seq)
+	cur := e.x
+	next := e.tmpHidden
+	for i := range e.layers {
+		if err := e.layers[i].run(next, cur); err != nil {
+			return fmt.Errorf("storiesane eval logits: layer %d: %w", i, err)
+		}
+		cur, next = next, cur
+	}
+	if e.off == nil || !e.off.hasRMSForward() {
+		stories.RMSNorm(e.xNorm, cur, e.mw.RMSFinal, stories.Dim, e.seq)
+	} else if err := e.off.runRMSForward(e.xNorm, cur); err != nil {
+		return fmt.Errorf("storiesane eval logits: final rmsnorm: %w", err)
+	}
+	if e.off == nil || !e.off.hasClassifierForward() {
+		stories.MatMulVocabSeq(logits, e.mw.Embed, e.xNorm, stories.Vocab, stories.Dim, e.seq)
+		return nil
+	}
+	if err := e.off.runClassifierForward(logits, e.xNorm); err != nil {
+		return fmt.Errorf("storiesane eval logits: classifier: %w", err)
+	}
+	return nil
+}
+
+func (e *Engine) evalLogitsCPUInto(tokens []uint16, logits []float32) error {
+	x := e.x
+	xNorm := e.xNorm
+	next := e.tmpHidden
+	qf := make([]float32, stories.Dim*e.seq)
+	kf := make([]float32, stories.Dim*e.seq)
+	vf := make([]float32, stories.Dim*e.seq)
+	attOut := make([]float32, stories.Dim*e.seq)
+	x2 := make([]float32, stories.Dim*e.seq)
+	h1 := make([]float32, stories.Hidden*e.seq)
+	h3 := make([]float32, stories.Hidden*e.seq)
+	gate := make([]float32, stories.Hidden*e.seq)
+	ffOut := make([]float32, stories.Dim*e.seq)
+
+	stories.EmbedLookup(x, e.mw.Embed, tokens, stories.Dim, e.seq)
+	cur := x
+	for i := range e.mw.Layers {
+		layer := e.mw.Layers[i]
+		rmsNormCF(xNorm, cur, layer.RMSAtt, stories.Dim, e.seq)
+		linearCF(qf, layer.Wq, xNorm, stories.Dim, stories.Dim, e.seq)
+		linearCF(kf, layer.Wk, xNorm, stories.Dim, stories.Dim, e.seq)
+		linearCF(vf, layer.Wv, xNorm, stories.Dim, stories.Dim, e.seq)
+		causalAttentionCF(attOut, qf, kf, vf, stories.Heads, stories.Dim/stories.Heads, e.seq)
+		linearCF(x2, layer.Wo, attOut, stories.Dim, stories.Dim, e.seq)
+		for j := range x2 {
+			x2[j] += cur[j]
+		}
+		rmsNormCF(xNorm, x2, layer.RMSFFN, stories.Dim, e.seq)
+		linearCF(h1, layer.W1, xNorm, stories.Hidden, stories.Dim, e.seq)
+		linearCF(h3, layer.W3, xNorm, stories.Hidden, stories.Dim, e.seq)
+		for j := range gate {
+			gate[j] = silu32(h1[j]) * h3[j]
+		}
+		linearCF(ffOut, layer.W2, gate, stories.Dim, stories.Hidden, e.seq)
+		for j := range next {
+			next[j] = x2[j] + ffOut[j]
+		}
+		cur, next = next, cur
+	}
+	stories.RMSNorm(e.xNorm, cur, e.mw.RMSFinal, stories.Dim, e.seq)
+	stories.MatMulVocabSeq(logits, e.mw.Embed, e.xNorm, stories.Vocab, stories.Dim, e.seq)
+	return nil
 }
