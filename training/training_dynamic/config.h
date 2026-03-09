@@ -162,3 +162,38 @@ static void layer_grads_free(LayerGrads *g) {
     free(g->Wq);free(g->Wk);free(g->Wv);free(g->Wo);
     free(g->W1);free(g->W2);free(g->W3);free(g->rms_att);free(g->rms_ffn);
 }
+
+// llama2.c model file header
+typedef struct {
+    int dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len;
+} Llama2Config;
+
+// Load pretrained weights from llama2.c format (GQA-aware)
+static bool load_pretrained(LayerWeights *lw, float *rms_final, float *embed, const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) { printf("Cannot open %s\n", path); return false; }
+    Llama2Config cfg;
+    fread(&cfg, sizeof(cfg), 1, f);
+    printf("  Model config: dim=%d hidden=%d layers=%d heads=%d kv_heads=%d vocab=%d seq=%d\n",
+           cfg.dim, cfg.hidden_dim, cfg.n_layers, cfg.n_heads, cfg.n_kv_heads, abs(cfg.vocab_size), cfg.seq_len);
+    if (cfg.dim != DIM || cfg.hidden_dim != HIDDEN || cfg.n_layers != NLAYERS) {
+        printf("  ERROR: Config mismatch! Expected dim=%d hidden=%d layers=%d\n", DIM, HIDDEN, NLAYERS);
+        fclose(f); return false;
+    }
+    int V = abs(cfg.vocab_size);
+    bool shared = cfg.vocab_size > 0;
+    fread(embed, 4, V * DIM, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].rms_att, 4, DIM, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].Wq, 4, WQ_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].Wk, 4, WK_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].Wv, 4, WV_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].Wo, 4, WO_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].rms_ffn, 4, DIM, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].W1, 4, W1_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].W2, 4, W2_SZ, f);
+    for (int L = 0; L < NLAYERS; L++) fread(lw[L].W3, 4, W3_SZ, f);
+    fread(rms_final, 4, DIM, f);
+    fclose(f);
+    printf("  Loaded pretrained weights (%s)\n", shared ? "shared embed/cls" : "separate cls");
+    return true;
+}
