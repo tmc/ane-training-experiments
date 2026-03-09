@@ -20,8 +20,7 @@ This repository now has a direct-Go path for ANE eval, training control, and Met
 - `ane`: runtime probe API
 - `ane/runtime`: ANE/CoreML framework load + class discovery
 - `ane/iosurface`: IOSurface wrappers
-- `ane/model`: `_ANEInMemoryModel` path
-- `ane/clientmodel`: `_ANEClient` + `_ANEModel` path
+- `ane/model`: thin `x/ane` compile wrapper for local kernels
 - `ane/mil`: MIL/weight blob generation
 - `ane/forward`: channel-first eval primitive
 - `ane/linear`: cached ANE linear executor
@@ -40,7 +39,7 @@ fragile ANE lifecycle:
 - Virtual-client and restricted-access diagnostics via typed methods
 - Espresso multibuffer probe via `x/espresso`
 
-Direct `clientmodel` shared-events execution is supported in Go.
+Direct `x/ane` shared-events execution is supported in Go.
 
 ## Parity Matrix (Go vs ObjC)
 
@@ -75,7 +74,7 @@ go run ./cmd/train-stories-ane-go \
   -data ./training/tinystories_data00.bin \
   -steps 10 -json=false
 
-# Compile-heavy parity experiment (forces clientmodel recompile each step)
+# Compile-heavy parity experiment (forces x/ane package recompile each step)
 go run ./cmd/train-stories-ane-go \
   -model /Users/tmc/ml-explore/mlx-go/experiment/mlx-go-ane/testdata/chaining/simple_add_nn.mlmodelc \
   -data ./training/tinystories_data00.bin \
@@ -111,8 +110,5 @@ ANE_SMOKE=1 go test ./ane/linear -run Smoke -v
 - Physical macOS hosts should assume no usable virtual client unless diagnostics prove otherwise.
 - Shared-event lifecycle experiments should stay subprocess-isolated.
 - Reported fp16 throughput is measured throughput, not Apple rated mixed-precision TOPS.
-- For host/compiler paths that reject some MIL graphs with `InvalidMILProgram`, `ane/clientmodel`
-  now supports compile fallback profiles via:
-  `ANE_COMPILE_FALLBACK_PROFILES="modelType:netPlist,modelType2:netPlist2"`.
-  Use `<empty>` or `-` for empty fields, for example:
-  `ANE_COMPILE_FALLBACK_PROFILES="<empty>:fallback.plist,kANEFModelMIL:<empty>"`.
+- The active Go runtime path is `x/ane` and `x/espresso`; private client fallback profiles
+  are no longer part of the maintained surface on this branch.

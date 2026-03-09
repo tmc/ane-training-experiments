@@ -7,7 +7,7 @@ import (
 )
 
 // Kernel is the shared ANE kernel contract used by the direct model and
-// clientmodel execution paths.
+// pipeline execution paths.
 type Kernel interface {
 	WriteInput(int, []byte) error
 	ReadOutput(int, []byte) error

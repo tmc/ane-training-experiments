@@ -816,7 +816,7 @@ detect_go_mode() {
 		return
 		;;
 	direct_modelc|direct)
-		echo "ane_clientmodel"
+		echo "ane_direct"
 		return
 		;;
 	full_c_exec)
@@ -845,11 +845,11 @@ detect_go_mode() {
 		return
 	fi
 	if grep -q "=== ANE Stories Training (Go, backend=direct) ===" "$log"; then
-		echo "ane_clientmodel"
+		echo "ane_direct"
 		return
 	fi
 	if grep -q "=== ANE Stories Training (Go direct) ===" "$log"; then
-		echo "ane_clientmodel"
+		echo "ane_direct"
 		return
 	fi
 	if grep -q "=== ANE Training: Stories110M Go" "$log"; then
@@ -1079,15 +1079,15 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	if [[ "$C_RUNTIME_MODE" == "ane_offloaded" && "$GO_MODE" == "cpu_reference" ]]; then
 		echo "warning=go path is cpu_reference while c path is ane_offloaded; performance parity is not expected"
 	fi
-	if [[ "$C_RUNTIME_MODE" == "cpu_reference" && "$GO_MODE" == "ane_clientmodel" ]]; then
-		echo "warning=go path is ane_clientmodel while c path is cpu_reference; performance parity is not expected"
+	if [[ "$C_RUNTIME_MODE" == "cpu_reference" && "$GO_MODE" == "ane_direct" ]]; then
+		echo "warning=go path is ane_direct while c path is cpu_reference; performance parity is not expected"
 	fi
 	if [[ "$GO_BACKEND" == "ane" ]]; then
 		if [[ "$GO_MODEL_LOWER" == *.bin ]]; then
 			if [[ "$GO_MODE" != "cpu_reference" ]]; then
 				echo "warning=go backend flag was ane(.bin direct mode) but runtime mode was $GO_MODE"
 			fi
-		elif [[ "$GO_MODE" != "ane_clientmodel" ]]; then
+		elif [[ "$GO_MODE" != "ane_direct" ]]; then
 			echo "warning=go backend flag was ane(.mlmodelc) but runtime mode was $GO_MODE"
 		fi
 	fi

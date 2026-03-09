@@ -19,8 +19,7 @@ Only keep intended tracked changes for release.
 This script enforces:
 
 - Go package coverage smoke for:
-  - `./ane/bridge`
-  - `./ane/clientmodel`
+  - `./cmd/client-diagnostics`
   - `./ane/storiestrainer`
   - `./cmd/train-stories-ane-go`
 - Strict C/ObjC vs Go parity suite (high-util profile).

@@ -19,7 +19,7 @@ PARITY_LOG="$RUN_DIR/parity_suite.log"
 REPORT="$RUN_DIR/report.txt"
 
 PKGS=(
-  "./ane/clientmodel"
+  "./cmd/client-diagnostics"
   "./ane/storiestrainer"
   "./cmd/train-stories-ane-go"
 )
