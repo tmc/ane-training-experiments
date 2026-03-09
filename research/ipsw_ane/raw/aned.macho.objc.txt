@@ -1,4 +1,0 @@
-7[?25l8[0G[2K? Detected a universal MachO file, please select an architecture to analyze:  [Use arrows to move, type to filter]
-> Amd64, x86_64
-  AARCH64, ARM64e
-7[1A[0G[1A[0G8[?25h

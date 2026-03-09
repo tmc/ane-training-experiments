@@ -25,7 +25,6 @@ This repository now has a direct-Go path for ANE eval, training control, and Met
 - `ane/mil`: MIL/weight blob generation
 - `ane/forward`: channel-first eval primitive
 - `ane/linear`: cached ANE linear executor
-- `ane/bridge`: typed bridge runtime/client/event API (`libane_bridge.dylib`, legacy/experimental)
 - `ane/storiestrainer`: direct-Go Stories training control API
 - `ane/pipeline`: asymmetric wait+signal pipeline helpers
 - `ane/stories`: CPU-side model/optimizer/token utilities

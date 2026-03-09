@@ -180,7 +180,6 @@ No external dependencies. Uses only system frameworks + private ANE APIs resolve
 The repository also includes a Go orchestration layer with direct `_ANEClient`
 execution:
 
-- Typed bridge runtime/client/event API (legacy/experimental): `ane/bridge`
 - Direct-Go Stories trainer control API: `ane/storiestrainer`
 - Asymmetric shared-event pipeline helpers: `ane/pipeline`
 - Training CLI (direct-Go): `cmd/train-stories-ane-go`
