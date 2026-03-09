@@ -15,9 +15,6 @@ func TestEvaluatorNilSafety(t *testing.T) {
 	if err := e.Close(); err != nil {
 		t.Fatalf("Close(nil): %v", err)
 	}
-	if e.EspressoEnabled() {
-		t.Fatalf("EspressoEnabled(nil)=true, want false")
-	}
 	if err := e.EvalBytes(nil, nil); err == nil {
 		t.Fatalf("EvalBytes(nil) error=nil, want error")
 	}

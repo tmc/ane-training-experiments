@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane/model"
-	"github.com/maderix/ANE/internal/clientkernel"
 	"github.com/maderix/ANE/internal/evalbuffer"
 	"github.com/maderix/ANE/internal/kernelio"
 	xane "github.com/tmc/apple/x/ane"
@@ -34,20 +33,19 @@ type Runner struct {
 
 // Open creates a new asymmetric pipeline runner.
 func Open(opts Options) (*Runner, error) {
-	cfg := clientkernel.EvalOptions{
-		ModelPath:   opts.ModelPath,
-		ModelKey:    opts.ModelKey,
-		InputBytes:  opts.InputBytes,
-		OutputBytes: opts.OutputBytes,
+	if opts.ModelPath == "" {
+		return nil, fmt.Errorf("pipeline open: model path is empty")
 	}
-	cfg = clientkernel.WithDefaults(cfg)
-	if err := clientkernel.Validate(cfg); err != nil {
-		return nil, fmt.Errorf("pipeline open: %w", err)
+	if opts.InputBytes == 0 || opts.OutputBytes == 0 {
+		return nil, fmt.Errorf("pipeline open: input and output bytes must be > 0")
+	}
+	modelKey := opts.ModelKey
+	if modelKey == "" {
+		modelKey = "s"
 	}
 	k, err := model.Compile(model.CompileOptions{
-		PackagePath: cfg.ModelPath,
-		ModelKey:    cfg.ModelKey,
-		QoS:         cfg.QoS,
+		PackagePath: opts.ModelPath,
+		ModelKey:    modelKey,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("pipeline open: compile kernel: %w", err)
@@ -72,7 +70,7 @@ func Open(opts Options) (*Runner, error) {
 		waitEvent:   waitEvent,
 		signalEvent: signalEvent,
 		timeoutMS:   uint64(opts.WaitTimeoutMS),
-		buf:         evalbuffer.New(int(cfg.InputBytes), int(cfg.OutputBytes)),
+		buf:         evalbuffer.New(int(opts.InputBytes), int(opts.OutputBytes)),
 	}, nil
 }
 

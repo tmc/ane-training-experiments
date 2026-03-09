@@ -10,7 +10,6 @@ import (
 
 type evalRunner interface {
 	Close() error
-	EspressoEnabled() bool
 	EvalBytes([]byte, []byte) error
 	EvalF32([]float32, []float32) error
 }
@@ -20,19 +19,15 @@ type Evaluator struct {
 	r evalRunner
 }
 
-// OpenEvaluator opens a model evaluator with optional Espresso-backed I/O.
+// OpenEvaluator opens a model evaluator backed by x/ane.
 func OpenEvaluator(opts EvalOptions) (*Evaluator, error) {
 	r, err := pipeline.OpenEval(pipeline.EvalOptions{
 		ModelPath:        opts.ModelPath,
 		ModelPackagePath: opts.ModelPackagePath,
 		ModelKey:         opts.ModelKey,
-		ModelType:        opts.ModelType,
-		NetPlistFilename: opts.NetPlistFilename,
 		QoS:              opts.QoS,
 		InputBytes:       opts.InputBytes,
 		OutputBytes:      opts.OutputBytes,
-		UseEspressoIO:    opts.UseEspressoIO,
-		EspressoFrames:   opts.EspressoFrames,
 	})
 	if err != nil {
 		return nil, err
@@ -51,11 +46,6 @@ func (e *Evaluator) Close() error {
 	err := e.r.Close()
 	e.r = nil
 	return err
-}
-
-// EspressoEnabled reports whether Espresso I/O mode is active.
-func (e *Evaluator) EspressoEnabled() bool {
-	return e != nil && e.r != nil && e.r.EspressoEnabled()
 }
 
 // EvalBytes runs one evaluation with byte input/output.

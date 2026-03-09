@@ -9,13 +9,9 @@ type EvalOptions struct {
 	ModelPath        string
 	ModelPackagePath string
 	ModelKey         string
-	ModelType        string
-	NetPlistFilename string
 	QoS              uint32
 	InputBytes       uint32
 	OutputBytes      uint32
-	UseEspressoIO    bool
-	EspressoFrames   uint64
 }
 
 // EvalRunner is unavailable on non-darwin platforms.
@@ -25,8 +21,7 @@ func OpenEval(EvalOptions) (*EvalRunner, error) {
 	return nil, fmt.Errorf("eval runner is only supported on darwin")
 }
 
-func (r *EvalRunner) Close() error          { return nil }
-func (r *EvalRunner) EspressoEnabled() bool { return false }
+func (r *EvalRunner) Close() error { return nil }
 func (r *EvalRunner) EvalBytes([]byte, []byte) error {
 	return fmt.Errorf("eval runner is only supported on darwin")
 }

@@ -15,9 +15,6 @@ func OpenEvaluator(EvalOptions) (*Evaluator, error) {
 // Close is a no-op on non-darwin platforms.
 func (e *Evaluator) Close() error { return nil }
 
-// EspressoEnabled always reports false on non-darwin platforms.
-func (e *Evaluator) EspressoEnabled() bool { return false }
-
 // EvalBytes always fails on non-darwin platforms.
 func (e *Evaluator) EvalBytes([]byte, []byte) error {
 	return fmt.Errorf("ane evaluator requires darwin")

@@ -21,10 +21,6 @@ func main() {
 	warmup := flag.Int("warmup", 5, "warmup iterations")
 	qos := flag.Uint("qos", 21, "ANE QoS")
 	modelKey := flag.String("model-key", "s", "_ANEModel key")
-	modelType := flag.String("model-type", "", "optional compile option kANEFModelType value")
-	netPlist := flag.String("net-plist", "", "optional compile option kANEFNetPlistFilenameKey value")
-	useEspressoIO := flag.Bool("espresso-io", false, "use Espresso-backed IO pool")
-	espressoFrames := flag.Uint64("espresso-frames", 1, "Espresso IO frame count")
 	flag.Parse()
 
 	if *mlpackage == "" && *compiled == "" {
@@ -47,13 +43,9 @@ func main() {
 		ModelPath:        *compiled,
 		ModelPackagePath: *mlpackage,
 		ModelKey:         *modelKey,
-		ModelType:        *modelType,
-		NetPlistFilename: *netPlist,
 		QoS:              uint32(*qos),
 		InputBytes:       uint32(bytesPerTensor),
 		OutputBytes:      uint32(bytesPerTensor),
-		UseEspressoIO:    *useEspressoIO,
-		EspressoFrames:   *espressoFrames,
 	})
 	if err != nil {
 		log.Fatalf("open evaluator: %v", err)
@@ -93,7 +85,7 @@ func main() {
 		fmt.Printf("ANE: has=%v cores=%d devices=%d arch=%q build=%q\n",
 			report.HasANE, report.NumANECores, report.NumANEs, report.Architecture, report.BuildVersion)
 	}
-	fmt.Printf("evaluator: espresso_io=%v espresso_frames=%d\n", ev.EspressoEnabled(), *espressoFrames)
+	fmt.Printf("evaluator: x/ane package path active\n")
 	fmt.Printf("benchmark: warmup=%d iters=%d ms/eval=%.3f approx_tflops=%.3f\n", *warmup, *iters, msPerEval, tflops)
 	fmt.Printf("output sample f32: %v\n", out)
 }
