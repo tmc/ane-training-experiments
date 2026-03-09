@@ -363,6 +363,30 @@ int main(int argc, char *argv[]) {
         }
         printf("Per-layer weight staging complete\n\n");
 
+        // Pre-allocated capture buffers for async dW cblas (one set per layer)
+        typedef struct {
+            // FFN dW capture
+            float *dffn, *silu_out, *dh1, *dh3, *x2norm;
+            // Wo dW capture
+            float *dx2_scaled, *attn_out;
+            // QKV dW capture
+            float *dq, *dk, *dv, *xnorm;
+        } DwCapture;
+        DwCapture dw_capt[NLAYERS];
+        for (int L = 0; L < NLAYERS; L++) {
+            dw_capt[L].dffn      = (float*)malloc(SEQ*DIM*4);
+            dw_capt[L].silu_out  = (float*)malloc(SEQ*HIDDEN*4);
+            dw_capt[L].dh1       = (float*)malloc(SEQ*HIDDEN*4);
+            dw_capt[L].dh3       = (float*)malloc(SEQ*HIDDEN*4);
+            dw_capt[L].x2norm    = (float*)malloc(SEQ*DIM*4);
+            dw_capt[L].dx2_scaled= (float*)malloc(SEQ*DIM*4);
+            dw_capt[L].attn_out  = (float*)malloc(SEQ*Q_DIM*4);
+            dw_capt[L].dq        = (float*)malloc(SEQ*Q_DIM*4);
+            dw_capt[L].dk        = (float*)malloc(SEQ*KV_DIM*4);
+            dw_capt[L].dv        = (float*)malloc(SEQ*KV_DIM*4);
+            dw_capt[L].xnorm     = (float*)malloc(SEQ*DIM*4);
+        }
+
         // Gradient + work buffers (GQA: Q has Q_DIM, K/V have KV_DIM)
         float *dy = (float*)malloc(SEQ*DIM*4);
         float *dffn = (float*)malloc(SEQ*DIM*4);
@@ -392,6 +416,7 @@ int main(int argc, char *argv[]) {
         float *dq_full = (float*)malloc(SEQ*Q_DIM*4);  // from sdpaBwd2
         float *dk_full = (float*)malloc(SEQ*Q_DIM*4);  // from sdpaBwd2 (needs reduce)
         float *dv_full = (float*)malloc(SEQ*Q_DIM*4);  // from sdpaBwd1 (needs reduce)
+        float *dx_kv = (float*)malloc(SEQ*DIM*4);    // reused each layer for kvBwd + rms1_bwd scratch
 
         dispatch_queue_t dw_q = dispatch_queue_create("dw_cblas", DISPATCH_QUEUE_SERIAL);
         dispatch_group_t dw_grp = dispatch_group_create();
@@ -523,11 +548,10 @@ int main(int argc, char *argv[]) {
                             CV, DIM, SEQ, 1.0f, dlogits, SEQ, x_final, SEQ, 1.0f, gcembed, DIM);
             });
 
-            // Final RMSNorm backward
-            float *dx_rms_final = (float*)calloc(SEQ*DIM, 4);
-            rmsnorm_bwd(dx_rms_final, grms_final, dy, x_cur, rms_final, DIM, SEQ);
-            memcpy(dy, dx_rms_final, SEQ*DIM*4);
-            free(dx_rms_final);
+            // Final RMSNorm backward (reuse dx_ffn as scratch)
+            memset(dx_ffn, 0, SEQ*DIM*4);
+            rmsnorm_bwd(dx_ffn, grms_final, dy, x_cur, rms_final, DIM, SEQ);
+            memcpy(dy, dx_ffn, SEQ*DIM*4);
 
             // ===== BACKWARD (28 layers, reverse) =====
             for (int L=NLAYERS-1; L>=0; L--) {
@@ -580,23 +604,28 @@ int main(int argc, char *argv[]) {
                 io_read_dyn(dk.ffnBwdW13t->ioOut, dx_ffn, DIM, SEQ);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
-                // dW FFN async
+                // dW FFN async (pre-allocated capture buffers)
                 t0 = mach_absolute_time();
-                float *capt_dffn = (float*)malloc(SEQ*DIM*4); memcpy(capt_dffn, dffn, SEQ*DIM*4);
-                float *capt_silu = (float*)malloc(SEQ*HIDDEN*4); memcpy(capt_silu, ac->silu_out, SEQ*HIDDEN*4);
-                float *capt_dh1 = (float*)malloc(SEQ*HIDDEN*4); memcpy(capt_dh1, dh1, SEQ*HIDDEN*4);
-                float *capt_dh3 = (float*)malloc(SEQ*HIDDEN*4); memcpy(capt_dh3, dh3, SEQ*HIDDEN*4);
-                float *capt_x2n = (float*)malloc(SEQ*DIM*4); memcpy(capt_x2n, ac->x2norm, SEQ*DIM*4);
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    memcpy(dc->dffn, dffn, SEQ*DIM*4);
+                    memcpy(dc->silu_out, ac->silu_out, SEQ*HIDDEN*4);
+                    memcpy(dc->dh1, dh1, SEQ*HIDDEN*4);
+                    memcpy(dc->dh3, dh3, SEQ*HIDDEN*4);
+                    memcpy(dc->x2norm, ac->x2norm, SEQ*DIM*4);
+                }
                 t_dw_copy += tb_ms(mach_absolute_time() - t0);
-                dispatch_group_async(dw_grp, dw_q, ^{
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, HIDDEN, SEQ,
-                                1.0f, capt_dffn, SEQ, capt_silu, SEQ, 1.0f, gr->W2, HIDDEN);
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, HIDDEN, DIM, SEQ,
-                                1.0f, capt_dh1, SEQ, capt_x2n, SEQ, 1.0f, gr->W1, DIM);
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, HIDDEN, DIM, SEQ,
-                                1.0f, capt_dh3, SEQ, capt_x2n, SEQ, 1.0f, gr->W3, DIM);
-                    free(capt_dffn); free(capt_silu); free(capt_dh1); free(capt_dh3); free(capt_x2n);
-                });
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    dispatch_group_async(dw_grp, dw_q, ^{
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, HIDDEN, SEQ,
+                                    1.0f, dc->dffn, SEQ, dc->silu_out, SEQ, 1.0f, gr->W2, HIDDEN);
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, HIDDEN, DIM, SEQ,
+                                    1.0f, dc->dh1, SEQ, dc->x2norm, SEQ, 1.0f, gr->W1, DIM);
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, HIDDEN, DIM, SEQ,
+                                    1.0f, dc->dh3, SEQ, dc->x2norm, SEQ, 1.0f, gr->W3, DIM);
+                    });
+                }
 
                 // RMSNorm2 backward
                 t0 = mach_absolute_time();
@@ -606,7 +635,7 @@ int main(int argc, char *argv[]) {
                 t_rms_bwd += tb_ms(mach_absolute_time() - t0);
 
                 // Wo^T backward (ANE): alpha*dx2 @ Wo → da[Q_DIM]
-                float *dx2_scaled = (float*)malloc(SEQ*DIM*4);
+                float *dx2_scaled = dw_capt[L].dx2_scaled;
                 vDSP_vsmul(dx2, 1, &res_alpha, dx2_scaled, 1, (vDSP_Length)(SEQ*DIM));
                 t0 = mach_absolute_time();
                 write_wot_bwd_acts(pls[L].wotBwd_in, dx2_scaled);
@@ -620,15 +649,19 @@ int main(int argc, char *argv[]) {
 
                 // dWo async: gr->Wo[DIM,Q_DIM] += dx2_scaled[DIM,SEQ] @ attn_out^T[SEQ,Q_DIM]
                 t0 = mach_absolute_time();
-                float *capt_do = (float*)malloc(SEQ*DIM*4); memcpy(capt_do, dx2_scaled, SEQ*DIM*4);
-                free(dx2_scaled);
-                float *capt_attn = (float*)malloc(SEQ*Q_DIM*4); memcpy(capt_attn, ac->attn_out, SEQ*Q_DIM*4);
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    // dx2_scaled already in dc->dx2_scaled
+                    memcpy(dc->attn_out, ac->attn_out, SEQ*Q_DIM*4);
+                }
                 t_dw_copy += tb_ms(mach_absolute_time() - t0);
-                dispatch_group_async(dw_grp, dw_q, ^{
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, Q_DIM, SEQ,
-                                1.0f, capt_do, SEQ, capt_attn, SEQ, 1.0f, gr->Wo, Q_DIM);
-                    free(capt_do); free(capt_attn);
-                });
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    dispatch_group_async(dw_grp, dw_q, ^{
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, DIM, Q_DIM, SEQ,
+                                    1.0f, dc->dx2_scaled, SEQ, dc->attn_out, SEQ, 1.0f, gr->Wo, Q_DIM);
+                    });
+                }
 
                 // GQA: tile K,V from KV_DIM → Q_DIM for SDPA backward
                 t0 = mach_absolute_time();
@@ -682,25 +715,30 @@ int main(int argc, char *argv[]) {
                     printf("    L0 sdpa_bwd: |dq|=%.6f |dk|=%.6f |dv|=%.6f\n", dqmx, dkmx, dvmx);
                 }
 
-                // dWq/dWk/dWv async
+                // dWq/dWk/dWv async (pre-allocated capture buffers)
                 // dWq[Q_DIM,DIM] += dq[Q_DIM,SEQ] @ xnorm^T[SEQ,DIM]
                 // dWk[KV_DIM,DIM] += dk[KV_DIM,SEQ] @ xnorm^T[SEQ,DIM]
                 // dWv[KV_DIM,DIM] += dv[KV_DIM,SEQ] @ xnorm^T[SEQ,DIM]
                 t0 = mach_absolute_time();
-                float *capt_dq = (float*)malloc(SEQ*Q_DIM*4); memcpy(capt_dq, dq, SEQ*Q_DIM*4);
-                float *capt_dk = (float*)malloc(SEQ*KV_DIM*4); memcpy(capt_dk, dk_buf, SEQ*KV_DIM*4);
-                float *capt_dv = (float*)malloc(SEQ*KV_DIM*4); memcpy(capt_dv, dv, SEQ*KV_DIM*4);
-                float *capt_xn = (float*)malloc(SEQ*DIM*4); memcpy(capt_xn, ac->xnorm, SEQ*DIM*4);
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    memcpy(dc->dq, dq, SEQ*Q_DIM*4);
+                    memcpy(dc->dk, dk_buf, SEQ*KV_DIM*4);
+                    memcpy(dc->dv, dv, SEQ*KV_DIM*4);
+                    memcpy(dc->xnorm, ac->xnorm, SEQ*DIM*4);
+                }
                 t_dw_copy += tb_ms(mach_absolute_time() - t0);
-                dispatch_group_async(dw_grp, dw_q, ^{
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, Q_DIM, DIM, SEQ,
-                                1.0f, capt_dq, SEQ, capt_xn, SEQ, 1.0f, gr->Wq, DIM);
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, KV_DIM, DIM, SEQ,
-                                1.0f, capt_dk, SEQ, capt_xn, SEQ, 1.0f, gr->Wk, DIM);
-                    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, KV_DIM, DIM, SEQ,
-                                1.0f, capt_dv, SEQ, capt_xn, SEQ, 1.0f, gr->Wv, DIM);
-                    free(capt_dq); free(capt_dk); free(capt_dv); free(capt_xn);
-                });
+                {
+                    DwCapture *dc = &dw_capt[L];
+                    dispatch_group_async(dw_grp, dw_q, ^{
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, Q_DIM, DIM, SEQ,
+                                    1.0f, dc->dq, SEQ, dc->xnorm, SEQ, 1.0f, gr->Wq, DIM);
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, KV_DIM, DIM, SEQ,
+                                    1.0f, dc->dk, SEQ, dc->xnorm, SEQ, 1.0f, gr->Wk, DIM);
+                        cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, KV_DIM, DIM, SEQ,
+                                    1.0f, dc->dv, SEQ, dc->xnorm, SEQ, 1.0f, gr->Wv, DIM);
+                    });
+                }
 
                 // Q backward (ANE): dq[Q_DIM] @ Wq → dx_q[DIM]
                 t0 = mach_absolute_time();
@@ -714,7 +752,6 @@ int main(int argc, char *argv[]) {
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
                 // KV backward (ANE): dk[KV_DIM]@Wk + dv[KV_DIM]@Wv → dx_kv[DIM]
-                float *dx_kv = (float*)malloc(SEQ*DIM*4);
                 t0 = mach_absolute_time();
                 write_kv_bwd_acts(pls[L].kvBwd_in, dk_buf, dv);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
@@ -727,14 +764,12 @@ int main(int argc, char *argv[]) {
 
                 // dx_attn = dx_q + dx_kv
                 for(int i=0; i<SEQ*DIM; i++) dx_attn[i] += dx_kv[i];
-                free(dx_kv);
 
-                // RMSNorm1 backward
+                // RMSNorm1 backward (reuse dx_kv as scratch)
                 t0 = mach_absolute_time();
-                float *dx_rms1 = (float*)calloc(SEQ*DIM, 4);
-                rmsnorm_bwd(dx_rms1, gr->rms_att, dx_attn, ac->layer_in, lw[L].rms_att, DIM, SEQ);
-                for(int i=0;i<SEQ*DIM;i++) dy[i] = dx_rms1[i] + dx2[i];
-                free(dx_rms1);
+                memset(dx_kv, 0, SEQ*DIM*4);
+                rmsnorm_bwd(dx_kv, gr->rms_att, dx_attn, ac->layer_in, lw[L].rms_att, DIM, SEQ);
+                for(int i=0;i<SEQ*DIM;i++) dy[i] = dx_kv[i] + dx2[i];
                 t_rms_bwd += tb_ms(mach_absolute_time() - t0);
             }
 
