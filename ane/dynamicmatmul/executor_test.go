@@ -163,10 +163,20 @@ func TestUpdatePrevOneHot(t *testing.T) {
 }
 
 func TestTouchedOneHotRows(t *testing.T) {
-	got := touchedOneHotRows([]int{2, -1, 4, 2}, []int{1, 4})
+	ex := &Executor{
+		prevOneHot: []int{2, -1, 4, 2},
+		rowSeen:    make([]bool, 8),
+	}
+	got := ex.touchedOneHotRows([]int{1, 4})
 	want := []int{2, 4, 1}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("rows=%v want %v", got, want)
+	}
+	ex.clearTouchedRows(got)
+	for _, row := range got {
+		if ex.rowSeen[row] {
+			t.Fatalf("rowSeen[%d]=true after clear", row)
+		}
 	}
 }
 

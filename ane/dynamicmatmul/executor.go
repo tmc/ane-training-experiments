@@ -41,6 +41,8 @@ type Executor struct {
 
 	tiles        []tile
 	prevOneHot   []int
+	touchedRows  []int
+	rowSeen      []bool
 	weightsReady bool
 }
 
@@ -74,6 +76,7 @@ func New(batch, inDim, outDim int, opts Options) (*Executor, error) {
 		outDim:     outDim,
 		tiles:      tiles,
 		prevOneHot: initPrevOneHot(batch),
+		rowSeen:    make([]bool, inDim),
 	}, nil
 }
 
@@ -312,11 +315,14 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 		}
 	}
 
+	rows := e.touchedOneHotRows(xs)
+	defer e.clearTouchedRows(rows)
+
 	var hwNS uint64
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageOneHotActivations(tile.inputPacked, e.prevOneHot, xs, e.batch, tile.outDim)
-		if err := writeTileRows(tile, touchedOneHotRows(e.prevOneHot, xs)); err != nil {
+		if err := writeTileRows(tile, rows); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write one-hot tile %d: %w", i, err)
 		}
 		st, err := tile.k.EvalWithStats()
@@ -567,26 +573,26 @@ func updatePrevOneHot(prev []int, cur []int) {
 	}
 }
 
-func touchedOneHotRows(prev, cur []int) []int {
-	rows := make([]int, 0, len(prev)+len(cur))
-	for _, x := range prev {
-		if x >= 0 {
-			rows = appendUniqueInt(rows, x)
+func (e *Executor) touchedOneHotRows(cur []int) []int {
+	rows := e.touchedRows[:0]
+	for _, x := range e.prevOneHot {
+		if x >= 0 && !e.rowSeen[x] {
+			e.rowSeen[x] = true
+			rows = append(rows, x)
 		}
 	}
 	for _, x := range cur {
-		if x >= 0 {
-			rows = appendUniqueInt(rows, x)
+		if x >= 0 && !e.rowSeen[x] {
+			e.rowSeen[x] = true
+			rows = append(rows, x)
 		}
 	}
+	e.touchedRows = rows
 	return rows
 }
 
-func appendUniqueInt(dst []int, v int) []int {
-	for _, x := range dst {
-		if x == v {
-			return dst
-		}
+func (e *Executor) clearTouchedRows(rows []int) {
+	for _, x := range rows {
+		e.rowSeen[x] = false
 	}
-	return append(dst, v)
 }
