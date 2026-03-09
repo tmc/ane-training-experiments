@@ -378,6 +378,8 @@ int main(int argc, char *argv[]) {
         float *xnorm_buf = (float*)malloc(SEQ*DIM*4);
         float *logits = (float*)malloc(SEQ*CV*4);
         float *dlogits = (float*)malloc(SEQ*CV*4);
+        float *logits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE
+        float *dlogits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE grad
         float *gate_buf = (float*)malloc(SEQ*HIDDEN*4);
         float *dh1 = (float*)malloc(SEQ*HIDDEN*4);
         float *dh3 = (float*)malloc(SEQ*HIDDEN*4);
@@ -500,7 +502,9 @@ int main(int argc, char *argv[]) {
             t0 = mach_absolute_time();
             cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                         CV, SEQ, DIM, 1.0f, cembed, DIM, x_final, SEQ, 0.0f, logits, SEQ);
-            float loss = cross_entropy_loss(dlogits, logits, ctargets, CV, SEQ);
+            transpose_vs(logits_sv, logits, CV, SEQ);
+            float loss = cross_entropy_loss_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
+            transpose_vs(dlogits, dlogits_sv, SEQ, CV);  // back to [CV, SEQ]
             t_cls += tb_ms(mach_absolute_time() - t0);
             last_loss = loss;
 

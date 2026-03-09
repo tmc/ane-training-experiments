@@ -81,30 +81,31 @@ static void adam_update(float *w, const float *g, AdamState *s, int t, float lr,
     }
 }
 
-// Cross-entropy loss: operates on logits[V, S] column-major (each column = one token)
-// Avoids transposing by using a per-token temp buffer
-static float cross_entropy_loss(float *dlogits, const float *logits, const uint16_t *targets, int V, int S) {
-    float *col = must_tmp_buf(&g_ce_col, &g_ce_col_cap, V, "ce_col");
+// Transpose [V, S] → [S, V] (column-major to row-major per token)
+static void transpose_vs(float *dst, const float *src, int V, int S) {
+    for (int v = 0; v < V; v++)
+        for (int s = 0; s < S; s++)
+            dst[s*V + v] = src[v*S + s];
+}
+
+// Cross-entropy loss on row-major logits[S, V]: each token's V logits are contiguous
+static float cross_entropy_loss_rowmajor(float *dlogits_sv, const float *logits_sv,
+                                          const uint16_t *targets, int V, int S) {
     float total_loss = 0;
     float invS = 1.0f / S;
     for (int t = 0; t < S; t++) {
-        // Gather column t: logits[v, t] = logits[v*S + t], stride=S
-        cblas_scopy(V, logits + t, S, col, 1);
-        // Softmax
-        float maxv; vDSP_maxv(col, 1, &maxv, (vDSP_Length)V);
+        const float *row = logits_sv + t*V;
+        float *drow = dlogits_sv + t*V;
+        float maxv; vDSP_maxv(row, 1, &maxv, (vDSP_Length)V);
         float neg_max = -maxv;
-        vDSP_vsadd(col, 1, &neg_max, col, 1, (vDSP_Length)V);
-        int n = V; vvexpf(col, col, &n);
-        float sum; vDSP_sve(col, 1, &sum, (vDSP_Length)V);
-        float inv_sum = 1.0f / sum;
-        vDSP_vsmul(col, 1, &inv_sum, col, 1, (vDSP_Length)V);
-        // Loss + gradient
-        int tgt = targets[t];
-        total_loss -= logf(col[tgt] + 1e-10f);
-        col[tgt] -= 1.0f;
-        vDSP_vsmul(col, 1, &invS, col, 1, (vDSP_Length)V);
-        // Scatter back: dlogits[v*S + t] = col[v]
-        cblas_scopy(V, col, 1, dlogits + t, S);
+        vDSP_vsadd(row, 1, &neg_max, drow, 1, (vDSP_Length)V);
+        int n = V; vvexpf(drow, drow, &n);
+        float sum; vDSP_sve(drow, 1, &sum, (vDSP_Length)V);
+        float inv = 1.0f / sum;
+        vDSP_vsmul(drow, 1, &inv, drow, 1, (vDSP_Length)V);
+        total_loss -= logf(drow[targets[t]] + 1e-10f);
+        drow[targets[t]] -= 1.0f;
+        vDSP_vsmul(drow, 1, &invS, drow, 1, (vDSP_Length)V);
     }
     return total_loss / S;
 }
