@@ -34,3 +34,11 @@ func (p *Pool) WriteFrame(uint64, []byte) error {
 func (p *Pool) ReadFrame(uint64, []byte) error {
 	return fmt.Errorf("espressoio requires darwin")
 }
+
+func (p *Pool) WriteFrameF32(uint64, []float32) error {
+	return fmt.Errorf("espressoio requires darwin")
+}
+
+func (p *Pool) ReadFrameF32(uint64, []float32) error {
+	return fmt.Errorf("espressoio requires darwin")
+}

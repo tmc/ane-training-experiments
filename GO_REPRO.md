@@ -18,7 +18,7 @@ This repository now has a direct-Go path for ANE eval, training control, and Met
 ## Packages
 
 - `ane`: runtime probe API
-- `ane/runtime`: framework load + class discovery
+- `ane/runtime`: ANE/CoreML framework load + class discovery
 - `ane/iosurface`: IOSurface wrappers
 - `ane/model`: `_ANEInMemoryModel` path
 - `ane/clientmodel`: `_ANEClient` + `_ANEModel` path
@@ -39,7 +39,7 @@ fragile ANE lifecycle:
 - `_ANEModel` open/load/map/eval/unload through typed methods on `ANEClient`
 - `_ANERequest` creation via `GetANERequestClass().RequestWithInputs...`
 - Virtual-client and restricted-access diagnostics via typed methods
-- Espresso multibuffer probe via `private/espresso` wrappers
+- Espresso multibuffer probe via `x/espresso`
 
 Direct `clientmodel` shared-events execution is supported in Go.
 

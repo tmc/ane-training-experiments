@@ -43,6 +43,7 @@ func EnsureCoreMLLoaded() error {
 	return coreMLLoadErr
 }
 
+// Deprecated: new code should prefer github.com/tmc/apple/x/espresso.
 // EnsureEspressoLoaded loads the Espresso private framework once.
 func EnsureEspressoLoaded() error {
 	espressoOnce.Do(func() {

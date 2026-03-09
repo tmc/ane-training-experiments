@@ -9,12 +9,10 @@ import (
 	"fmt"
 
 	"github.com/maderix/ANE/ane"
-	aneruntime "github.com/maderix/ANE/ane/runtime"
+	"github.com/maderix/ANE/internal/espressosurface"
 	"github.com/tmc/apple/coregraphics"
-	"github.com/tmc/apple/foundation"
 	"github.com/tmc/apple/objc"
 	"github.com/tmc/apple/private/appleneuralengine"
-	"github.com/tmc/apple/private/espresso"
 )
 
 type report struct {
@@ -58,7 +56,7 @@ func main() {
 	r := report{Probe: probe}
 
 	clientClass := appleneuralengine.GetANEClientClass()
-	if obj := clientClass.SharedConnection(); obj != nil && obj.GetID() != 0 {
+	if obj := clientClass.SharedConnection(); obj.GetID() != 0 {
 		r.SharedConnectionAvailable = true
 		client := appleneuralengine.ANEClientFromID(obj.GetID())
 		r.SharedConnectionIsVirtualKnown = true
@@ -67,7 +65,7 @@ func main() {
 			r.SharedConnectionVirtualClientNonNil = true
 		}
 	}
-	if obj := clientClass.SharedPrivateConnection(); obj != nil && obj.GetID() != 0 {
+	if obj := clientClass.SharedPrivateConnection(); obj.GetID() != 0 {
 		r.SharedPrivateAvailable = true
 	}
 
@@ -75,7 +73,7 @@ func main() {
 	if objc.GetClass("_ANEVirtualClient") != 0 || objc.GetClass("ANEVirtualClient") != 0 {
 		r.VirtualClientClassPresent = true
 	}
-	if obj := vcClass.SharedConnection(); obj != nil && obj.GetID() != 0 {
+	if obj := vcClass.SharedConnection(); obj.GetID() != 0 {
 		r.VirtualClientSharedConnectionAvailable = true
 		vc := appleneuralengine.ANEVirtualClientFromID(obj.GetID())
 		code := vc.Connect()
@@ -117,33 +115,34 @@ func main() {
 }
 
 func probeEspresso() espressoReport {
-	rep := espressoReport{}
-	if err := aneruntime.EnsureEspressoLoaded(); err != nil {
-		rep.LoadError = err.Error()
-		return rep
+	rep := espressoReport{
+		ClassPresent: objc.GetClass("EspressoANEIOSurface") != 0,
 	}
-	rep.FrameworkLoaded = true
-	rep.ClassPresent = objc.GetClass("EspressoANEIOSurface") != 0
 	if !rep.ClassPresent {
 		return rep
 	}
+	rep.FrameworkLoaded = true
 
-	surf := espresso.NewEspressoANEIOSurfaceWithIOSurfacePropertiesAndPixelFormats(
-		newIOSurfaceProps(4096),
-		newPixelFormatsSet(),
-	)
-	if surf.GetID() == 0 {
+	surf, err := espressosurface.Open(4096, 3)
+	if err != nil {
+		rep.LoadError = err.Error()
 		return rep
 	}
-	defer surf.Release()
-
-	rep.InitOK = true
-	surf.ResizeForMultipleAsyncBuffers(3)
+	defer surf.Cleanup()
 	rep.Frames = surf.NFrames()
+	if rep.Frames == 0 {
+		rep.LoadError = "x/espresso ANESurface init failed"
+		return rep
+	}
+	rep.InitOK = true
 
 	seen := make(map[coregraphics.IOSurfaceRef]struct{}, rep.Frames)
 	for i := uint64(0); i < rep.Frames; i++ {
-		frame := surf.IoSurfaceForMultiBufferFrame(i)
+		frame, err := surf.IOSurfaceForFrame(i)
+		if err != nil {
+			rep.LoadError = err.Error()
+			continue
+		}
 		rep.FramePointers = append(rep.FramePointers, uint64(frame))
 		if frame == 0 {
 			continue
@@ -153,21 +152,4 @@ func probeEspresso() espressoReport {
 	}
 	rep.DistinctFrames = len(seen)
 	return rep
-}
-
-func newIOSurfaceProps(bytes uint64) foundation.NSMutableDictionary {
-	num := foundation.GetNSNumberClass()
-	props := foundation.NewNSMutableDictionary()
-	props.SetObjectForKey(num.NumberWithUnsignedLongLong(bytes), foundation.NewStringWithString("IOSurfaceWidth"))
-	props.SetObjectForKey(num.NumberWithUnsignedInt(1), foundation.NewStringWithString("IOSurfaceHeight"))
-	props.SetObjectForKey(num.NumberWithUnsignedInt(1), foundation.NewStringWithString("IOSurfaceBytesPerElement"))
-	props.SetObjectForKey(num.NumberWithUnsignedLongLong(bytes), foundation.NewStringWithString("IOSurfaceBytesPerRow"))
-	props.SetObjectForKey(num.NumberWithUnsignedLongLong(bytes), foundation.NewStringWithString("IOSurfaceAllocSize"))
-	props.SetObjectForKey(num.NumberWithUnsignedInt(0), foundation.NewStringWithString("IOSurfacePixelFormat"))
-	return props
-}
-
-func newPixelFormatsSet() foundation.NSSet {
-	num := foundation.GetNSNumberClass()
-	return foundation.GetNSSetClass().SetWithObject(num.NumberWithUnsignedInt(0))
 }

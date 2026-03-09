@@ -45,9 +45,10 @@ import (
 	"unsafe"
 
 	"github.com/maderix/ANE/ane/clientmodel"
-	"github.com/maderix/ANE/ane/espressoio"
-	"github.com/tmc/apple/metal"
-	"github.com/tmc/apple/objc"
+	"github.com/maderix/ANE/internal/clientkernel"
+	"github.com/maderix/ANE/internal/espressosurface"
+	"github.com/tmc/apple/coregraphics"
+	xespresso "github.com/tmc/apple/x/espresso"
 )
 
 func main() {
@@ -66,11 +67,11 @@ func main() {
 		panic("set -model and valid bytes/iters/warmup")
 	}
 
-	k, err := clientmodel.Compile(clientmodel.CompileOptions{
-		CompiledModelPath: *model,
-		ModelKey:          *key,
-		InputBytes:        []int{*bytes},
-		OutputBytes:       []int{*bytes},
+	k, err := clientkernel.Compile(clientkernel.EvalOptions{
+		ModelPath:   *model,
+		ModelKey:    *key,
+		InputBytes:  uint32(*bytes),
+		OutputBytes: uint32(*bytes),
 	})
 	if err != nil {
 		panic(err)
@@ -136,23 +137,19 @@ func runEspressoExternal(k *clientmodel.Kernel, in, out []byte, warmup, iters in
 		return err
 	}
 
-	inPool, err := espressoio.Open(len(in), 1)
+	inPool, err := espressosurface.Open(len(in), 1)
 	if err != nil {
 		return err
 	}
-	defer inPool.Close()
-	outPool, err := espressoio.Open(len(out), 1)
+	defer inPool.Cleanup()
+	outPool, err := espressosurface.Open(len(out), 1)
 	if err != nil {
 		return err
 	}
-	defer outPool.Close()
+	defer outPool.Cleanup()
 
-	if err := inPool.SetExternalFrameStorage(0, inRef); err != nil {
-		return err
-	}
-	if err := outPool.SetExternalFrameStorage(0, outRef); err != nil {
-		return err
-	}
+	inPool.SetExternalStorage(0, coregraphics.IOSurfaceRef(inRef))
+	outPool.SetExternalStorage(0, coregraphics.IOSurfaceRef(outRef))
 
 	inFrame, err := inPool.IOSurfaceForFrame(0)
 	if err != nil {
@@ -162,14 +159,15 @@ func runEspressoExternal(k *clientmodel.Kernel, in, out []byte, warmup, iters in
 	if err != nil {
 		return err
 	}
-	if inFrame != inRef || outFrame != outRef {
+	if uintptr(inFrame) != inRef || uintptr(outFrame) != outRef {
 		return fmt.Errorf("espresso external storage mismatch")
 	}
 
 	if metalProbe {
-		dev := metal.MTLDeviceObjectFromID(objc.ID(metal.MTLCreateSystemDefaultDevice()))
-		if dev.GetID() != 0 {
-			buf, err := outPool.MetalBufferForFrame(dev, 0)
+		dev, err := xespresso.OpenMetal()
+		if err == nil {
+			defer dev.Close()
+			buf, err := outPool.MetalBuffer(dev, 0)
 			if err != nil {
 				return err
 			}

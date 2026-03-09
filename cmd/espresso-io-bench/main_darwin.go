@@ -44,10 +44,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/maderix/ANE/ane/espressoio"
 	aneiosurface "github.com/maderix/ANE/ane/iosurface"
-	"github.com/tmc/apple/metal"
-	"github.com/tmc/apple/objc"
+	"github.com/maderix/ANE/internal/espressosurface"
+	"github.com/tmc/apple/coregraphics"
+	xespresso "github.com/tmc/apple/x/espresso"
 )
 
 type rawPool struct {
@@ -155,11 +155,11 @@ func runRaw(bytes int, frames uint64, warmup, iters int, payload, sink []byte, c
 }
 
 func runEspresso(bytes int, frames uint64, warmup, iters int, payload, sink []byte, checksum, metalBuf, external bool) error {
-	p, err := espressoio.Open(bytes, frames)
+	p, err := espressosurface.Open(bytes, frames)
 	if err != nil {
 		return fmt.Errorf("espresso open: %w", err)
 	}
-	defer p.Close()
+	defer p.Cleanup()
 
 	refs := make([]uintptr, frames)
 	seen := map[uintptr]struct{}{}
@@ -168,10 +168,10 @@ func runEspresso(bytes int, frames uint64, warmup, iters int, payload, sink []by
 		if err != nil {
 			return err
 		}
-		refs[i] = ref
-		seen[ref] = struct{}{}
+		refs[i] = uintptr(ref)
+		seen[uintptr(ref)] = struct{}{}
 	}
-	fmt.Printf("espresso: frames=%d distinct_refs=%d\n", p.Frames(), len(seen))
+	fmt.Printf("espresso: frames=%d distinct_refs=%d\n", p.NFrames(), len(seen))
 
 	if external {
 		raw, err := newRawPool(bytes, frames)
@@ -180,28 +180,25 @@ func runEspresso(bytes int, frames uint64, warmup, iters int, payload, sink []by
 		}
 		defer raw.Close()
 		for i := range frames {
-			if err := p.SetExternalFrameStorage(i, raw.frames[i].Ref()); err != nil {
-				return fmt.Errorf("espresso set external frame=%d: %w", i, err)
-			}
+			p.SetExternalStorage(i, coregraphics.IOSurfaceRef(raw.frames[i].Ref()))
 			got, err := p.IOSurfaceForFrame(i)
 			if err != nil {
 				return err
 			}
-			if got != raw.frames[i].Ref() {
-				return fmt.Errorf("espresso external frame=%d mismatch got=%#x want=%#x", i, got, raw.frames[i].Ref())
+			if uintptr(got) != raw.frames[i].Ref() {
+				return fmt.Errorf("espresso external frame=%d mismatch got=%#x want=%#x", i, uintptr(got), raw.frames[i].Ref())
 			}
 		}
-		if err := p.RestoreAllInternalStorage(); err != nil {
-			return err
-		}
+		p.RestoreAllInternalStorage()
 		fmt.Printf("espresso: external storage injection PASS\n")
 	}
 
 	if metalBuf {
-		dev := metal.MTLDeviceObjectFromID(objc.ID(metal.MTLCreateSystemDefaultDevice()))
-		if dev.GetID() != 0 {
+		dev, err := xespresso.OpenMetal()
+		if err == nil {
+			defer dev.Close()
 			for i := range frames {
-				buf, err := p.MetalBufferForFrame(dev, i)
+				buf, err := p.MetalBuffer(dev, i)
 				if err != nil {
 					return err
 				}
