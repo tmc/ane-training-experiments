@@ -159,8 +159,8 @@ func (e *DynamicExecutor) LinearOneHotIOIntoWithStats(ctx context.Context, dst [
 	if len(xs) > batch {
 		return st, fmt.Errorf("one-hot batch len=%d want <= %d", len(xs), batch)
 	}
-	if len(dst) != batch*outDim {
-		return st, fmt.Errorf("output length=%d want=%d", len(dst), batch*outDim)
+	if len(dst) != batch*outDim && len(dst) != len(xs)*outDim {
+		return st, fmt.Errorf("output length=%d want=%d or %d", len(dst), batch*outDim, len(xs)*outDim)
 	}
 
 	ck, compiled, err := e.kernelFor(batch, inDim, outDim)

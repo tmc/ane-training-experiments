@@ -393,7 +393,6 @@ type aneLogitsProvider struct {
 	exDynamic   *linear.DynamicExecutor
 	vocab       int
 	spatial     int
-	y           []float32
 	weightsIO   []float32
 	weightsSeen bool
 	compileInit time.Duration
@@ -405,7 +404,6 @@ func newANELogitsProvider(vocab, batch int) (*aneLogitsProvider, error) {
 	p := &aneLogitsProvider{
 		vocab:   vocab,
 		spatial: spatial,
-		y:       make([]float32, vocab*spatial),
 	}
 
 	dyn := linear.NewDynamic(linear.Options{})
@@ -449,7 +447,7 @@ func (p *aneLogitsProvider) LogitsInto(dst, w []float32, xs []int, vocab int) (e
 		}
 		p.weightsSeen = true
 	}
-	lst, err := p.exDynamic.LinearOneHotIOIntoWithStats(context.Background(), p.y, xs, p.spatial, p.vocab, p.vocab)
+	lst, err := p.exDynamic.LinearOneHotIOIntoWithStats(context.Background(), dst, xs, p.spatial, p.vocab, p.vocab)
 	if err != nil {
 		return est, fmt.Errorf("ane logits: dynamic linear: %w", err)
 	}
@@ -461,9 +459,6 @@ func (p *aneLogitsProvider) LogitsInto(dst, w []float32, xs []int, vocab int) (e
 		p.compileSeen = true
 	}
 
-	for s := range xs {
-		copy(dst[s*vocab:(s+1)*vocab], p.y[s*vocab:(s+1)*vocab])
-	}
 	est.Forward = time.Since(forwardStart)
 	return est, nil
 }

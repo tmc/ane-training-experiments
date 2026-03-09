@@ -297,8 +297,14 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 	if len(xs) > e.batch {
 		return EvalStats{}, fmt.Errorf("dynamic matmul: one-hot batch len=%d want <= %d", len(xs), e.batch)
 	}
-	if len(dst) != e.outputLen() {
-		return EvalStats{}, fmt.Errorf("dynamic matmul: output length=%d want=%d", len(dst), e.outputLen())
+	logicalBatch := e.batch
+	switch len(dst) {
+	case e.outputLen():
+		logicalBatch = e.batch
+	case len(xs) * e.outDim:
+		logicalBatch = len(xs)
+	default:
+		return EvalStats{}, fmt.Errorf("dynamic matmul: output length=%d want=%d or %d", len(dst), e.outputLen(), len(xs)*e.outDim)
 	}
 
 	e.mu.Lock()
@@ -332,7 +338,7 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read one-hot tile %d: %w", i, err)
 		}
-		unpackOutputTile(dst, tile.outputPacked, e.batch, e.outDim, tile.outOffset, tile.outDim)
+		unpackOutputTileRows(dst, tile.outputPacked, logicalBatch, e.batch, e.outDim, tile.outOffset, tile.outDim)
 		hwNS += st.HWExecutionNS
 	}
 	updatePrevOneHot(e.prevOneHot, xs)
@@ -424,9 +430,13 @@ func unpackOutput(dst, src []float32, batch, outDim int) {
 }
 
 func unpackOutputTile(dst, src []float32, batch, fullOutDim, outOffset, tileOutDim int) {
+	unpackOutputTileRows(dst, src, batch, batch, fullOutDim, outOffset, tileOutDim)
+}
+
+func unpackOutputTileRows(dst, src []float32, rows, batch, fullOutDim, outOffset, tileOutDim int) {
 	for c := 0; c < tileOutDim; c++ {
 		row := src[c*batch : (c+1)*batch]
-		for t := 0; t < batch; t++ {
+		for t := 0; t < rows; t++ {
 			dst[t*fullOutDim+outOffset+c] = row[t]
 		}
 	}

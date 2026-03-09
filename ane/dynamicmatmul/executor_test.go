@@ -89,6 +89,23 @@ func TestUnpackOutputTile(t *testing.T) {
 	}
 }
 
+func TestUnpackOutputTileRows(t *testing.T) {
+	got := make([]float32, 15)
+	unpackOutputTileRows(got, []float32{
+		1, 2, 99,
+		3, 4, 99,
+		5, 6, 99,
+	}, 2, 3, 5, 1, 3)
+	want := []float32{
+		0, 1, 3, 5, 0,
+		0, 2, 4, 6, 0,
+		0, 0, 0, 0, 0,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("partial unpack=%v want %v", got, want)
+	}
+}
+
 func TestDefaultTileCandidates(t *testing.T) {
 	got := defaultTileCandidates(768)
 	want := []int{512, 384, 256, 128, 64}
