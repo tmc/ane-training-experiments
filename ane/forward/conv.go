@@ -2,7 +2,6 @@ package forward
 
 import (
 	"fmt"
-	"unsafe"
 
 	"github.com/maderix/ANE/ane/model"
 )
@@ -27,8 +26,7 @@ func ConvEvalWithStats(k *model.Kernel, x []float32, s, inDim, outDim int) ([]fl
 		}
 	}
 
-	inBytes := unsafe.Slice((*byte)(unsafe.Pointer(&in[0])), len(in)*4)
-	if err := k.WriteInput(0, inBytes); err != nil {
+	if err := k.WriteInputF32(0, in); err != nil {
 		return nil, est, fmt.Errorf("write input: %w", err)
 	}
 	ev, err := k.EvalWithStats()
@@ -38,8 +36,7 @@ func ConvEvalWithStats(k *model.Kernel, x []float32, s, inDim, outDim int) ([]fl
 	est = ev
 
 	outT := make([]float32, s*outDim)
-	outBytes := unsafe.Slice((*byte)(unsafe.Pointer(&outT[0])), len(outT)*4)
-	if err := k.ReadOutput(0, outBytes); err != nil {
+	if err := k.ReadOutputF32(0, outT); err != nil {
 		return nil, est, fmt.Errorf("read output: %w", err)
 	}
 

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/maderix/ANE/ane/forward"
 	"github.com/maderix/ANE/ane/mil"
 	"github.com/maderix/ANE/ane/model"
 )
@@ -46,6 +45,9 @@ type Executor struct {
 type compiledKernel struct {
 	mu sync.Mutex
 	k  *model.Kernel
+
+	inCF  []float32
+	outCF []float32
 }
 
 // New creates a linear executor.
@@ -92,46 +94,65 @@ func (e *Executor) Close() {
 //
 // x and w use row-major layout.
 func (e *Executor) Linear(ctx context.Context, x, w []float32, batch, inDim, outDim int) ([]float32, error) {
-	out, _, err := e.LinearWithStats(ctx, x, w, batch, inDim, outDim)
+	out := make([]float32, batch*outDim)
+	_, err := e.LinearIntoWithStats(ctx, out, x, w, batch, inDim, outDim)
+	if err != nil {
+		return nil, err
+	}
 	return out, err
 }
 
 // LinearWithStats computes x*w^T and returns per-call execution stats.
 func (e *Executor) LinearWithStats(ctx context.Context, x, w []float32, batch, inDim, outDim int) ([]float32, CallStats, error) {
-	var st CallStats
-	if e == nil {
-		return nil, st, fmt.Errorf("linear executor is nil")
-	}
-	if err := ctxErr(ctx); err != nil {
+	out := make([]float32, batch*outDim)
+	st, err := e.LinearIntoWithStats(ctx, out, x, w, batch, inDim, outDim)
+	if err != nil {
 		return nil, st, err
 	}
+	return out, st, nil
+}
+
+// LinearIntoWithStats computes x*w^T into dst and returns per-call execution stats.
+//
+// dst must have length batch*outDim and uses row-major layout.
+func (e *Executor) LinearIntoWithStats(ctx context.Context, dst, x, w []float32, batch, inDim, outDim int) (CallStats, error) {
+	var st CallStats
+	if e == nil {
+		return st, fmt.Errorf("linear executor is nil")
+	}
+	if err := ctxErr(ctx); err != nil {
+		return st, err
+	}
 	if batch <= 0 || inDim <= 0 || outDim <= 0 {
-		return nil, st, fmt.Errorf("invalid shape: batch=%d inDim=%d outDim=%d", batch, inDim, outDim)
+		return st, fmt.Errorf("invalid shape: batch=%d inDim=%d outDim=%d", batch, inDim, outDim)
 	}
 	if len(x) != batch*inDim {
-		return nil, st, fmt.Errorf("input length=%d want=%d", len(x), batch*inDim)
+		return st, fmt.Errorf("input length=%d want=%d", len(x), batch*inDim)
 	}
 	if len(w) != outDim*inDim {
-		return nil, st, fmt.Errorf("weight length=%d want=%d", len(w), outDim*inDim)
+		return st, fmt.Errorf("weight length=%d want=%d", len(w), outDim*inDim)
+	}
+	if len(dst) != batch*outDim {
+		return st, fmt.Errorf("output length=%d want=%d", len(dst), batch*outDim)
 	}
 
 	ck, compiled, err := e.kernelFor(w, batch, inDim, outDim)
 	if err != nil {
-		return nil, st, err
+		return st, err
 	}
 	st.Compiled = compiled
 	if err := ctxErr(ctx); err != nil {
-		return nil, st, err
+		return st, err
 	}
 
 	ck.mu.Lock()
-	out, est, err := forward.ConvEvalWithStats(ck.k, x, batch, inDim, outDim)
+	est, err := ck.evalInto(dst, x, batch, inDim, outDim)
 	ck.mu.Unlock()
 	if err != nil {
-		return nil, st, fmt.Errorf("linear eval: %w", err)
+		return st, fmt.Errorf("linear eval: %w", err)
 	}
 	st.HWExecutionNS = est.HWExecutionNS
-	return out, st, nil
+	return st, nil
 }
 
 // Prepare compiles and caches a kernel for the provided shape and weights.
@@ -189,17 +210,61 @@ func compileKernel(w []float32, batch, inDim, outDim int, qos uint32) (*model.Ke
 		return nil, fmt.Errorf("build weight blob: %w", err)
 	}
 	k, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenConv(inDim, outDim, batch),
-		WeightBlob:  blob,
-		InputBytes:  []int{batch * inDim * 4},
-		OutputBytes: []int{batch * outDim * 4},
-		QoS:         qos,
-		PerfStats:   true,
+		MILText:       mil.GenConv(inDim, outDim, batch),
+		WeightBlob:    blob,
+		QoS:           qos,
+		PerfStatsMask: 1,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile kernel: %w", err)
 	}
 	return k, nil
+}
+
+func (ck *compiledKernel) evalInto(dst, x []float32, batch, inDim, outDim int) (model.EvalStats, error) {
+	ck.ensureScratch(batch*inDim, batch*outDim)
+	toChannelFirst(ck.inCF, x, batch, inDim)
+	if err := ck.k.WriteInputF32(0, ck.inCF); err != nil {
+		return model.EvalStats{}, fmt.Errorf("write input: %w", err)
+	}
+	st, err := ck.k.EvalWithStats()
+	if err != nil {
+		return model.EvalStats{}, fmt.Errorf("eval: %w", err)
+	}
+	if err := ck.k.ReadOutputF32(0, ck.outCF); err != nil {
+		return model.EvalStats{}, fmt.Errorf("read output: %w", err)
+	}
+	fromChannelFirst(dst, ck.outCF, batch, outDim)
+	return st, nil
+}
+
+func (ck *compiledKernel) ensureScratch(inElems, outElems int) {
+	if cap(ck.inCF) < inElems {
+		ck.inCF = make([]float32, inElems)
+	} else {
+		ck.inCF = ck.inCF[:inElems]
+	}
+	if cap(ck.outCF) < outElems {
+		ck.outCF = make([]float32, outElems)
+	} else {
+		ck.outCF = ck.outCF[:outElems]
+	}
+}
+
+func toChannelFirst(dst, src []float32, s, d int) {
+	for t := 0; t < s; t++ {
+		for i := 0; i < d; i++ {
+			dst[i*s+t] = src[t*d+i]
+		}
+	}
+}
+
+func fromChannelFirst(dst, src []float32, s, d int) {
+	for t := 0; t < s; t++ {
+		for i := 0; i < d; i++ {
+			dst[t*d+i] = src[i*s+t]
+		}
+	}
 }
 
 func kernelKey(w []float32, batch, inDim, outDim int) string {

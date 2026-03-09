@@ -44,6 +44,22 @@ func TestLinearRejectsBadShapes(t *testing.T) {
 	}
 }
 
+func TestLinearIntoRejectsBadShapes(t *testing.T) {
+	ex := New(Options{})
+	_, err := ex.LinearIntoWithStats(context.Background(), []float32{0}, []float32{1}, []float32{1}, 1, 2, 1)
+	if err == nil {
+		t.Fatal("LinearIntoWithStats accepted invalid input length")
+	}
+	_, err = ex.LinearIntoWithStats(context.Background(), []float32{0}, []float32{1, 2}, []float32{1}, 1, 2, 1)
+	if err == nil {
+		t.Fatal("LinearIntoWithStats accepted invalid weight length")
+	}
+	_, err = ex.LinearIntoWithStats(context.Background(), []float32{}, []float32{1, 2}, []float32{1, 2}, 1, 2, 1)
+	if err == nil {
+		t.Fatal("LinearIntoWithStats accepted invalid output length")
+	}
+}
+
 func TestLinearRespectsContext(t *testing.T) {
 	ex := New(Options{})
 	ctx, cancel := context.WithCancel(context.Background())
