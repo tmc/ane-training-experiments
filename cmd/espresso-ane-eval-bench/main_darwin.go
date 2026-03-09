@@ -45,7 +45,6 @@ import (
 	"unsafe"
 
 	"github.com/maderix/ANE/ane/clientmodel"
-	"github.com/maderix/ANE/internal/clientkernel"
 	"github.com/maderix/ANE/internal/espressosurface"
 	"github.com/tmc/apple/coregraphics"
 	xespresso "github.com/tmc/apple/x/espresso"
@@ -67,11 +66,11 @@ func main() {
 		panic("set -model and valid bytes/iters/warmup")
 	}
 
-	k, err := clientkernel.Compile(clientkernel.EvalOptions{
-		ModelPath:   *model,
-		ModelKey:    *key,
-		InputBytes:  uint32(*bytes),
-		OutputBytes: uint32(*bytes),
+	k, err := clientmodel.Compile(clientmodel.CompileOptions{
+		CompiledModelPath: *model,
+		ModelKey:          *key,
+		InputBytes:        []int{*bytes},
+		OutputBytes:       []int{*bytes},
 	})
 	if err != nil {
 		panic(err)

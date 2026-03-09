@@ -18,7 +18,6 @@ import (
 
 	"github.com/maderix/ANE/ane"
 	"github.com/maderix/ANE/ane/clientmodel"
-	"github.com/maderix/ANE/internal/clientkernel"
 	"github.com/tmc/apple/objc"
 )
 
@@ -251,8 +250,8 @@ func main() {
 		return
 	}
 
-	k, err := clientkernel.Compile(clientkernel.EvalOptions{
-		ModelPath:         *compiled,
+	k, err := clientmodel.Compile(clientmodel.CompileOptions{
+		CompiledModelPath: *compiled,
 		ModelPackagePath:  *mlpackage,
 		ModelKey:          *modelKey,
 		ModelType:         *modelType,
@@ -260,8 +259,8 @@ func main() {
 		ForceNewClient:    *forceClientNew,
 		PreferPrivateConn: *preferPrivateClient,
 		QoS:               uint32(*qos),
-		InputBytes:        uint32(*inputBytes),
-		OutputBytes:       uint32(*outputBytes),
+		InputBytes:        []int{*inputBytes},
+		OutputBytes:       []int{*outputBytes},
 	})
 	if err != nil {
 		if *jsonOnError {

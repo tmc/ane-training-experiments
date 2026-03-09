@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane/clientmodel"
-	"github.com/maderix/ANE/internal/clientkernel"
 )
 
 type stats struct {
@@ -65,13 +64,15 @@ func main() {
 	fmt.Println("depth,queue_depth,program_queue_depth,mean_ms,p50_ms,p95_ms,p99_ms,max_ms,evals_per_sec,max_inflight,avg_inflight")
 
 	for _, depth := range workerDepths {
-		ks, err := openKernels(depth, clientkernel.EvalOptions{
-			ModelPath:         *modelPath,
-			ModelKey:          "s",
-			ForceNewClient:    *forceNew,
-			PreferPrivateConn: *preferPriv,
-			InputBytes:        uint32(*inputBytes),
-			OutputBytes:       uint32(*outputBytes),
+		ks, err := openKernels(depth, func() (*clientmodel.Kernel, error) {
+			return clientmodel.Compile(clientmodel.CompileOptions{
+				CompiledModelPath: *modelPath,
+				ModelKey:          "s",
+				ForceNewClient:    *forceNew,
+				PreferPrivateConn: *preferPriv,
+				InputBytes:        []int{*inputBytes},
+				OutputBytes:       []int{*outputBytes},
+			})
 		})
 		if err != nil {
 			log.Printf("depth=%d open failed: %v", depth, err)
@@ -264,10 +265,10 @@ func parseWorkerList(raw string) ([]int, error) {
 	return out, nil
 }
 
-func openKernels(n int, opts clientkernel.EvalOptions) ([]*clientmodel.Kernel, error) {
+func openKernels(n int, open func() (*clientmodel.Kernel, error)) ([]*clientmodel.Kernel, error) {
 	ks := make([]*clientmodel.Kernel, 0, n)
 	for i := 0; i < n; i++ {
-		k, err := clientkernel.Compile(opts)
+		k, err := open()
 		if err != nil {
 			closeAll(ks)
 			return nil, err

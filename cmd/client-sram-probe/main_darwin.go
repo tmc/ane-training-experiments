@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane"
-	"github.com/maderix/ANE/internal/clientkernel"
+	"github.com/maderix/ANE/ane/clientmodel"
 )
 
 type probeCase struct {
@@ -96,17 +96,17 @@ func benchCase(pattern, compiledPattern string, channels, spatial, warmup, iters
 		compiledPath = fmt.Sprintf(compiledPattern, channels, spatial)
 	}
 	bytes := channels * spatial * 4
-	cfg := clientkernel.EvalOptions{
-		ModelPath:        compiledPath,
-		ModelPackagePath: path,
-		QoS:              qos,
-		InputBytes:       uint32(bytes),
-		OutputBytes:      uint32(bytes),
+	opts := clientmodel.CompileOptions{
+		CompiledModelPath: compiledPath,
+		ModelPackagePath:  path,
+		QoS:               qos,
+		InputBytes:        []int{bytes},
+		OutputBytes:       []int{bytes},
 	}
 	if compiledPath != "" {
-		cfg.ModelPackagePath = ""
+		opts.ModelPackagePath = ""
 	}
-	k, err := clientkernel.Compile(cfg)
+	k, err := clientmodel.Compile(opts)
 	if err != nil {
 		return benchResult{}, err
 	}
