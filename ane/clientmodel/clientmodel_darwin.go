@@ -731,6 +731,9 @@ func programForModel(model objc.ID) appleneuralengine.IANEProgramForEvaluation {
 }
 
 func (k *Kernel) WriteInput(i int, b []byte) error {
+	if k == nil {
+		return fmt.Errorf("write input: kernel is nil")
+	}
 	if i < 0 || i >= len(k.inputs) {
 		return fmt.Errorf("write input: index %d out of range", i)
 	}
@@ -738,10 +741,33 @@ func (k *Kernel) WriteInput(i int, b []byte) error {
 }
 
 func (k *Kernel) ReadOutput(i int, b []byte) error {
+	if k == nil {
+		return fmt.Errorf("read output: kernel is nil")
+	}
 	if i < 0 || i >= len(k.outputs) {
 		return fmt.Errorf("read output: index %d out of range", i)
 	}
 	return k.outputs[i].Read(b)
+}
+
+func (k *Kernel) WriteInputF32(i int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("write input f32: kernel is nil")
+	}
+	if i < 0 || i >= len(k.inputs) {
+		return fmt.Errorf("write input f32: index %d out of range", i)
+	}
+	return k.inputs[i].WriteF32(data)
+}
+
+func (k *Kernel) ReadOutputF32(i int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("read output f32: kernel is nil")
+	}
+	if i < 0 || i >= len(k.outputs) {
+		return fmt.Errorf("read output f32: index %d out of range", i)
+	}
+	return k.outputs[i].ReadF32(data)
 }
 
 // InputSurfaceRef returns the underlying IOSurfaceRef handle for input i.

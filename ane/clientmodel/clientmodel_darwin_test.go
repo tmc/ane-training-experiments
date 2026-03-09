@@ -71,6 +71,12 @@ func TestKernelDiagnosticsNil(t *testing.T) {
 	if d.HasVirtualClient || d.VirtualClientConnectKnown || d.SupportsCompletionEventEval || d.IsVirtualClientKnown || d.ModelQueueDepthKnown || d.ProgramQueueDepthKnown || d.CurrentAsyncRequestsInFlightOK || d.RequestsInFlightCountKnown {
 		t.Fatalf("Diagnostics on nil kernel reported unexpected known fields: %+v", d)
 	}
+	if err := k.WriteInputF32(0, nil); err == nil {
+		t.Fatalf("WriteInputF32 on nil kernel succeeded; want error")
+	}
+	if err := k.ReadOutputF32(0, nil); err == nil {
+		t.Fatalf("ReadOutputF32 on nil kernel succeeded; want error")
+	}
 }
 
 func TestSetRequestCompletionHandlerValidation(t *testing.T) {

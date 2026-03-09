@@ -3,12 +3,16 @@
 package pipeline
 
 import (
-	"encoding/binary"
 	"fmt"
-	"math"
 
 	"github.com/maderix/ANE/ane/clientmodel"
-	"github.com/maderix/ANE/ane/espressoio"
+	"github.com/maderix/ANE/ane/model"
+	"github.com/maderix/ANE/internal/clientkernel"
+	"github.com/maderix/ANE/internal/espressosurface"
+	"github.com/maderix/ANE/internal/evalbuffer"
+	"github.com/maderix/ANE/internal/kernelio"
+	"github.com/tmc/apple/coregraphics"
+	xespresso "github.com/tmc/apple/x/espresso"
 )
 
 // EvalOptions configures a synchronous eval runner.
@@ -27,88 +31,51 @@ type EvalOptions struct {
 
 // EvalRunner is a high-level entrypoint for model eval with optional Espresso-backed I/O.
 type EvalRunner struct {
-	k          *clientmodel.Kernel
-	inputBuf   []byte
-	outputBuf  []byte
+	k          evalKernel
+	buf        *evalbuffer.Buffers
 	espresso   bool
-	inPool     *espressoio.Pool
-	outPool    *espressoio.Pool
+	inPool     *xespresso.ANESurface
+	outPool    *xespresso.ANESurface
 	frameCount uint64
 	frameIndex uint64
 }
 
+type evalKernel interface {
+	kernelio.Kernel
+	Eval() error
+	Close()
+}
+
 // OpenEval creates an eval runner.
 func OpenEval(opts EvalOptions) (*EvalRunner, error) {
-	if opts.ModelPath == "" && opts.ModelPackagePath == "" {
-		return nil, fmt.Errorf("open eval: model path is empty")
-	}
-	if opts.InputBytes == 0 || opts.OutputBytes == 0 {
-		return nil, fmt.Errorf("open eval: input and output bytes must be > 0")
-	}
-	if opts.ModelKey == "" {
-		opts.ModelKey = "s"
-	}
 	if opts.EspressoFrames == 0 {
 		opts.EspressoFrames = 1
 	}
-
-	k, err := clientmodel.Compile(clientmodel.CompileOptions{
-		CompiledModelPath: opts.ModelPath,
-		ModelPackagePath:  opts.ModelPackagePath,
-		ModelKey:          opts.ModelKey,
-		ModelType:         opts.ModelType,
-		NetPlistFilename:  opts.NetPlistFilename,
-		QoS:               opts.QoS,
-		InputBytes:        []int{int(opts.InputBytes)},
-		OutputBytes:       []int{int(opts.OutputBytes)},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("open eval: compile client kernel: %w", err)
-	}
-
-	r := &EvalRunner{
-		k:          k,
-		inputBuf:   make([]byte, opts.InputBytes),
-		outputBuf:  make([]byte, opts.OutputBytes),
-		espresso:   opts.UseEspressoIO,
-		frameCount: opts.EspressoFrames,
-	}
-	if !opts.UseEspressoIO {
+	if useClientEvalPath(opts) {
+		k, buf, err := openClientEval(opts)
+		if err != nil {
+			return nil, err
+		}
+		r := &EvalRunner{
+			k:          k,
+			buf:        buf,
+			espresso:   opts.UseEspressoIO,
+			frameCount: opts.EspressoFrames,
+		}
+		if !opts.UseEspressoIO {
+			return r, nil
+		}
+		if err := r.openEspresso(k, buf); err != nil {
+			r.Close()
+			return nil, err
+		}
 		return r, nil
 	}
-
-	inRef, err := k.InputSurfaceRef(0)
+	k, buf, err := openModelEval(opts)
 	if err != nil {
-		r.Close()
-		return nil, fmt.Errorf("open eval: input surface ref: %w", err)
+		return nil, err
 	}
-	outRef, err := k.OutputSurfaceRef(0)
-	if err != nil {
-		r.Close()
-		return nil, fmt.Errorf("open eval: output surface ref: %w", err)
-	}
-
-	r.inPool, err = espressoio.Open(int(opts.InputBytes), opts.EspressoFrames)
-	if err != nil {
-		r.Close()
-		return nil, fmt.Errorf("open eval: create input pool: %w", err)
-	}
-	r.outPool, err = espressoio.Open(int(opts.OutputBytes), opts.EspressoFrames)
-	if err != nil {
-		r.Close()
-		return nil, fmt.Errorf("open eval: create output pool: %w", err)
-	}
-	for i := range opts.EspressoFrames {
-		if err := r.inPool.SetExternalFrameStorage(i, inRef); err != nil {
-			r.Close()
-			return nil, fmt.Errorf("open eval: bind input frame %d: %w", i, err)
-		}
-		if err := r.outPool.SetExternalFrameStorage(i, outRef); err != nil {
-			r.Close()
-			return nil, fmt.Errorf("open eval: bind output frame %d: %w", i, err)
-		}
-	}
-	return r, nil
+	return &EvalRunner{k: k, buf: buf}, nil
 }
 
 // Close releases resources.
@@ -117,19 +84,18 @@ func (r *EvalRunner) Close() error {
 		return nil
 	}
 	if r.inPool != nil {
-		r.inPool.Close()
+		r.inPool.Cleanup()
 		r.inPool = nil
 	}
 	if r.outPool != nil {
-		r.outPool.Close()
+		r.outPool.Cleanup()
 		r.outPool = nil
 	}
 	if r.k != nil {
 		r.k.Close()
 		r.k = nil
 	}
-	r.inputBuf = nil
-	r.outputBuf = nil
+	r.buf = nil
 	return nil
 }
 
@@ -143,64 +109,219 @@ func (r *EvalRunner) EvalBytes(input, output []byte) error {
 	if r == nil || r.k == nil {
 		return fmt.Errorf("eval bytes: runner is closed")
 	}
-	if len(input) > len(r.inputBuf) {
-		return fmt.Errorf("eval bytes: input is %d bytes, want <= %d", len(input), len(r.inputBuf))
+	if err := r.buf.StageBytes(input); err != nil {
+		return fmt.Errorf("eval bytes: %w", err)
 	}
-	if len(output) > len(r.outputBuf) {
-		return fmt.Errorf("eval bytes: output is %d bytes, want <= %d", len(output), len(r.outputBuf))
+	if err := r.writeBytesInput(); err != nil {
+		return err
 	}
-
-	copy(r.inputBuf, input)
-	if len(input) < len(r.inputBuf) {
-		zero(r.inputBuf[len(input):])
+	if err := r.eval("eval bytes"); err != nil {
+		return err
 	}
-
-	if r.espresso {
-		frame := r.nextFrame()
-		if err := r.inPool.WriteFrame(frame, r.inputBuf); err != nil {
-			return fmt.Errorf("eval bytes: espresso write input frame=%d: %w", frame, err)
-		}
-	} else {
-		if err := r.k.WriteInput(0, r.inputBuf); err != nil {
-			return fmt.Errorf("eval bytes: write input: %w", err)
-		}
+	if err := r.readBytesOutput(); err != nil {
+		return err
 	}
-
-	if err := r.k.Eval(); err != nil {
-		return fmt.Errorf("eval bytes: eval: %w", err)
-	}
-
-	if r.espresso {
-		frame := r.currentFrame()
-		if err := r.outPool.ReadFrame(frame, r.outputBuf); err != nil {
-			return fmt.Errorf("eval bytes: espresso read output frame=%d: %w", frame, err)
-		}
-	} else {
-		if err := r.k.ReadOutput(0, r.outputBuf); err != nil {
-			return fmt.Errorf("eval bytes: read output: %w", err)
-		}
-	}
-
-	copy(output, r.outputBuf[:len(output)])
-	return nil
+	return r.buf.CopyBytes(output)
 }
 
 // EvalF32 runs one evaluation with float32 input/output.
 func (r *EvalRunner) EvalF32(input, output []float32) error {
-	if len(input)*4 > len(r.inputBuf) {
-		return fmt.Errorf("eval f32: input is %d bytes, want <= %d", len(input)*4, len(r.inputBuf))
+	if r == nil || r.k == nil {
+		return fmt.Errorf("eval f32: runner is closed")
 	}
-	if len(output)*4 > len(r.outputBuf) {
-		return fmt.Errorf("eval f32: output is %d bytes, want <= %d", len(output)*4, len(r.outputBuf))
+	if err := r.buf.StageF32(input); err != nil {
+		return fmt.Errorf("eval f32: %w", err)
 	}
-	for i, v := range input {
-		binary.LittleEndian.PutUint32(r.inputBuf[i*4:], math.Float32bits(v))
+	if !r.espresso {
+		if err := kernelio.WriteF32(r.k, r.buf, "eval f32"); err != nil {
+			return err
+		}
+		if err := r.eval("eval f32"); err != nil {
+			return err
+		}
+		return kernelio.ReadF32(r.k, r.buf, output, "eval f32")
 	}
-	if err := r.EvalBytes(r.inputBuf[:len(input)*4], r.outputBuf[:len(output)*4]); err != nil {
+	if r.buf.TypedF32() {
+		if err := r.writeF32Input(); err != nil {
+			return err
+		}
+		if err := r.eval("eval f32"); err != nil {
+			return err
+		}
+		if err := r.readF32Output(); err != nil {
+			return err
+		}
+		return r.buf.DecodeF32(output)
+	}
+	if err := r.writeBytesInput(); err != nil {
 		return err
 	}
-	for i := range output {
-		output[i] = math.Float32frombits(binary.LittleEndian.Uint32(r.outputBuf[i*4:]))
+	if err := r.eval("eval f32"); err != nil {
+		return err
+	}
+	if err := r.readBytesOutput(); err != nil {
+		return err
+	}
+	if err := r.buf.DecodeF32(output); err != nil {
+		return fmt.Errorf("eval f32: %w", err)
+	}
+	return nil
+}
+
+func useClientEvalPath(opts EvalOptions) bool {
+	return opts.UseEspressoIO || opts.ModelType != "" || opts.NetPlistFilename != ""
+}
+
+func openClientEval(opts EvalOptions) (*clientmodel.Kernel, *evalbuffer.Buffers, error) {
+	cfg := clientkernel.EvalOptions{
+		ModelPath:        opts.ModelPath,
+		ModelPackagePath: opts.ModelPackagePath,
+		ModelKey:         opts.ModelKey,
+		ModelType:        opts.ModelType,
+		NetPlistFilename: opts.NetPlistFilename,
+		QoS:              opts.QoS,
+		InputBytes:       opts.InputBytes,
+		OutputBytes:      opts.OutputBytes,
+	}
+	cfg = clientkernel.WithDefaults(cfg)
+	if err := clientkernel.Validate(cfg); err != nil {
+		return nil, nil, fmt.Errorf("open eval: %w", err)
+	}
+	k, err := clientkernel.Compile(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open eval: compile client kernel: %w", err)
+	}
+	return k, evalbuffer.New(int(cfg.InputBytes), int(cfg.OutputBytes)), nil
+}
+
+func openModelEval(opts EvalOptions) (*model.Kernel, *evalbuffer.Buffers, error) {
+	modelPath := opts.ModelPackagePath
+	if modelPath == "" {
+		modelPath = opts.ModelPath
+	}
+	if modelPath == "" {
+		return nil, nil, fmt.Errorf("open eval: model path is empty")
+	}
+	cfg := clientkernel.WithDefaults(clientkernel.EvalOptions{
+		ModelPath:        opts.ModelPath,
+		ModelPackagePath: opts.ModelPackagePath,
+		ModelKey:         opts.ModelKey,
+		QoS:              opts.QoS,
+	})
+	k, err := model.Compile(model.CompileOptions{
+		PackagePath: modelPath,
+		ModelKey:    cfg.ModelKey,
+		QoS:         cfg.QoS,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("open eval: compile kernel: %w", err)
+	}
+	if k.NumInputs() != 1 || k.NumOutputs() != 1 {
+		k.Close()
+		return nil, nil, fmt.Errorf("open eval: compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs())
+	}
+	if err := validateBufferSize("input", int(opts.InputBytes), k.InputBytes(0)); err != nil {
+		k.Close()
+		return nil, nil, fmt.Errorf("open eval: %w", err)
+	}
+	if err := validateBufferSize("output", int(opts.OutputBytes), k.OutputBytes(0)); err != nil {
+		k.Close()
+		return nil, nil, fmt.Errorf("open eval: %w", err)
+	}
+	return k, evalbuffer.New(k.InputBytes(0), k.OutputBytes(0)), nil
+}
+
+func validateBufferSize(name string, got, want int) error {
+	if got == 0 || got == want {
+		return nil
+	}
+	return fmt.Errorf("%s bytes = %d, want %d", name, got, want)
+}
+
+func (r *EvalRunner) openEspresso(k *clientmodel.Kernel, buf *evalbuffer.Buffers) error {
+	inRef, err := k.InputSurfaceRef(0)
+	if err != nil {
+		return fmt.Errorf("open eval: input surface ref: %w", err)
+	}
+	outRef, err := k.OutputSurfaceRef(0)
+	if err != nil {
+		return fmt.Errorf("open eval: output surface ref: %w", err)
+	}
+
+	r.inPool, err = espressosurface.Open(len(buf.InputBytesScratch()), r.frameCount)
+	if err != nil {
+		return fmt.Errorf("open eval: create input pool: %w", err)
+	}
+	r.outPool, err = espressosurface.Open(len(buf.OutputBytesScratch()), r.frameCount)
+	if err != nil {
+		return fmt.Errorf("open eval: create output pool: %w", err)
+	}
+	for i := range r.frameCount {
+		r.inPool.SetExternalStorage(i, coregraphics.IOSurfaceRef(inRef))
+		if got, err := r.inPool.IOSurfaceForFrame(i); err != nil || uintptr(got) != inRef {
+			if err != nil {
+				return fmt.Errorf("open eval: bind input frame %d: %w", i, err)
+			}
+			return fmt.Errorf("open eval: bind input frame %d: surface mismatch", i)
+		}
+		r.outPool.SetExternalStorage(i, coregraphics.IOSurfaceRef(outRef))
+		if got, err := r.outPool.IOSurfaceForFrame(i); err != nil || uintptr(got) != outRef {
+			if err != nil {
+				return fmt.Errorf("open eval: bind output frame %d: %w", i, err)
+			}
+			return fmt.Errorf("open eval: bind output frame %d: surface mismatch", i)
+		}
+	}
+	return nil
+}
+
+func (r *EvalRunner) writeBytesInput() error {
+	if r.espresso {
+		frame := r.nextFrame()
+		if err := r.inPool.WriteFrame(frame, r.buf.InputBytesScratch()); err != nil {
+			return fmt.Errorf("eval bytes: espresso write input frame=%d: %w", frame, err)
+		}
+		return nil
+	}
+	return kernelio.WriteBytes(r.k, r.buf, "eval bytes")
+}
+
+func (r *EvalRunner) readBytesOutput() error {
+	if r.espresso {
+		frame := r.currentFrame()
+		if err := r.outPool.ReadFrame(frame, r.buf.OutputBytesScratch()); err != nil {
+			return fmt.Errorf("eval bytes: espresso read output frame=%d: %w", frame, err)
+		}
+		return nil
+	}
+	return kernelio.ReadBytes(r.k, r.buf, "eval bytes")
+}
+
+func (r *EvalRunner) writeF32Input() error {
+	if r.espresso {
+		frame := r.nextFrame()
+		if err := r.inPool.WriteFrameF32(frame, r.buf.InputF32Scratch()); err != nil {
+			return fmt.Errorf("eval f32: espresso write input frame=%d: %w", frame, err)
+		}
+		return nil
+	}
+	return kernelio.WriteF32(r.k, r.buf, "eval f32")
+}
+
+func (r *EvalRunner) readF32Output() error {
+	if r.espresso {
+		frame := r.currentFrame()
+		if err := r.outPool.ReadFrameF32(frame, r.buf.OutputF32Scratch()); err != nil {
+			return fmt.Errorf("eval f32: espresso read output frame=%d: %w", frame, err)
+		}
+		return nil
+	}
+	return nil
+}
+
+func (r *EvalRunner) eval(op string) error {
+	if err := r.k.Eval(); err != nil {
+		return fmt.Errorf("%s: eval: %w", op, err)
 	}
 	return nil
 }
@@ -219,10 +340,4 @@ func (r *EvalRunner) currentFrame() uint64 {
 		return 0
 	}
 	return (r.frameIndex - 1) % r.frameCount
-}
-
-func zero(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
 }

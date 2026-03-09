@@ -65,10 +65,8 @@ func runANESmokeKernel() ([]float32, error) {
 	const spatial = 32
 
 	k, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenConvFP16(channels, channels, spatial),
-		WeightBlob:  mustWeightBlob(identityWeights(channels), channels, channels),
-		InputBytes:  []int{channels * spatial * 2},
-		OutputBytes: []int{channels * spatial * 2},
+		MILText:    mil.GenConvFP16(channels, channels, spatial),
+		WeightBlob: mustWeightBlob(identityWeights(channels), channels, channels),
 	})
 	if err != nil {
 		return nil, err

@@ -141,6 +141,54 @@ func (s *Surface) Read(dst []byte) error {
 	return nil
 }
 
+func (s *Surface) WriteF32(src []float32) error {
+	if s == nil || s.ref == 0 {
+		return fmt.Errorf("write IOSurface f32: nil surface")
+	}
+	if len(src)*4 != s.bytes {
+		return fmt.Errorf("write IOSurface f32: got %d bytes, want %d", len(src)*4, s.bytes)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	if C.IOSurfaceLock(s.ref, 0, nil) != C.kIOReturnSuccess {
+		return fmt.Errorf("write IOSurface f32: lock failed")
+	}
+	base := C.IOSurfaceGetBaseAddress(s.ref)
+	if base == nil {
+		C.IOSurfaceUnlock(s.ref, 0, nil)
+		return fmt.Errorf("write IOSurface f32: nil base address")
+	}
+	dst := unsafe.Slice((*float32)(base), len(src))
+	copy(dst, src)
+	C.IOSurfaceUnlock(s.ref, 0, nil)
+	return nil
+}
+
+func (s *Surface) ReadF32(dst []float32) error {
+	if s == nil || s.ref == 0 {
+		return fmt.Errorf("read IOSurface f32: nil surface")
+	}
+	if len(dst)*4 != s.bytes {
+		return fmt.Errorf("read IOSurface f32: got %d bytes, want %d", len(dst)*4, s.bytes)
+	}
+	if len(dst) == 0 {
+		return nil
+	}
+	if C.IOSurfaceLock(s.ref, C.kIOSurfaceLockReadOnly, nil) != C.kIOReturnSuccess {
+		return fmt.Errorf("read IOSurface f32: lock failed")
+	}
+	base := C.IOSurfaceGetBaseAddress(s.ref)
+	if base == nil {
+		C.IOSurfaceUnlock(s.ref, C.kIOSurfaceLockReadOnly, nil)
+		return fmt.Errorf("read IOSurface f32: nil base address")
+	}
+	src := unsafe.Slice((*float32)(base), len(dst))
+	copy(dst, src)
+	C.IOSurfaceUnlock(s.ref, C.kIOSurfaceLockReadOnly, nil)
+	return nil
+}
+
 func (s *Surface) Close() {
 	if s == nil || s.ref == 0 {
 		return

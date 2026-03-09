@@ -8,9 +8,16 @@ import (
 	"github.com/maderix/ANE/ane/pipeline"
 )
 
+type evalRunner interface {
+	Close() error
+	EspressoEnabled() bool
+	EvalBytes([]byte, []byte) error
+	EvalF32([]float32, []float32) error
+}
+
 // Evaluator provides a high-level model eval entrypoint.
 type Evaluator struct {
-	r *pipeline.EvalRunner
+	r evalRunner
 }
 
 // OpenEvaluator opens a model evaluator with optional Espresso-backed I/O.
@@ -35,7 +42,10 @@ func OpenEvaluator(opts EvalOptions) (*Evaluator, error) {
 
 // Close releases evaluator resources.
 func (e *Evaluator) Close() error {
-	if e == nil || e.r == nil {
+	if e == nil {
+		return nil
+	}
+	if e.r == nil {
 		return nil
 	}
 	err := e.r.Close()

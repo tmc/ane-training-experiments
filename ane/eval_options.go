@@ -4,6 +4,10 @@ package ane
 //
 // On darwin, both ModelPath (.mlmodelc) and ModelPackagePath (.mlpackage)
 // are supported. On non-darwin platforms, OpenEvaluator returns an error.
+// InputBytes and OutputBytes are optional on the default x/ane-backed path and
+// are inferred from compiled model layouts when omitted. They are still
+// required when forcing the older private-client compile path through
+// ModelType or NetPlistFilename.
 type EvalOptions struct {
 	ModelPath        string
 	ModelPackagePath string

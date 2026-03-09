@@ -31,6 +31,12 @@ func (k *Kernel) VirtualClientConnect() (uint32, bool) {
 func (k *Kernel) SupportsCompletionEventEval() bool { return false }
 func (k *Kernel) WriteInput(int, []byte) error      { return fmt.Errorf("ane client model requires darwin") }
 func (k *Kernel) ReadOutput(int, []byte) error      { return fmt.Errorf("ane client model requires darwin") }
+func (k *Kernel) WriteInputF32(int, []float32) error {
+	return fmt.Errorf("ane client model requires darwin")
+}
+func (k *Kernel) ReadOutputF32(int, []float32) error {
+	return fmt.Errorf("ane client model requires darwin")
+}
 func (k *Kernel) InputSurfaceRef(int) (uintptr, error) {
 	return 0, fmt.Errorf("ane client model requires darwin")
 }

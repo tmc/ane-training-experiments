@@ -4,12 +4,14 @@
 package pipeline
 
 import (
-	"encoding/binary"
 	"fmt"
-	"math"
 	"time"
 
-	"github.com/maderix/ANE/ane/clientmodel"
+	"github.com/maderix/ANE/ane/model"
+	"github.com/maderix/ANE/internal/clientkernel"
+	"github.com/maderix/ANE/internal/evalbuffer"
+	"github.com/maderix/ANE/internal/kernelio"
+	xane "github.com/tmc/apple/x/ane"
 )
 
 // Options configures an asymmetric pipeline runner.
@@ -23,44 +25,42 @@ type Options struct {
 
 // Runner manages one model client and two shared events.
 type Runner struct {
-	k           *clientmodel.Kernel
-	waitEvent   *clientmodel.SharedEvent
-	signalEvent *clientmodel.SharedEvent
+	k           *model.Kernel
+	waitEvent   *xane.SharedEvent
+	signalEvent *xane.SharedEvent
 	timeoutMS   uint64
-	inputBytes  []byte
-	outputBytes []byte
+	buf         *evalbuffer.Buffers
 }
 
 // Open creates a new asymmetric pipeline runner.
 func Open(opts Options) (*Runner, error) {
-	if opts.ModelPath == "" {
-		return nil, fmt.Errorf("pipeline open: model path is empty")
+	cfg := clientkernel.EvalOptions{
+		ModelPath:   opts.ModelPath,
+		ModelKey:    opts.ModelKey,
+		InputBytes:  opts.InputBytes,
+		OutputBytes: opts.OutputBytes,
 	}
-	if opts.InputBytes == 0 || opts.OutputBytes == 0 {
-		return nil, fmt.Errorf("pipeline open: input and output bytes must be > 0")
+	cfg = clientkernel.WithDefaults(cfg)
+	if err := clientkernel.Validate(cfg); err != nil {
+		return nil, fmt.Errorf("pipeline open: %w", err)
 	}
-	if opts.ModelKey == "" {
-		opts.ModelKey = "s"
+	k, err := model.Compile(model.CompileOptions{
+		PackagePath: cfg.ModelPath,
+		ModelKey:    cfg.ModelKey,
+		QoS:         cfg.QoS,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("pipeline open: compile kernel: %w", err)
 	}
 	if opts.WaitTimeoutMS == 0 {
 		opts.WaitTimeoutMS = 5000
 	}
-
-	k, err := clientmodel.Compile(clientmodel.CompileOptions{
-		CompiledModelPath: opts.ModelPath,
-		ModelKey:          opts.ModelKey,
-		InputBytes:        []int{int(opts.InputBytes)},
-		OutputBytes:       []int{int(opts.OutputBytes)},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("pipeline open: compile client kernel: %w", err)
-	}
-	waitEvent, err := clientmodel.NewSharedEvent()
+	waitEvent, err := xane.NewSharedEvent()
 	if err != nil {
 		k.Close()
 		return nil, fmt.Errorf("pipeline open: create wait event: %w", err)
 	}
-	signalEvent, err := clientmodel.NewSharedEvent()
+	signalEvent, err := xane.NewSharedEvent()
 	if err != nil {
 		_ = waitEvent.Close()
 		k.Close()
@@ -72,8 +72,7 @@ func Open(opts Options) (*Runner, error) {
 		waitEvent:   waitEvent,
 		signalEvent: signalEvent,
 		timeoutMS:   uint64(opts.WaitTimeoutMS),
-		inputBytes:  make([]byte, opts.InputBytes),
-		outputBytes: make([]byte, opts.OutputBytes),
+		buf:         evalbuffer.New(int(cfg.InputBytes), int(cfg.OutputBytes)),
 	}, nil
 }
 
@@ -94,8 +93,7 @@ func (r *Runner) Close() error {
 		r.k.Close()
 		r.k = nil
 	}
-	r.inputBytes = nil
-	r.outputBytes = nil
+	r.buf = nil
 	return nil
 }
 
@@ -120,7 +118,8 @@ func (r *Runner) SignalWaitFromCPU(value uint64) error {
 	if r == nil || r.waitEvent == nil {
 		return fmt.Errorf("signal wait event: runner is closed")
 	}
-	return r.waitEvent.Signal(value)
+	r.waitEvent.Signal(value)
+	return nil
 }
 
 // WaitForSignal waits for the ANE completion signal event to reach value.
@@ -131,47 +130,33 @@ func (r *Runner) WaitForSignal(value uint64, timeout time.Duration) (bool, error
 	if timeout == 0 {
 		timeout = time.Duration(r.timeoutMS) * time.Millisecond
 	}
-	return r.signalEvent.Wait(value, timeout)
+	return r.signalEvent.Wait(value, timeout), nil
 }
 
 // Eval dispatches one wait+signal evaluation.
-//
-// This uses the direct clientmodel bidirectional shared-event path.
 func (r *Runner) Eval(waitValue, signalValue uint64, input, output []float32) error {
 	if r == nil || r.k == nil || r.waitEvent == nil || r.signalEvent == nil {
 		return fmt.Errorf("pipeline eval: runner is closed")
 	}
-	if len(input)*4 > len(r.inputBytes) {
-		return fmt.Errorf("pipeline eval: input is %d bytes, want <= %d", len(input)*4, len(r.inputBytes))
+	if err := r.buf.StageF32(input); err != nil {
+		return fmt.Errorf("pipeline eval: %w", err)
 	}
-	if len(output)*4 > len(r.outputBytes) {
-		return fmt.Errorf("pipeline eval: output is %d bytes, want <= %d", len(output)*4, len(r.outputBytes))
-	}
-	for i, v := range input {
-		binary.LittleEndian.PutUint32(r.inputBytes[i*4:], math.Float32bits(v))
-	}
-	if err := r.k.WriteInput(0, r.inputBytes); err != nil {
-		return fmt.Errorf("pipeline eval: write input: %w", err)
+	if err := kernelio.WriteF32(r.k, r.buf, "pipeline eval"); err != nil {
+		return err
 	}
 	if err := r.k.EvalBidirectional(
 		r.waitEvent.Port(),
 		waitValue,
 		r.signalEvent.Port(),
 		signalValue,
-		clientmodel.SharedEventEvalOptions{
+		xane.SharedEventEvalOptions{
 			DisableIOFencesUseSharedEvents: true,
 			EnableFWToFWSignal:             false,
 		},
 	); err != nil {
 		return fmt.Errorf("pipeline eval: eval bidirectional: %w", err)
 	}
-	if err := r.k.ReadOutput(0, r.outputBytes); err != nil {
-		return fmt.Errorf("pipeline eval: read output: %w", err)
-	}
-	for i := range output {
-		output[i] = math.Float32frombits(binary.LittleEndian.Uint32(r.outputBytes[i*4:]))
-	}
-	return nil
+	return kernelio.ReadF32(r.k, r.buf, output, "pipeline eval")
 }
 
 // StepCPUOnly is a convenience step for CPU-driven event signaling.
