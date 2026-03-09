@@ -671,10 +671,7 @@ int main(int argc, char *argv[]) {
 
                 // SDPA backward part 1: Q[Q_DIM],K_tiled[Q_DIM],V_tiled[Q_DIM],da[Q_DIM] → dV_full[Q_DIM],probs,dp
                 t0 = mach_absolute_time();
-                io_write_fp16_at(dk.sdpaBwd1->ioIn, 0,       ac->Q,    Q_DIM, SEQ);
-                io_write_fp16_at(dk.sdpaBwd1->ioIn, Q_DIM,   k_tiled,  Q_DIM, SEQ);
-                io_write_fp16_at(dk.sdpaBwd1->ioIn, 2*Q_DIM, v_tiled,  Q_DIM, SEQ);
-                io_write_fp16_at(dk.sdpaBwd1->ioIn, 3*Q_DIM, da_buf,   Q_DIM, SEQ);
+                io_write_sdpa_bwd1_acts(dk.sdpaBwd1->ioIn, ac->Q, k_tiled, v_tiled, da_buf);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
                 t0 = mach_absolute_time();
                 ane_eval(dk.sdpaBwd1);
@@ -683,18 +680,16 @@ int main(int argc, char *argv[]) {
                 // SDPA backward part 2: probs,dp,Q[Q_DIM],K_tiled[Q_DIM] → dQ[Q_DIM],dK_full[Q_DIM]
                 t0 = mach_absolute_time();
                 io_copy(dk.sdpaBwd2->ioIn, 0, dk.sdpaBwd1->ioOut, Q_DIM, 2*SCORE_CH, SEQ);
-                io_write_fp16_at(dk.sdpaBwd2->ioIn, 2*SCORE_CH,       ac->Q,   Q_DIM, SEQ);
-                io_write_fp16_at(dk.sdpaBwd2->ioIn, 2*SCORE_CH+Q_DIM, k_tiled, Q_DIM, SEQ);
+                io_write_sdpa_bwd2_qk(dk.sdpaBwd2->ioIn, 2*SCORE_CH, ac->Q, k_tiled);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
                 t0 = mach_absolute_time();
                 ane_eval(dk.sdpaBwd2);
                 t_ane_bwd += tb_ms(mach_absolute_time() - t0);
 
-                // Read SDPA backward outputs
+                // Read SDPA backward outputs (batched: 2 reads from bwd2, 1 from bwd1)
                 t0 = mach_absolute_time();
-                io_read_fp16(dk.sdpaBwd2->ioOut, dq_full, 0,     Q_DIM, SEQ);  // dQ at full HEADS
-                io_read_fp16(dk.sdpaBwd2->ioOut, dk_full, Q_DIM, Q_DIM, SEQ);  // dK at full HEADS
-                io_read_fp16(dk.sdpaBwd1->ioOut, dv_full, 0,     Q_DIM, SEQ);  // dV at full HEADS
+                io_read_sdpa_bwd2_outputs(dk.sdpaBwd2->ioOut, dq_full, dk_full);
+                io_read_fp16(dk.sdpaBwd1->ioOut, dv_full, 0, Q_DIM, SEQ);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
                 // GQA: reduce dK, dV from Q_DIM (HEADS) → KV_DIM (KV_HEADS)

@@ -312,6 +312,36 @@ static void write_kv_bwd_acts(IOSurfaceRef s, const float *dk, const float *dv) 
     IOSurfaceUnlock(s, 0, NULL);
 }
 
+// Batched write for sdpaBwd1 input: Q,K,V,da each Q_DIM channels, single lock
+static void io_write_sdpa_bwd1_acts(IOSurfaceRef s, const float *Q, const float *K,
+                                     const float *V, const float *da) {
+    IOSurfaceLock(s, 0, NULL);
+    _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
+    cvt_f32_f16(buf,                    Q,  Q_DIM * SEQ);
+    cvt_f32_f16(buf + Q_DIM*SEQ,        K,  Q_DIM * SEQ);
+    cvt_f32_f16(buf + 2*Q_DIM*SEQ,      V,  Q_DIM * SEQ);
+    cvt_f32_f16(buf + 3*Q_DIM*SEQ,      da, Q_DIM * SEQ);
+    IOSurfaceUnlock(s, 0, NULL);
+}
+
+// Batched write for sdpaBwd2 input: Q and K_tiled after the score channels, single lock
+static void io_write_sdpa_bwd2_qk(IOSurfaceRef s, int score_off, const float *Q, const float *K) {
+    IOSurfaceLock(s, 0, NULL);
+    _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
+    cvt_f32_f16(buf + score_off*SEQ,         Q, Q_DIM * SEQ);
+    cvt_f32_f16(buf + (score_off+Q_DIM)*SEQ, K, Q_DIM * SEQ);
+    IOSurfaceUnlock(s, 0, NULL);
+}
+
+// Batched read for sdpaBwd2 output: dQ[Q_DIM] and dK_full[Q_DIM], single lock
+static void io_read_sdpa_bwd2_outputs(IOSurfaceRef s, float *dq, float *dk_full) {
+    IOSurfaceLock(s, kIOSurfaceLockReadOnly, NULL);
+    _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
+    cvt_f16_f32(dq,      buf,                Q_DIM * SEQ);
+    cvt_f16_f32(dk_full, buf + Q_DIM*SEQ,    Q_DIM * SEQ);
+    IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
+}
+
 // Free per-layer surfaces and requests
 static void free_per_layer(PerLayerSurfaces *pls, PerLayerRequests *plr) {
     for (int L = 0; L < NLAYERS; L++) {
