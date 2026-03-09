@@ -1,3 +1,5 @@
+//go:build !darwin
+
 package mil
 
 import (
@@ -55,6 +57,11 @@ func GenConvFP16(inCh, outCh, spatial int) string {
 	)
 }
 
+// GenConvFP32 generates a minimal fp32 conv graph matching the upstream helper.
+func GenConvFP32(inCh, outCh, spatial int) string {
+	return GenConv(inCh, outCh, spatial)
+}
+
 // GenConvDynamicFP16 generates an fp16 conv graph with runtime-provided weights.
 func GenConvDynamicFP16(inCh, outCh, spatial int) string {
 	return fmt.Sprintf(
@@ -97,6 +104,10 @@ func GenMatmul(inCh, outCh, spatial int) string {
 	)
 }
 
+func GenIdentity(channels, spatial int) string {
+	return GenConv(channels, channels, spatial)
+}
+
 // BuildWeightBlob reproduces training/ane_mil_gen.h weight blob layout.
 func BuildWeightBlob(weights []float32, outCh, inCh int) ([]byte, error) {
 	want := outCh * inCh
@@ -119,6 +130,14 @@ func BuildWeightBlob(weights []float32, outCh, inCh int) ([]byte, error) {
 		buf[128+i*2+1] = byte(h >> 8)
 	}
 	return buf, nil
+}
+
+func BuildIdentityWeightBlob(channels int) ([]byte, error) {
+	weights := make([]float32, channels*channels)
+	for i := 0; i < channels; i++ {
+		weights[i*channels+i] = 1
+	}
+	return BuildWeightBlob(weights, channels, channels)
 }
 
 func putU32(dst []byte, v uint32) {
@@ -164,6 +183,8 @@ func float32ToHalfBits(f float32) uint16 {
 // Float32ToHalfBits converts float32 to IEEE 754 half-precision bits.
 func Float32ToHalfBits(f float32) uint16 { return float32ToHalfBits(f) }
 
+func Float32ToFP16(f float32) uint16 { return float32ToHalfBits(f) }
+
 // HalfBitsToFloat32 converts IEEE 754 half-precision bits to float32.
 func HalfBitsToFloat32(h uint16) float32 {
 	sign := uint32(h>>15) & 0x1
@@ -194,3 +215,5 @@ func HalfBitsToFloat32(h uint16) float32 {
 	}
 	return math.Float32frombits(bits)
 }
+
+func FP16ToFloat32(h uint16) float32 { return HalfBitsToFloat32(h) }
