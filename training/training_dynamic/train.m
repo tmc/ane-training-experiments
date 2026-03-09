@@ -400,16 +400,12 @@ int main(int argc, char *argv[]) {
         float *x_cur = (float*)malloc(SEQ*DIM*4);
         float *x_final = (float*)malloc(SEQ*DIM*4);
         float *xnorm_buf = (float*)malloc(SEQ*DIM*4);
-        float *logits = (float*)malloc(SEQ*CV*4);
-        float *dlogits = (float*)malloc(SEQ*CV*4);
         float *logits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE
         float *dlogits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE grad
         float *gate_buf = (float*)malloc(SEQ*HIDDEN*4);
         float *dh1 = (float*)malloc(SEQ*HIDDEN*4);
         float *dh3 = (float*)malloc(SEQ*HIDDEN*4);
         float *dsilu = (float*)malloc(SEQ*HIDDEN*4);
-        float *silu_tmp = (float*)malloc(SEQ*HIDDEN*4);
-        float *silu_tmp2 = (float*)malloc(SEQ*HIDDEN*4);
         // GQA tile/reduce buffers
         float *k_tiled = (float*)malloc(SEQ*Q_DIM*4);  // KV_DIM → Q_DIM
         float *v_tiled = (float*)malloc(SEQ*Q_DIM*4);
@@ -524,28 +520,27 @@ int main(int argc, char *argv[]) {
             t0 = mach_absolute_time();
             rmsnorm(x_final, x_cur, rms_final, DIM, SEQ);
             t_rms += tb_ms(mach_absolute_time() - t0);
+            // Forward classifier: logits_sv[SEQ,CV] = x_final^T @ cembed^T
             t0 = mach_absolute_time();
-            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                        CV, SEQ, DIM, 1.0f, cembed, DIM, x_final, SEQ, 0.0f, logits, SEQ);
-            transpose_vs(logits_sv, logits, CV, SEQ);
+            cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
+                        SEQ, CV, DIM, 1.0f, x_final, SEQ, cembed, DIM, 0.0f, logits_sv, CV);
             float loss = cross_entropy_loss_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
-            transpose_vs(dlogits, dlogits_sv, SEQ, CV);  // back to [CV, SEQ]
             t_cls += tb_ms(mach_absolute_time() - t0);
             last_loss = loss;
 
             // ===== BACKWARD =====
-            vDSP_vsmul(dlogits, 1, &loss_scale, dlogits, 1, (vDSP_Length)(SEQ*CV));
+            vDSP_vsmul(dlogits_sv, 1, &loss_scale, dlogits_sv, 1, (vDSP_Length)(SEQ*CV));
 
-            // Classifier backward
+            // Classifier backward: dy[DIM,SEQ] = cembed^T @ dlogits_sv^T
             t0 = mach_absolute_time();
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                        DIM, SEQ, CV, 1.0f, cembed, DIM, dlogits, SEQ, 0.0f, dy, SEQ);
+            cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
+                        DIM, SEQ, CV, 1.0f, cembed, DIM, dlogits_sv, CV, 0.0f, dy, SEQ);
             t_cls += tb_ms(mach_absolute_time() - t0);
 
-            // dEmbed async
+            // dEmbed async: gcembed[CV,DIM] += dlogits_sv^T @ x_final^T
             dispatch_group_async(dw_grp, dw_q, ^{
-                cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-                            CV, DIM, SEQ, 1.0f, dlogits, SEQ, x_final, SEQ, 1.0f, gcembed, DIM);
+                cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
+                            CV, DIM, SEQ, 1.0f, dlogits_sv, CV, x_final, SEQ, 1.0f, gcembed, DIM);
             });
 
             // Final RMSNorm backward (reuse dx_ffn as scratch)
@@ -572,25 +567,9 @@ int main(int argc, char *argv[]) {
                 io_read_dyn(dk.ffnBwdW2t->ioOut, dsilu, HIDDEN, SEQ);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
-                // SiLU derivative (vectorized)
+                // SiLU derivative (fused single-pass)
                 t0 = mach_absolute_time();
-                {
-                    int n = HIDDEN*SEQ;
-                    float minus1 = -1.0f, one = 1.0f;
-                    vDSP_vsmul(ac->h1, 1, &minus1, silu_tmp, 1, (vDSP_Length)n);
-                    vvexpf(silu_tmp, silu_tmp, &n);
-                    vDSP_vsadd(silu_tmp, 1, &one, silu_tmp, 1, (vDSP_Length)n);
-                    vvrecf(silu_tmp, silu_tmp, &n);  // sig
-                    vDSP_vmul(ac->h1, 1, silu_tmp, 1, dh3, 1, (vDSP_Length)n);
-                    vDSP_vmul(dsilu, 1, dh3, 1, dh3, 1, (vDSP_Length)n);
-                    vDSP_vsadd(silu_tmp, 1, &minus1, silu_tmp2, 1, (vDSP_Length)n);
-                    vDSP_vneg(silu_tmp2, 1, silu_tmp2, 1, (vDSP_Length)n);
-                    vDSP_vmul(ac->h1, 1, silu_tmp2, 1, silu_tmp2, 1, (vDSP_Length)n);
-                    vDSP_vsadd(silu_tmp2, 1, &one, silu_tmp2, 1, (vDSP_Length)n);
-                    vDSP_vmul(silu_tmp, 1, silu_tmp2, 1, silu_tmp2, 1, (vDSP_Length)n);
-                    vDSP_vmul(dsilu, 1, ac->h3, 1, dh1, 1, (vDSP_Length)n);
-                    vDSP_vmul(dh1, 1, silu_tmp2, 1, dh1, 1, (vDSP_Length)n);
-                }
+                silu_backward_fused(dh1, dh3, dsilu, ac->h1, ac->h3, HIDDEN*SEQ);
                 t_silu += tb_ms(mach_absolute_time() - t0);
 
                 // dh1@W1^T + dh3@W3^T → dx_ffn (ANE)

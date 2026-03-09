@@ -45,17 +45,16 @@ static void rmsnorm_bwd(float *dx, float *dw, const float *dy, const float *x, c
     float ss[S], rrms[S], dot[S];
     memset(ss, 0, (size_t)S * sizeof(float));
     memset(dot, 0, (size_t)S * sizeof(float));
+    // Fused loops: compute sum-of-squares and weighted dot in one pass over x
     for (int i=0; i<d; i++) {
         vDSP_vmul(x+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
         vDSP_vadd(tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
+        vDSP_vmul(dy+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vsma(tmp, 1, &w[i], dot, 1, dot, 1, (vDSP_Length)S);
     }
     float invd = 1.0f/d, eps=1e-5f;
     vDSP_vsmsa(ss, 1, &invd, &eps, ss, 1, (vDSP_Length)S);
     int n = S; vvrsqrtf(rrms, ss, &n);
-    for (int i=0; i<d; i++) {
-        vDSP_vmul(dy+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
-        vDSP_vsma(tmp, 1, &w[i], dot, 1, dot, 1, (vDSP_Length)S);
-    }
     vDSP_vmul(rrms, 1, rrms, 1, ss, 1, (vDSP_Length)S);
     vDSP_vsmul(ss, 1, &invd, ss, 1, (vDSP_Length)S);
     vDSP_vmul(dot, 1, ss, 1, dot, 1, (vDSP_Length)S);
@@ -178,6 +177,32 @@ static void embed_backward(float *d_embed, const float *dx, const uint16_t *toke
         int tok = tokens[t];
         for (int d = 0; d < dim; d++)
             d_embed[tok*dim + d] += dx[d*seq + t];
+    }
+}
+
+// Fused SiLU backward: compute sigmoid via vForce, then single scalar loop.
+// 4 vDSP/vv* calls for sigmoid + 1 fused loop (2 reads + 2 writes per element)
+// instead of 13 separate vectorized calls with 13 full array sweeps.
+static float *g_silu_sig = NULL;
+static int g_silu_sig_cap = 0;
+
+static void silu_backward_fused(float *dh1, float *dh3,
+                                 const float *dsilu, const float *h1,
+                                 const float *h3, int n) {
+    float *sig = must_tmp_buf(&g_silu_sig, &g_silu_sig_cap, n, "silu_sig");
+    float minus1 = -1.0f, one = 1.0f;
+
+    // sig = sigmoid(h1) = 1/(1+exp(-h1)) — vectorized transcendentals
+    vDSP_vsmul(h1, 1, &minus1, sig, 1, (vDSP_Length)n);
+    vvexpf(sig, sig, &n);
+    vDSP_vsadd(sig, 1, &one, sig, 1, (vDSP_Length)n);
+    vvrecf(sig, sig, &n);
+
+    // Single pass: compute dh3 and dh1 from sig, h1, h3, dsilu
+    for (int i = 0; i < n; i++) {
+        float s = sig[i], x = h1[i], ds = dsilu[i];
+        dh3[i] = ds * x * s;
+        dh1[i] = ds * h3[i] * s * (1.0f + x * (1.0f - s));
     }
 }
 
