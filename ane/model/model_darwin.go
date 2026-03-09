@@ -181,20 +181,6 @@ func (k *Kernel) OutputLayout(i int) xane.TensorLayout {
 	return k.outputLayout[i]
 }
 
-func (k *Kernel) InputSurfaces() []coregraphics.IOSurfaceRef {
-	if k == nil || k.k == nil {
-		return nil
-	}
-	return k.k.InputSurfaces()
-}
-
-func (k *Kernel) OutputSurfaces() []coregraphics.IOSurfaceRef {
-	if k == nil || k.k == nil {
-		return nil
-	}
-	return k.k.OutputSurfaces()
-}
-
 func (k *Kernel) WriteInput(i int, b []byte) error {
 	if k == nil || k.k == nil {
 		return fmt.Errorf("write input: kernel is closed")
@@ -276,23 +262,6 @@ func (k *Kernel) EvalWithStats() (EvalStats, error) {
 		return EvalStats{}, err
 	}
 	return EvalStats{HWExecutionNS: st.HWExecutionNS}, nil
-}
-
-func (k *Kernel) EvalAsync() <-chan error {
-	if k == nil || k.k == nil {
-		ch := make(chan error, 1)
-		ch <- fmt.Errorf("eval async: kernel is closed")
-		return ch
-	}
-	return k.k.EvalAsync()
-}
-
-func (k *Kernel) EvalAsyncWithCallback(fn func(error)) {
-	if k == nil || k.k == nil {
-		fn(fmt.Errorf("eval async: kernel is closed"))
-		return
-	}
-	k.k.EvalAsyncWithCallback(fn)
 }
 
 func (k *Kernel) Diagnostics() xane.Diagnostics {
@@ -392,14 +361,6 @@ func (k *Kernel) initIO() error {
 		}
 	}
 	return nil
-}
-
-func Float32ToFP16(f float32) uint16 {
-	return xane.Float32ToFP16(f)
-}
-
-func FP16ToFloat32(h uint16) float32 {
-	return xane.FP16ToFloat32(h)
 }
 
 func copySurfaceChannels(

@@ -43,10 +43,8 @@ func (k *Kernel) InputLayout(int) xane.TensorLayout { return xane.TensorLayout{}
 func (k *Kernel) OutputSurface(int) coregraphics.IOSurfaceRef {
 	return 0
 }
-func (k *Kernel) OutputLayout(int) xane.TensorLayout          { return xane.TensorLayout{} }
-func (k *Kernel) InputSurfaces() []coregraphics.IOSurfaceRef  { return nil }
-func (k *Kernel) OutputSurfaces() []coregraphics.IOSurfaceRef { return nil }
-func (k *Kernel) WriteInput(int, []byte) error                { return fmt.Errorf("ane model requires darwin") }
+func (k *Kernel) OutputLayout(int) xane.TensorLayout { return xane.TensorLayout{} }
+func (k *Kernel) WriteInput(int, []byte) error       { return fmt.Errorf("ane model requires darwin") }
 func (k *Kernel) WriteInputF32(int, []float32) error {
 	return fmt.Errorf("ane model requires darwin")
 }
@@ -64,13 +62,7 @@ func (k *Kernel) Eval() error { return fmt.Errorf("ane model requires darwin") }
 func (k *Kernel) EvalWithStats() (EvalStats, error) {
 	return EvalStats{}, fmt.Errorf("ane model requires darwin")
 }
-func (k *Kernel) EvalAsync() <-chan error {
-	ch := make(chan error, 1)
-	ch <- fmt.Errorf("ane model requires darwin")
-	return ch
-}
-func (k *Kernel) EvalAsyncWithCallback(fn func(error)) { fn(fmt.Errorf("ane model requires darwin")) }
-func (k *Kernel) Diagnostics() xane.Diagnostics        { return xane.Diagnostics{} }
+func (k *Kernel) Diagnostics() xane.Diagnostics { return xane.Diagnostics{} }
 func (k *Kernel) EvalWithSignalEvent(uint32, uint64, xane.SharedEventEvalOptions) error {
 	return fmt.Errorf("ane model requires darwin")
 }
@@ -82,6 +74,3 @@ func (k *Kernel) Close() {}
 func CopyOutputChannelsToInput(*Kernel, int, int, *Kernel, int, int, int) error {
 	return fmt.Errorf("ane model requires darwin")
 }
-
-func Float32ToFP16(float32) uint16 { return 0 }
-func FP16ToFloat32(uint16) float32 { return 0 }
