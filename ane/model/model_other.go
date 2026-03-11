@@ -51,11 +51,17 @@ func (k *Kernel) WriteInputF32(int, []float32) error {
 func (k *Kernel) WriteInputFP16(int, []float32) error {
 	return fmt.Errorf("ane model requires darwin")
 }
+func (k *Kernel) WriteInputFP16Channels(int, int, []float32) error {
+	return fmt.Errorf("ane model requires darwin")
+}
 func (k *Kernel) ReadOutput(int, []byte) error { return fmt.Errorf("ane model requires darwin") }
 func (k *Kernel) ReadOutputF32(int, []float32) error {
 	return fmt.Errorf("ane model requires darwin")
 }
 func (k *Kernel) ReadOutputFP16(int, []float32) error {
+	return fmt.Errorf("ane model requires darwin")
+}
+func (k *Kernel) ReadOutputFP16Channels(int, int, []float32) error {
 	return fmt.Errorf("ane model requires darwin")
 }
 func (k *Kernel) Eval() error { return fmt.Errorf("ane model requires darwin") }

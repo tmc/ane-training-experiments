@@ -28,13 +28,24 @@ type layerForward struct {
 	heads  int
 	seq    int
 
+	qkv *model.Kernel
 	att *model.Kernel
 	ffn *model.Kernel
 
+	attSplit bool
+	attTaps  bool
+	ffnTaps  bool
+
+	rmsAtt []float32
+	rmsFFN []float32
+
+	qkvOut []float32
 	attOut []float32
 	ffnOut []float32
 	x2     []float32
 }
+
+var compileStoriesLayerForwardFunc = compileStoriesLayerForward
 
 func compileStoriesLayerForward(layer stories.LayerWeights, seq int) (*layerForward, error) {
 	return compileLayerForward(stories.Dim, stories.Hidden, stories.Heads, seq, layerForwardWeights{
@@ -101,55 +112,70 @@ func compileLayerForward(dim, hidden, heads, seq int, w layerForwardWeights) (_ 
 		return nil, fmt.Errorf("compile layer forward: w3 blob: %w", err)
 	}
 
-	att, err := compileMultiFP16Kernel(
-		mil.GenSDPAForwardTaps(dim, heads, seq),
-		[]model.WeightFile{
-			{Path: "@model_path/weights/rms1.bin", Blob: rmsAttBlob},
-			{Path: "@model_path/weights/wq.bin", Blob: wqBlob},
-			{Path: "@model_path/weights/wk.bin", Blob: wkBlob},
-			{Path: "@model_path/weights/wv.bin", Blob: wvBlob},
-			{Path: "@model_path/weights/wo.bin", Blob: woBlob},
-			{Path: "@model_path/weights/mask.bin", Blob: maskBlob},
-		},
-		dim,
-		6*dim,
-		seq,
+	preferCompact := seq > stories.SeqDefault
+	attWeights := []model.WeightFile{
+		{Path: "@model_path/weights/rms1.bin", Blob: rmsAttBlob},
+		{Path: "@model_path/weights/wq.bin", Blob: wqBlob},
+		{Path: "@model_path/weights/wk.bin", Blob: wkBlob},
+		{Path: "@model_path/weights/wv.bin", Blob: wvBlob},
+		{Path: "@model_path/weights/wo.bin", Blob: woBlob},
+		{Path: "@model_path/weights/mask.bin", Blob: maskBlob},
+	}
+	var (
+		qkv      *model.Kernel
+		att      *model.Kernel
+		attSplit bool
+		attTaps  bool
+		qkvOutCh int
+		attOutCh int
 	)
+	if preferCompact {
+		qkv, att, qkvOutCh, attOutCh, err = compileLayerForwardAttentionSplit(dim, heads, seq, attWeights)
+		if err == nil {
+			attSplit = true
+		}
+	}
+	if att == nil {
+		att, attTaps, attOutCh, err = compileLayerForwardAttention(dim, heads, seq, attWeights, preferCompact)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("compile layer forward: attention: %w", err)
 	}
 	defer func() {
 		if err != nil {
+			closeKernel(qkv)
 			closeKernel(att)
 		}
 	}()
 
-	ffn, err := compileMultiFP16Kernel(
-		mil.GenFFNForwardTaps(dim, hidden, seq),
-		[]model.WeightFile{
-			{Path: "@model_path/weights/rms2.bin", Blob: rmsFFNBlob},
-			{Path: "@model_path/weights/w1.bin", Blob: w1Blob},
-			{Path: "@model_path/weights/w2.bin", Blob: w2Blob},
-			{Path: "@model_path/weights/w3.bin", Blob: w3Blob},
-		},
-		dim,
-		2*dim+3*hidden,
-		seq,
-	)
+	ffnWeights := []model.WeightFile{
+		{Path: "@model_path/weights/rms2.bin", Blob: rmsFFNBlob},
+		{Path: "@model_path/weights/w1.bin", Blob: w1Blob},
+		{Path: "@model_path/weights/w2.bin", Blob: w2Blob},
+		{Path: "@model_path/weights/w3.bin", Blob: w3Blob},
+	}
+	ffn, ffnTaps, ffnOutCh, err := compileLayerForwardFFN(dim, hidden, seq, ffnWeights, preferCompact)
 	if err != nil {
 		return nil, fmt.Errorf("compile layer forward: ffn: %w", err)
 	}
 
 	return &layerForward{
-		dim:    dim,
-		hidden: hidden,
-		heads:  heads,
-		seq:    seq,
-		att:    att,
-		ffn:    ffn,
-		attOut: make([]float32, 6*dim*seq),
-		ffnOut: make([]float32, (2*dim+3*hidden)*seq),
-		x2:     make([]float32, dim*seq),
+		dim:      dim,
+		hidden:   hidden,
+		heads:    heads,
+		seq:      seq,
+		qkv:      qkv,
+		att:      att,
+		ffn:      ffn,
+		attSplit: attSplit,
+		attTaps:  attTaps,
+		ffnTaps:  ffnTaps,
+		rmsAtt:   w.RMSAtt,
+		rmsFFN:   w.RMSFFN,
+		qkvOut:   make([]float32, qkvOutCh*seq),
+		attOut:   make([]float32, attOutCh*seq),
+		ffnOut:   make([]float32, ffnOutCh*seq),
+		x2:       make([]float32, dim*seq),
 	}, nil
 }
 
@@ -157,10 +183,15 @@ func (lf *layerForward) close() {
 	if lf == nil {
 		return
 	}
+	closeKernel(lf.qkv)
 	closeKernel(lf.att)
 	closeKernel(lf.ffn)
+	lf.qkv = nil
 	lf.att = nil
 	lf.ffn = nil
+	lf.rmsAtt = nil
+	lf.rmsFFN = nil
+	lf.qkvOut = nil
 	lf.attOut = nil
 	lf.ffnOut = nil
 	lf.x2 = nil
@@ -182,22 +213,59 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 		return fmt.Errorf("run layer forward: output len=%d want=%d", len(out), want)
 	}
 
-	if err := lf.att.WriteInputFP16(0, x); err != nil {
-		return fmt.Errorf("run layer forward: write attention input: %w", err)
-	}
-	if err := lf.att.Eval(); err != nil {
-		return fmt.Errorf("run layer forward: eval attention: %w", err)
-	}
-	if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
-		return fmt.Errorf("run layer forward: read attention output: %w", err)
-	}
-	attMain := lf.attOut[:want]
-	for i := range lf.x2 {
-		lf.x2[i] = x[i] + attMain[i]
+	if lf.attSplit {
+		if err := lf.qkv.WriteInputFP16(0, x); err != nil {
+			return fmt.Errorf("run layer forward: write qkv input: %w", err)
+		}
+		if err := lf.qkv.Eval(); err != nil {
+			return fmt.Errorf("run layer forward: eval qkv: %w", err)
+		}
+		if cache != nil {
+			if err := lf.qkv.ReadOutputFP16(0, lf.qkvOut); err != nil {
+				return fmt.Errorf("run layer forward: read qkv output: %w", err)
+			}
+		}
+		if err := lf.att.WriteInputFP16(0, x); err != nil {
+			return fmt.Errorf("run layer forward: write attention residual input: %w", err)
+		}
+		if err := model.CopyOutputChannelsToInput(lf.att, 1, 0, lf.qkv, 0, 0, 3*lf.dim); err != nil {
+			if cache == nil {
+				if err := lf.qkv.ReadOutputFP16(0, lf.qkvOut); err != nil {
+					return fmt.Errorf("run layer forward: read qkv output fallback: %w", err)
+				}
+			}
+			if err := lf.att.WriteInputFP16(1, lf.qkvOut); err != nil {
+				return fmt.Errorf("run layer forward: write attention qkv input: %w", err)
+			}
+		}
+		if err := lf.att.Eval(); err != nil {
+			return fmt.Errorf("run layer forward: eval attention apply: %w", err)
+		}
+		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
+			return fmt.Errorf("run layer forward: read attention apply output: %w", err)
+		}
+		copy(lf.x2, lf.attOut[:want])
+	} else {
+		if err := lf.att.WriteInputFP16(0, x); err != nil {
+			return fmt.Errorf("run layer forward: write attention input: %w", err)
+		}
+		if err := lf.att.Eval(); err != nil {
+			return fmt.Errorf("run layer forward: eval attention: %w", err)
+		}
+		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
+			return fmt.Errorf("run layer forward: read attention output: %w", err)
+		}
+		if lf.attTaps {
+			copy(lf.x2, lf.attOut[:want])
+		} else {
+			copy(lf.x2, lf.attOut)
+		}
 	}
 
-	if err := lf.ffn.WriteInputFP16(0, lf.x2); err != nil {
-		return fmt.Errorf("run layer forward: write ffn input: %w", err)
+	if err := model.CopyOutputChannelsToInput(lf.ffn, 0, 0, lf.att, 0, 0, lf.dim); err != nil {
+		if err := lf.ffn.WriteInputFP16(0, lf.x2); err != nil {
+			return fmt.Errorf("run layer forward: write ffn input: %w", err)
+		}
 	}
 	if err := lf.ffn.Eval(); err != nil {
 		return fmt.Errorf("run layer forward: eval ffn: %w", err)
@@ -205,24 +273,105 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 	if err := lf.ffn.ReadOutputFP16(0, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward: read ffn output: %w", err)
 	}
-	ffnMain := lf.ffnOut[:want]
+	ffnMain := lf.ffnOut
+	if lf.ffnTaps {
+		ffnMain = lf.ffnOut[:want]
+	}
 	for i := range out {
 		out[i] = lf.x2[i] + ffnMain[i]
 	}
 	if cache != nil {
-		copy(cache.xNorm, lf.attOut[5*want:6*want])
-		copy(cache.q, lf.attOut[want:2*want])
-		copy(cache.k, lf.attOut[2*want:3*want])
-		copy(cache.v, lf.attOut[3*want:4*want])
-		copy(cache.attOut, lf.attOut[4*want:5*want])
 		copy(cache.x2, lf.x2)
-		hiddenSpan := lf.hidden * lf.seq
-		copy(cache.h1, lf.ffnOut[want:want+hiddenSpan])
-		copy(cache.h3, lf.ffnOut[want+hiddenSpan:want+2*hiddenSpan])
-		copy(cache.gate, lf.ffnOut[want+2*hiddenSpan:want+3*hiddenSpan])
-		copy(cache.x2Norm, lf.ffnOut[want+3*hiddenSpan:want+3*hiddenSpan+want])
+		cache.attTapsReady = false
+		cache.ffnTapsReady = false
+		if lf.attSplit {
+			rmsNormCF(cache.xNorm, x, lf.rmsAtt, lf.dim, lf.seq)
+			copy(cache.q, lf.qkvOut[:want])
+			copy(cache.k, lf.qkvOut[want:2*want])
+			copy(cache.v, lf.qkvOut[2*want:3*want])
+			copy(cache.attOut, lf.attOut[want:2*want])
+			cache.attTapsReady = true
+		} else if lf.attTaps {
+			rmsNormCF(cache.xNorm, x, lf.rmsAtt, lf.dim, lf.seq)
+			copy(cache.q, lf.attOut[want:2*want])
+			copy(cache.k, lf.attOut[2*want:3*want])
+			copy(cache.v, lf.attOut[3*want:4*want])
+			copy(cache.attOut, lf.attOut[4*want:5*want])
+			cache.attTapsReady = true
+		}
+		if lf.ffnTaps {
+			hiddenSpan := lf.hidden * lf.seq
+			copy(cache.h1, lf.ffnOut[want:want+hiddenSpan])
+			copy(cache.h3, lf.ffnOut[want+hiddenSpan:want+2*hiddenSpan])
+			for i := range cache.gate {
+				cache.gate[i] = silu32(cache.h1[i]) * cache.h3[i]
+			}
+			rmsNormCF(cache.x2Norm, cache.x2, lf.rmsFFN, lf.dim, lf.seq)
+			cache.ffnTapsReady = true
+		}
 	}
 	return nil
+}
+
+func compileLayerForwardAttentionSplit(dim, heads, seq int, weights []model.WeightFile) (*model.Kernel, *model.Kernel, int, int, error) {
+	qkvWeights := make([]model.WeightFile, 0, 4)
+	attWeights := make([]model.WeightFile, 0, 2)
+	for _, wf := range weights {
+		switch wf.Path {
+		case "@model_path/weights/rms1.bin", "@model_path/weights/wq.bin", "@model_path/weights/wk.bin", "@model_path/weights/wv.bin":
+			qkvWeights = append(qkvWeights, wf)
+		case "@model_path/weights/wo.bin", "@model_path/weights/mask.bin":
+			attWeights = append(attWeights, wf)
+		}
+	}
+	qkv, err := compileMultiFP16Kernel(mil.GenQKVForwardRMS(dim, seq), qkvWeights, dim, 3*dim, seq)
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("split qkv compile failed: %w", err)
+	}
+	att, err := compileMultiFP16Kernel(mil.GenSDPAApplyForward(dim, heads, seq), attWeights, dim, 2*dim, seq)
+	if err != nil {
+		closeKernel(qkv)
+		return nil, nil, 0, 0, fmt.Errorf("split apply compile failed: %w", err)
+	}
+	return qkv, att, 3 * dim, 2 * dim, nil
+}
+
+func compileLayerForwardAttention(dim, heads, seq int, weights []model.WeightFile, preferCompact bool) (*model.Kernel, bool, int, error) {
+	if !preferCompact {
+		k, err := compileMultiFP16Kernel(mil.GenSDPAForwardTaps(dim, heads, seq), weights, dim, 5*dim, seq)
+		if err == nil {
+			return k, true, 5 * dim, nil
+		}
+		k, compactErr := compileMultiFP16Kernel(mil.GenSDPAForward(dim, heads, seq), weights, dim, dim, seq)
+		if compactErr == nil {
+			return k, false, dim, nil
+		}
+		return nil, false, 0, fmt.Errorf("tap compile failed: %w; compact compile failed: %v", err, compactErr)
+	}
+	k, err := compileMultiFP16Kernel(mil.GenSDPAForward(dim, heads, seq), weights, dim, dim, seq)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	return k, false, dim, nil
+}
+
+func compileLayerForwardFFN(dim, hidden, seq int, weights []model.WeightFile, preferCompact bool) (*model.Kernel, bool, int, error) {
+	if !preferCompact {
+		k, err := compileMultiFP16Kernel(mil.GenFFNForwardTaps(dim, hidden, seq), weights, dim, dim+2*hidden, seq)
+		if err == nil {
+			return k, true, dim + 2*hidden, nil
+		}
+		k, compactErr := compileMultiFP16Kernel(mil.GenFFNForwardRMS(dim, hidden, seq), weights, dim, dim, seq)
+		if compactErr == nil {
+			return k, false, dim, nil
+		}
+		return nil, false, 0, fmt.Errorf("tap compile failed: %w; compact compile failed: %v", err, compactErr)
+	}
+	k, err := compileMultiFP16Kernel(mil.GenFFNForwardRMS(dim, hidden, seq), weights, dim, dim, seq)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	return k, false, dim, nil
 }
 
 func validateLayerWeights(dim, hidden int, w layerForwardWeights) error {

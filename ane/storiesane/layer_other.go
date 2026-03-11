@@ -22,6 +22,8 @@ type layerForwardWeights struct {
 
 type layerForward struct{}
 
+var compileStoriesLayerForwardFunc = compileStoriesLayerForward
+
 func compileStoriesLayerForward(stories.LayerWeights, int) (*layerForward, error) {
 	return nil, fmt.Errorf("ane layer forward is unavailable on this platform")
 }

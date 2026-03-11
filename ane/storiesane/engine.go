@@ -76,26 +76,27 @@ type Engine struct {
 	accum                   *modelGrad
 	layerGrad               stories.LayerWeights
 
-	x           []float32
-	xNorm       []float32
-	logits      []float32
-	dLogits     []float32
-	dy          []float32
-	dx          []float32
-	gRMS        []float32
-	gEmbed      []float32
-	accumGRMS   []float32
-	accumGEmbed []float32
-	gradGate    []float32
-	gradH1      []float32
-	gradH3      []float32
-	gradXNorm   []float32
-	gradX2      []float32
-	gradAtt     []float32
-	gradQ       []float32
-	gradK       []float32
-	gradV       []float32
-	gradPrev    []float32
+	x             []float32
+	xNorm         []float32
+	logits        []float32
+	dLogits       []float32
+	dy            []float32
+	dx            []float32
+	gRMS          []float32
+	gEmbed        []float32
+	accumGRMS     []float32
+	accumGEmbed   []float32
+	gradGate      []float32
+	gradH1        []float32
+	gradH3        []float32
+	gradXNorm     []float32
+	gradX2        []float32
+	gradAtt       []float32
+	gradQ         []float32
+	gradK         []float32
+	gradV         []float32
+	gradPrev      []float32
+	embedGradDone chan struct{}
 }
 
 const (
@@ -255,12 +256,16 @@ func (e *Engine) EvalLogits(tokens []uint16) ([]float32, error) {
 }
 
 // Flush applies any pending accumulated gradients.
-func (e *Engine) Flush() error {
+func (e *Engine) Flush() (time.Duration, error) {
 	if e == nil || e.mw == nil || e.opt == nil {
-		return fmt.Errorf("storiesane flush: engine is closed")
+		return 0, fmt.Errorf("storiesane flush: engine is closed")
 	}
-	_ = e.flushPending()
-	return nil
+	compileDur := e.flushPending()
+	if compileDur > 0 {
+		e.state.CumTrainMS += float64(compileDur) / float64(time.Millisecond)
+		e.state.CumWallMS = float64(time.Since(e.start)) / float64(time.Millisecond)
+	}
+	return compileDur, nil
 }
 
 // State returns a copy of current engine state.
@@ -590,21 +595,23 @@ func (e *Engine) ensureLayers() error {
 		e.layerInitErr = fmt.Errorf("ane layer forward is disabled")
 		return e.layerInitErr
 	}
-	e.layers = make([]*layerForward, len(e.mw.Layers))
-	for i := range e.mw.Layers {
-		lf, err := compileStoriesLayerForward(e.mw.Layers[i], e.seq)
+	layers, err := compileParallel(len(e.mw.Layers), func(i int) (*layerForward, error) {
+		lf, err := compileStoriesLayerForwardFunc(e.mw.Layers[i], e.seq)
 		if err != nil {
-			for j := 0; j < i; j++ {
-				if e.layers[j] != nil {
-					e.layers[j].close()
-				}
-			}
-			e.layers = nil
-			e.layerInitErr = fmt.Errorf("storiesane eval logits: compile layer %d: %w", i, err)
-			return e.layerInitErr
+			return nil, fmt.Errorf("storiesane eval logits: compile layer %d: %w", i, err)
 		}
-		e.layers[i] = lf
+		return lf, nil
+	}, func(lf *layerForward) {
+		if lf != nil {
+			lf.close()
+		}
+	})
+	if err != nil {
+		e.layers = nil
+		e.layerInitErr = err
+		return e.layerInitErr
 	}
+	e.layers = layers
 	return nil
 }
 

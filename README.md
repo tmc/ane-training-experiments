@@ -200,7 +200,7 @@ go run ./cmd/asymmetric-pipeline-go -iters 1 -json=false
 ./scripts/verify_go_parity.sh
 ./scripts/compare_c_objc_vs_go_training.sh --steps 20 --skip-build
 ./scripts/compare_c_objc_vs_go_training.sh --c-mode ane --go-backend full --steps 20 --skip-build --run-order go-c --warmup-steps 1
-./scripts/compare_c_objc_vs_go_training.sh --profile c-match --c-mode ane --go-backend ane --steps 20 --skip-build
+./scripts/compare_c_objc_vs_go_training.sh --profile c-match --c-mode ane --go-backend ane --allow-mismatch --steps 20 --skip-build
 ./scripts/compare_c_objc_vs_go_training.sh --c-mode ane-dynamic --go-backend ane-dynamic --steps 20 --skip-build
 ./scripts/compare_c_objc_vs_go_training.sh --c-mode ane-dynamic --go-backend ane-dynamic --dynamic-accum 20 --steps 20 --skip-build
 ./scripts/compare_c_objc_vs_go_training.sh --c-mode cpu --go-backend cpu --go-model /Volumes/tmc/go/src/github.com/assets/models/stories110M.bin --steps 5

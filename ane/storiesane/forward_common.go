@@ -1,6 +1,10 @@
 package storiesane
 
-import "math"
+import (
+	"math"
+	"runtime"
+	"sync"
+)
 
 func causalAttentionCF(out, qf, kf, vf []float32, heads, headDim, seq int) {
 	scores := make([]float32, seq)
@@ -46,17 +50,51 @@ func linearCF(out, weights, in []float32, outCh, inCh, seq int) {
 }
 
 func rmsNormCF(out, x, w []float32, dim, seq int) {
-	for t := 0; t < seq; t++ {
-		sum := 0.0
-		for i := 0; i < dim; i++ {
-			v := float64(x[i*seq+t])
-			sum += v * v
+	parallelForCF(seq, func(start, end int) {
+		for t := start; t < end; t++ {
+			sum := 0.0
+			for i := 0; i < dim; i++ {
+				v := float64(x[i*seq+t])
+				sum += v * v
+			}
+			rrms := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
+			for i := 0; i < dim; i++ {
+				out[i*seq+t] = x[i*seq+t] * rrms * w[i]
+			}
 		}
-		rrms := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
-		for i := 0; i < dim; i++ {
-			out[i*seq+t] = x[i*seq+t] * rrms * w[i]
-		}
+	})
+}
+
+func parallelForCF(n int, fn func(start, end int)) {
+	if n <= 0 {
+		return
 	}
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 || n < workers*4 {
+		fn(0, n)
+		return
+	}
+	if workers > n {
+		workers = n
+	}
+	chunk := (n + workers - 1) / workers
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		start := worker * chunk
+		if start >= n {
+			break
+		}
+		end := start + chunk
+		if end > n {
+			end = n
+		}
+		wg.Add(1)
+		go func(start, end int) {
+			defer wg.Done()
+			fn(start, end)
+		}(start, end)
+	}
+	wg.Wait()
 }
 
 func silu32(x float32) float32 {

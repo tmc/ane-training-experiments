@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/maderix/ANE/ane/stories"
+	"github.com/maderix/ANE/ane/storiesane"
 	"github.com/maderix/ANE/ane/storiestrainer"
 )
 
@@ -76,7 +77,7 @@ func main() {
 		veclibThreads  = flag.Int("veclib-threads", 0, "set VECLIB_MAXIMUM_THREADS for full C/ObjC trainer (0 uses process default)")
 		dwConcurrency  = flag.Int("dw-concurrency", 0, "set C/ObjC dW async task concurrency for full trainer (0 uses trainer default, currently 3)")
 		dynamicBin     = flag.String("dynamic-bin", "", "path to dynamic C/ObjC trainer binary (default: ./training/training_dynamic/train)")
-		seqOverride    = flag.Uint("seq-override", 0, "build and use C/ObjC trainer binaries with compile-time SEQ override (full/ane-dynamic backends)")
+		seqOverride    = flag.Uint("seq-override", 0, "sequence length for direct ane .bin training; also builds and uses C/ObjC trainer binaries with compile-time SEQ override for full/ane-dynamic backends")
 		dynamicANECls  = flag.Bool("dynamic-ane-cls", false, "enable ANE classifier path for ane-dynamic backend")
 		dynamicClsTile = flag.Int("dynamic-ane-cls-tile", 2048, "classifier tile size for ane-dynamic backend when -dynamic-ane-cls is enabled")
 		jsonOut        = flag.Bool("json", true, "emit JSON telemetry to stderr")
@@ -108,6 +109,9 @@ func main() {
 		fatalf("parity-mode is incompatible with backend=ane-dynamic")
 	}
 	selectedBackend := resolveSelectedBackend(*backend, model)
+	if shouldAutoEnableANEHybridBackward(os.Args[1:], selectedBackend, model, *noANEExtras, *aneHybridBwd) {
+		*aneHybridBwd = true
+	}
 	if *parityMode {
 		selectedBackend = "full"
 		if *seqOverride == 0 {
@@ -128,6 +132,8 @@ func main() {
 	}
 	runFullWorkload := selectedBackend == "full"
 	runDynamicWorkload := selectedBackend == "ane-dynamic"
+	directSequenceErr := probeDirectStoriesSequence(selectedBackend, model, *seqOverride)
+	autoBridgeToFull := shouldAutoBridgeStoriesBinToFull(selectedBackend, *trainerBackend, model, directSequenceErr)
 	if *inputBytes == 0 || *outputBytes == 0 {
 		fatalf("input-bytes and output-bytes must be > 0")
 	}
@@ -156,6 +162,41 @@ func main() {
 	}
 	if *saveFinal && requiresCheckpoint && strings.TrimSpace(*ckptPath) == "" {
 		fatalf("save-final requires -ckpt")
+	}
+	if err := validateDirectStoriesBackend(selectedBackend, *trainerBackend, model, *seqOverride, directSequenceErr); err != nil {
+		fatalf("%v", err)
+	}
+	if autoBridgeToFull {
+		fullAccum := *fullAccumSteps
+		if fullAccum == 0 && *accumSteps > 0 {
+			fullAccum = *accumSteps
+		}
+		bridgeBin := *fullBin
+		bridgeSeq := int(*seqOverride)
+		if strings.TrimSpace(bridgeBin) != "" && bridgeSeq > 0 {
+			bridgeSeq = 0
+		}
+		fmt.Printf("go_impl_backend=full_c_exec(auto_seq_bridge)\n")
+		fmt.Printf("auto_bridge_reason=direct_compile_unsupported requested_seq=%d\n", effectiveStoriesSequence(*seqOverride))
+		fmt.Printf("auto_bridge_detail=%q\n", directSequenceErr.Error())
+		if err := runFullTraining(fullRunOptions{
+			binPath:       bridgeBin,
+			seqOverride:   bridgeSeq,
+			modelPath:     model,
+			dataPath:      data,
+			ckptPath:      *ckptPath,
+			resume:        *resume,
+			steps:         int(*steps),
+			lr:            *learningRate,
+			accumSteps:    int(fullAccum),
+			veclibThreads: *veclibThreads,
+			dwConcurrency: *dwConcurrency,
+			noANEExtras:   *noANEExtras,
+			aneClsBwd:     *aneClsBwd,
+		}); err != nil {
+			fatalf("ane auto bridge: %v", err)
+		}
+		return
 	}
 	if runFullWorkload {
 		fmt.Printf("go_impl_backend=full_c_exec\n")
@@ -606,6 +647,59 @@ func resolveSelectedBackend(requested, model string) string {
 
 func isStoriesBinModel(model string) bool {
 	return strings.HasSuffix(strings.ToLower(model), ".bin")
+}
+
+var probeDirectStoriesSequenceFunc = storiesane.ProbeDirectSequence
+
+func shouldAutoEnableANEHybridBackward(args []string, selectedBackend, model string, noANEExtras, hybridBackward bool) bool {
+	if hybridBackward || noANEExtras {
+		return false
+	}
+	if selectedBackend != "ane" || !isStoriesBinModel(model) {
+		return false
+	}
+	return !flagProvided(args, "ane-hybrid-bwd")
+}
+
+func effectiveStoriesSequence(seqOverride uint) int {
+	if seqOverride == 0 {
+		return stories.SeqDefault
+	}
+	return int(seqOverride)
+}
+
+func probeDirectStoriesSequence(selectedBackend, model string, seqOverride uint) error {
+	if selectedBackend != "ane" || !isStoriesBinModel(model) {
+		return nil
+	}
+	return probeDirectStoriesSequenceFunc(effectiveStoriesSequence(seqOverride))
+}
+
+func validateDirectStoriesBackend(selectedBackend, trainerBackend, model string, seqOverride uint, probeErr error) error {
+	if selectedBackend != "ane" || trainerBackend != storiestrainer.BackendDirect || !isStoriesBinModel(model) || probeErr == nil {
+		return nil
+	}
+	return fmt.Errorf("trainer-backend=%s does not support seq-override=%d on this host: %w; use -trainer-backend %s or -backend full", trainerBackend, effectiveStoriesSequence(seqOverride), probeErr, storiestrainer.BackendAuto)
+}
+
+func shouldAutoBridgeStoriesBinToFull(selectedBackend, trainerBackend, model string, probeErr error) bool {
+	if selectedBackend != "ane" || trainerBackend != storiestrainer.BackendAuto {
+		return false
+	}
+	if !isStoriesBinModel(model) {
+		return false
+	}
+	return probeErr != nil
+}
+
+func flagProvided(args []string, name string) bool {
+	prefix := "-" + name
+	for _, arg := range args {
+		if arg == prefix || strings.HasPrefix(arg, prefix+"=") {
+			return true
+		}
+	}
+	return false
 }
 
 func effectiveGoImplBackend(selectedBackend, model string, d storiestrainer.Diagnostics) string {

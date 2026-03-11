@@ -95,6 +95,7 @@ for ((run = 1; run <= RUNS; run++)); do
     --steps "$STEPS"
     --c-mode ane
     --go-backend ane
+    --allow-mismatch
     --seq-override "$SEQ_OVERRIDE"
     --full-accum "$FULL_ACCUM"
     --veclib-threads "$VECLIB_THREADS"

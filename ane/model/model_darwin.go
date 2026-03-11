@@ -239,11 +239,25 @@ func (k *Kernel) WriteInputFP16(i int, data []float32) error {
 	return k.k.WriteInputFP16(i, data)
 }
 
+func (k *Kernel) WriteInputFP16Channels(i, channel int, data []float32) error {
+	if k == nil || k.k == nil {
+		return fmt.Errorf("write input fp16 channels: kernel is closed")
+	}
+	return k.k.WriteInputFP16Channels(i, channel, data)
+}
+
 func (k *Kernel) ReadOutputFP16(i int, data []float32) error {
 	if k == nil || k.k == nil {
 		return fmt.Errorf("read output fp16: kernel is closed")
 	}
 	return k.k.ReadOutputFP16(i, data)
+}
+
+func (k *Kernel) ReadOutputFP16Channels(i, channel int, data []float32) error {
+	if k == nil || k.k == nil {
+		return fmt.Errorf("read output fp16 channels: kernel is closed")
+	}
+	return k.k.ReadOutputFP16Channels(i, channel, data)
 }
 
 func (k *Kernel) Eval() error {

@@ -95,21 +95,62 @@ func EmbedBackward(dEmbed, dx []float32, tokens []uint16, dim, seq int) {
 }
 
 func RMSNorm(out, x, w []float32, d, s int) {
-	for t := 0; t < s; t++ {
-		sum := 0.0
-		for i := 0; i < d; i++ {
-			v := float64(x[i*s+t])
-			sum += v * v
+	parallelFor(s, func(start, end int) {
+		for t := start; t < end; t++ {
+			sum := 0.0
+			for i := 0; i < d; i++ {
+				v := float64(x[i*s+t])
+				sum += v * v
+			}
+			rrms := 1.0 / math.Sqrt(sum/float64(d)+1e-5)
+			for i := 0; i < d; i++ {
+				out[i*s+t] = float32(float64(x[i*s+t]) * rrms * float64(w[i]))
+			}
 		}
-		rrms := 1.0 / math.Sqrt(sum/float64(d)+1e-5)
-		for i := 0; i < d; i++ {
-			out[i*s+t] = float32(float64(x[i*s+t]) * rrms * float64(w[i]))
+	})
+}
+
+func RMSNormBackward(dx, dw, dy, x, w []float32, d, s int) {
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 || s < workers*4 {
+		rmsNormBackwardRange(dx, dw, dy, x, w, d, s, 0, s)
+		return
+	}
+	if workers > s {
+		workers = s
+	}
+	chunk := (s + workers - 1) / workers
+	shards := make([][]float32, workers)
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		start := worker * chunk
+		if start >= s {
+			break
+		}
+		end := start + chunk
+		if end > s {
+			end = s
+		}
+		shards[worker] = make([]float32, d)
+		wg.Add(1)
+		go func(start, end, worker int) {
+			defer wg.Done()
+			rmsNormBackwardRange(dx, shards[worker], dy, x, w, d, s, start, end)
+		}(start, end, worker)
+	}
+	wg.Wait()
+	for _, shard := range shards {
+		if shard == nil {
+			continue
+		}
+		for i := range dw {
+			dw[i] += shard[i]
 		}
 	}
 }
 
-func RMSNormBackward(dx, dw, dy, x, w []float32, d, s int) {
-	for t := 0; t < s; t++ {
+func rmsNormBackwardRange(dx, dw, dy, x, w []float32, d, s, start, end int) {
+	for t := start; t < end; t++ {
 		sum := 0.0
 		for i := 0; i < d; i++ {
 			v := float64(x[i*s+t])

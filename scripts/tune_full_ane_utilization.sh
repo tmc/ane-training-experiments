@@ -309,7 +309,7 @@ done
 		if (best < 0) {
 			print "n/a"
 		} else {
-			printf "./scripts/compare_c_objc_vs_go_training.sh --c-mode ane --go-backend ane --steps %d --seq-override %d --full-accum %d --profile high-util --run-order go-c --warmup-steps %d --skip-build\n", '"$STEPS"', seq, acc, '"$WARMUP_STEPS"'
+			printf "./scripts/compare_c_objc_vs_go_training.sh --c-mode ane --go-backend ane --allow-mismatch --steps %d --seq-override %d --full-accum %d --profile high-util --run-order go-c --warmup-steps %d --skip-build\n", '"$STEPS"', seq, acc, '"$WARMUP_STEPS"'
 		}
 	}' "$CSV"
 } | tee "$SUMMARY"

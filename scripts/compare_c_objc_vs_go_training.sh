@@ -10,7 +10,7 @@ DEFAULT_STORIES_MODEL="/Volumes/tmc/go/src/github.com/assets/models/stories110M.
 DEFAULT_GO_ANE_MODEL="$DEFAULT_STORIES_MODEL"
 C_MODEL="$DEFAULT_STORIES_MODEL"
 GO_MODEL=""
-GO_BACKEND="ane"
+GO_BACKEND="full"
 TRAINER_BACKEND="auto"
 C_MODE="ane"
 FULL_BIN="$ROOT/training/train_large_ane"
@@ -29,6 +29,7 @@ ANE_CLS_BWD=0
 ALLOW_MISMATCH=0
 WARMUP_STEPS=0
 RUN_ORDER="c-go"
+DIRECT_GO_SEQ_LIMIT=256
 
 usage() {
 	cat <<'EOF'
@@ -41,7 +42,7 @@ Flags:
   --data PATH           TinyStories uint16 data path
   --c-model PATH        stories110M .bin path for C/ObjC run
   --go-model PATH       model path for Go run (.mlmodelc or .bin for ane, .bin for ane-dynamic/full/cpu)
-  --go-backend MODE     Go backend: ane|ane-dynamic|full|cpu (default: ane)
+  --go-backend MODE     Go backend: ane|ane-dynamic|full|cpu (default: full)
   --trainer-backend M   direct trainer selector for go ane path: auto|bridge|direct (default: auto)
   --c-mode MODE         C mode: ane|ane-dynamic|cpu (default: ane)
   --full-bin PATH       full trainer binary path (default: ./training/train_large_ane)
@@ -53,7 +54,7 @@ Flags:
   --profile NAME        preset workload profile: default|high-util|c-match (default: c-match)
   --parity-mode         enforce strict full-training parity profile (ane/ane, seq=384, full-accum=80, veclib=6, dw=3)
   --seq-override N      rebuild trainer binaries with SEQ=N for higher work per dispatch
-  --allow-mismatch      allow non-equivalent workload pairings (default: false)
+  --allow-mismatch      allow non-strict workload pairings (default: false)
   --warmup-steps N      ignore first N overlapped steps in summary means (default: 0)
   --run-order ORDER     execution order: c-go|go-c (default: c-go)
   --out-dir DIR         Output directory for logs/csv (default: /tmp/ane_compare)
@@ -346,16 +347,26 @@ if [[ "$C_MODE" == "ane" && "$GO_BACKEND" == "ane" ]]; then
 	# which is not yet strict workload-equivalent to C train_large_ane.
 	if [[ "$GO_MODEL_LOWER" != *.bin ]]; then
 		strict_pair=1
+	elif [[ -n "$SEQ_OVERRIDE" && "$TRAINER_BACKEND" == "auto" && "$SEQ_OVERRIDE" -gt "$DIRECT_GO_SEQ_LIMIT" ]]; then
+		strict_pair=1
 	fi
 fi
 if [[ "$C_MODE" == "ane-dynamic" && "$GO_BACKEND" == "ane-dynamic" ]]; then
 	strict_pair=1
 	backend_pair=1
 fi
-if [[ "$backend_pair" -ne 1 && "$ALLOW_MISMATCH" -ne 1 ]]; then
-	echo "requested pairing is not backend-aligned: c-mode=$C_MODE go-backend=$GO_BACKEND" >&2
-	echo "use ane/ane, ane/full, or cpu/cpu; or pass --allow-mismatch to force" >&2
+if [[ "$strict_pair" -ne 1 && "$ALLOW_MISMATCH" -ne 1 ]]; then
+	if [[ "$backend_pair" -ne 1 ]]; then
+		echo "requested pairing is not backend-aligned: c-mode=$C_MODE go-backend=$GO_BACKEND" >&2
+		echo "use ane/ane, ane/full, ane-dynamic/ane-dynamic, or cpu/cpu; or pass --allow-mismatch to force" >&2
+	else
+		echo "requested pairing is not strict workload-equivalent: c-mode=$C_MODE go-backend=$GO_BACKEND" >&2
+		echo "use ane/full, ane-dynamic/ane-dynamic, or cpu/cpu; or pass --allow-mismatch to force research comparisons" >&2
+	fi
 	exit 2
+fi
+if [[ "$strict_pair" -ne 1 && "$ALLOW_MISMATCH" -eq 1 ]]; then
+	echo "note: running non-strict workload pairing (c-mode=$C_MODE go-backend=$GO_BACKEND)" >&2
 fi
 
 C_FULL_BIN="$FULL_BIN"
@@ -532,6 +543,20 @@ else
 	if [[ "$GO_BACKEND" == "ane" && "$GO_MODEL_LOWER" == *.bin ]]; then
 		if [[ "$FULL_ACCUM" -gt 0 ]]; then
 			go_flags+=(-accum-steps "$FULL_ACCUM")
+			go_flags+=(-full-accum-steps "$FULL_ACCUM")
+		fi
+		if [[ -n "$SEQ_OVERRIDE" ]]; then
+			go_flags+=(-seq-override "$SEQ_OVERRIDE")
+			go_flags+=(-full-bin "$GO_FULL_BIN")
+		fi
+		if [[ "$VECLIB_THREADS" -gt 0 ]]; then
+			go_flags+=(-veclib-threads "$VECLIB_THREADS")
+		fi
+		if [[ "$DW_CONCURRENCY" -gt 0 ]]; then
+			go_flags+=(-dw-concurrency "$DW_CONCURRENCY")
+		fi
+		if [[ "$ANE_CLS_BWD" -eq 1 ]]; then
+			go_flags+=(-ane-cls-bwd)
 		fi
 	fi
 	if [[ "$GO_BACKEND" == "ane-dynamic" ]]; then
@@ -819,7 +844,7 @@ detect_go_mode() {
 		echo "ane_direct"
 		return
 		;;
-	full_c_exec)
+	full_c_exec*)
 		echo "ane_offloaded"
 		return
 		;;
@@ -1084,7 +1109,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	fi
 	if [[ "$GO_BACKEND" == "ane" ]]; then
 		if [[ "$GO_MODEL_LOWER" == *.bin ]]; then
-			if [[ "$GO_MODE" != "cpu_reference" ]]; then
+			if [[ "$GO_MODE" != "cpu_reference" && "$GO_IMPL_BACKEND" != full_c_exec*auto_seq_bridge* ]]; then
 				echo "warning=go backend flag was ane(.bin direct mode) but runtime mode was $GO_MODE"
 			fi
 		elif [[ "$GO_MODE" != "ane_direct" ]]; then

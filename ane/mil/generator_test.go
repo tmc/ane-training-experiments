@@ -58,6 +58,11 @@ func TestExtraGeneratorsContainExpectedOps(t *testing.T) {
 			want: []string{"concat(", "rms2.bin", "w1.bin", "w2.bin", "w3.bin", "sigmoid(", "xn"},
 		},
 		{
+			name: "ffn forward rms",
+			mil:  GenFFNForwardRMS(768, 2048, 256),
+			want: []string{"rms2.bin", "w1.bin", "w2.bin", "w3.bin", "sigmoid(", "xn", "c2"},
+		},
+		{
 			name: "ffn backward",
 			mil:  GenFFNBackward(768, 2048, 256),
 			want: []string{"slice_by_size(", "w2t.bin", "w1t.bin", "w3t.bin", "sub(", "add(", "concat("},
@@ -66,6 +71,21 @@ func TestExtraGeneratorsContainExpectedOps(t *testing.T) {
 			name: "sdpa forward taps",
 			mil:  GenSDPAForwardTaps(768, 12, 256),
 			want: []string{"rms1.bin", "wq.bin", "wk.bin", "wv.bin", "wo.bin", "mask.bin", "softmax(", "concat("},
+		},
+		{
+			name: "sdpa forward",
+			mil:  GenSDPAForward(768, 12, 256),
+			want: []string{"rms1.bin", "wq.bin", "wk.bin", "wv.bin", "wo.bin", "mask.bin", "softmax(", "x2"},
+		},
+		{
+			name: "qkv forward rms",
+			mil:  GenQKVForwardRMS(768, 256),
+			want: []string{"rms1.bin", "wq.bin", "wk.bin", "wv.bin", "concat(", "xn"},
+		},
+		{
+			name: "sdpa apply forward",
+			mil:  GenSDPAApplyForward(768, 12, 256),
+			want: []string{"slice_by_size(", "wo.bin", "mask.bin", "softmax(", "concat(", "x2"},
 		},
 		{
 			name: "qkv backward",

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,6 +155,186 @@ func TestIsStoriesBinModel(t *testing.T) {
 		if got := isStoriesBinModel(tt.path); got != tt.want {
 			t.Fatalf("isStoriesBinModel(%q)=%v want %v", tt.path, got, tt.want)
 		}
+	}
+}
+
+func TestFlagProvided(t *testing.T) {
+	args := []string{
+		"-backend", "ane",
+		"-ane-hybrid-bwd=false",
+		"-steps=2",
+	}
+	if !flagProvided(args, "ane-hybrid-bwd") {
+		t.Fatal("flagProvided(ane-hybrid-bwd)=false want true")
+	}
+	if !flagProvided(args, "steps") {
+		t.Fatal("flagProvided(steps)=false want true")
+	}
+	if flagProvided(args, "missing") {
+		t.Fatal("flagProvided(missing)=true want false")
+	}
+}
+
+func TestShouldAutoEnableANEHybridBackward(t *testing.T) {
+	tests := []struct {
+		name            string
+		args            []string
+		selectedBackend string
+		model           string
+		noANEExtras     bool
+		hybridBackward  bool
+		want            bool
+	}{
+		{
+			name:            "auto enable direct bin",
+			args:            []string{"-backend", "ane"},
+			selectedBackend: "ane",
+			model:           "stories110M.bin",
+			want:            true,
+		},
+		{
+			name:            "explicit hybrid flag disables auto",
+			args:            []string{"-backend", "ane", "-ane-hybrid-bwd=false"},
+			selectedBackend: "ane",
+			model:           "stories110M.bin",
+			want:            false,
+		},
+		{
+			name:            "already enabled",
+			args:            []string{"-backend", "ane"},
+			selectedBackend: "ane",
+			model:           "stories110M.bin",
+			hybridBackward:  true,
+			want:            false,
+		},
+		{
+			name:            "extras disabled",
+			args:            []string{"-backend", "ane"},
+			selectedBackend: "ane",
+			model:           "stories110M.bin",
+			noANEExtras:     true,
+			want:            false,
+		},
+		{
+			name:            "wrapper backend",
+			args:            []string{"-backend", "full"},
+			selectedBackend: "full",
+			model:           "stories110M.bin",
+			want:            false,
+		},
+		{
+			name:            "modelc path",
+			args:            []string{"-backend", "ane"},
+			selectedBackend: "ane",
+			model:           "model.mlmodelc",
+			want:            false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldAutoEnableANEHybridBackward(tt.args, tt.selectedBackend, tt.model, tt.noANEExtras, tt.hybridBackward)
+			if got != tt.want {
+				t.Fatalf("shouldAutoEnableANEHybridBackward()=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestShouldAutoBridgeStoriesBinToFull(t *testing.T) {
+	tests := []struct {
+		name            string
+		selectedBackend string
+		trainerBackend  string
+		model           string
+		probeErr        error
+		want            bool
+	}{
+		{
+			name:            "auto bridge unsupported direct compile",
+			selectedBackend: "ane",
+			trainerBackend:  storiestrainer.BackendAuto,
+			model:           "stories110M.bin",
+			probeErr:        fmt.Errorf("compile failed"),
+			want:            true,
+		},
+		{
+			name:            "direct backend stays direct",
+			selectedBackend: "ane",
+			trainerBackend:  storiestrainer.BackendDirect,
+			model:           "stories110M.bin",
+			probeErr:        fmt.Errorf("compile failed"),
+			want:            false,
+		},
+		{
+			name:            "supported direct compile does not bridge",
+			selectedBackend: "ane",
+			trainerBackend:  storiestrainer.BackendAuto,
+			model:           "stories110M.bin",
+			want:            false,
+		},
+		{
+			name:            "modelc does not bridge",
+			selectedBackend: "ane",
+			trainerBackend:  storiestrainer.BackendAuto,
+			model:           "model.mlmodelc",
+			probeErr:        fmt.Errorf("compile failed"),
+			want:            false,
+		},
+		{
+			name:            "full backend does not bridge",
+			selectedBackend: "full",
+			trainerBackend:  storiestrainer.BackendAuto,
+			model:           "stories110M.bin",
+			probeErr:        fmt.Errorf("compile failed"),
+			want:            false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldAutoBridgeStoriesBinToFull(tt.selectedBackend, tt.trainerBackend, tt.model, tt.probeErr)
+			if got != tt.want {
+				t.Fatalf("shouldAutoBridgeStoriesBinToFull()=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProbeDirectStoriesSequence(t *testing.T) {
+	prev := probeDirectStoriesSequenceFunc
+	probeDirectStoriesSequenceFunc = func(seq int) error {
+		if seq == 384 {
+			return fmt.Errorf("compile failed")
+		}
+		return nil
+	}
+	defer func() {
+		probeDirectStoriesSequenceFunc = prev
+	}()
+
+	if err := probeDirectStoriesSequence("ane", "stories110M.bin", 256); err != nil {
+		t.Fatalf("probeDirectStoriesSequence(default support): %v", err)
+	}
+	if err := probeDirectStoriesSequence("ane", "stories110M.bin", 384); err == nil {
+		t.Fatal("probeDirectStoriesSequence(384)=nil want error")
+	}
+	if err := probeDirectStoriesSequence("full", "stories110M.bin", 384); err != nil {
+		t.Fatalf("probeDirectStoriesSequence(non-ane): %v", err)
+	}
+	if err := probeDirectStoriesSequence("ane", "model.mlmodelc", 384); err != nil {
+		t.Fatalf("probeDirectStoriesSequence(modelc): %v", err)
+	}
+}
+
+func TestValidateDirectStoriesBackend(t *testing.T) {
+	err := validateDirectStoriesBackend("ane", storiestrainer.BackendDirect, "stories110M.bin", 384, fmt.Errorf("compile failed"))
+	if err == nil {
+		t.Fatal("validateDirectStoriesBackend()=nil want error")
+	}
+	if !strings.Contains(err.Error(), "trainer-backend=direct") {
+		t.Fatalf("validateDirectStoriesBackend()=%q missing direct backend context", err)
+	}
+	if err := validateDirectStoriesBackend("ane", storiestrainer.BackendAuto, "stories110M.bin", 384, fmt.Errorf("compile failed")); err != nil {
+		t.Fatalf("validateDirectStoriesBackend(auto): %v", err)
 	}
 }
 

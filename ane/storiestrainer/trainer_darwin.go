@@ -157,6 +157,9 @@ func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 	if seq <= 0 {
 		seq = stories.SeqDefault
 	}
+	if err := storiesane.ProbeDirectSequence(seq); err != nil {
+		return nil, fmt.Errorf("stories trainer open: direct storiesane seq=%d unsupported: %w", seq, err)
+	}
 	engine, err := storiesane.Open(storiesane.Options{
 		ModelPath:      norm.ModelPath,
 		Tokens:         tokens,
@@ -329,9 +332,12 @@ func (t *Trainer) stepCPU() (StepStats, error) {
 	t.lastLoss = res.Loss
 	t.step++
 	if t.totalSteps > 0 && t.step >= t.totalSteps {
-		if err := t.engine.Flush(); err != nil {
+		compileDur, err := t.engine.Flush()
+		if err != nil {
 			return StepStats{}, fmt.Errorf("stories trainer step: flush pending: %w", err)
 		}
+		res.StepDuration += compileDur
+		res.CompileDuration += compileDur
 	}
 	st := t.engine.State()
 	t.tokenPos = st.TokenPos

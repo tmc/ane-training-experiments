@@ -15,7 +15,7 @@ import (
 var (
 	classifierForwardTileCandidates  = []int{2048, 1024, 512}
 	classifierBackwardTileCandidates = []int{2048, 1024}
-	classifierDynamicTileCandidates  = []int{4096, 2048, 1024, 512}
+	classifierDynamicTileCandidates  = []int{8192, 4096, 2048, 1024, 512}
 )
 
 type classifierTile struct {
@@ -42,6 +42,7 @@ type offload struct {
 	rmsBwd    *model.Kernel
 	rmsBwdIn  []float32
 	clsBwdTmp []float32
+	rmsW      []float32
 
 	clsFwdTile int
 	clsBwdTile int
@@ -49,63 +50,53 @@ type offload struct {
 }
 
 func newOffload(mw *stories.ModelWeights, seq int, useANE bool) *offload {
-	return newOffloadWithState(mw, seq, useANE, nil, nil, nil)
+	return newOffloadWithState(mw, seq, useANE, nil, nil, nil, nil, nil)
 }
 
 func refreshOffload(prev *offload, mw *stories.ModelWeights, seq int, useANE bool) *offload {
+	var rmsFwd *model.Kernel
 	var softmax *model.Kernel
 	var clsFwdDyn []classifierDynamicTile
 	var clsBwdDyn []classifierDynamicTile
 	if prev != nil {
+		rmsFwd = prev.rmsFwd
 		softmax = prev.softmax
 		clsFwdDyn = prev.clsFwdDyn
 		clsBwdDyn = prev.clsBwdDyn
+		prev.rmsFwd = nil
 		prev.softmax = nil
 		prev.clsFwdDyn = nil
 		prev.clsBwdDyn = nil
 		prev.close()
 	}
-	return newOffloadWithState(mw, seq, useANE, softmax, clsFwdDyn, clsBwdDyn)
+	return newOffloadWithState(mw, seq, useANE, rmsFwd, nil, softmax, clsFwdDyn, clsBwdDyn)
 }
 
-func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, softmax *model.Kernel, clsFwdDyn, clsBwdDyn []classifierDynamicTile) *offload {
+func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, rmsFwd, rmsBwd, softmax *model.Kernel, clsFwdDyn, clsBwdDyn []classifierDynamicTile) *offload {
 	if !useANE || mw == nil || seq <= 0 {
+		closeKernel(rmsFwd)
+		closeKernel(rmsBwd)
 		closeKernel(softmax)
 		closeDynamicClassifierTiles(clsFwdDyn)
 		closeDynamicClassifierTiles(clsBwdDyn)
 		return nil
 	}
 	o := &offload{
+		rmsFwd:   rmsFwd,
+		rmsBwd:   rmsBwd,
 		rmsBwdIn: make([]float32, 2*stories.Dim*seq),
+		rmsW:     mw.RMSFinal,
 		softmax:  softmax,
 	}
 	var err error
 
-	if blob, err := mil.BuildVectorWeightBlob(mw.RMSFinal); err == nil {
-		o.rmsFwd, err = compileFP16Kernel(
-			mil.GenFinalRMSNorm(stories.Dim, seq),
-			"@model_path/weights/rms_w.bin",
-			blob,
-			stories.Dim,
-			stories.Dim,
-			seq,
-		)
+	if o.rmsFwd == nil {
+		o.rmsFwd, err = model.Compile(model.CompileOptions{
+			MILText: mil.GenFinalRMSNormDynamic(stories.Dim, seq),
+		})
 		if err != nil {
 			o.notef("rms forward compile failed: %v", err)
 		}
-		o.rmsBwd, err = compileFP16Kernel(
-			mil.GenRMSNormBackward(stories.Dim, seq),
-			"@model_path/weights/rms_w.bin",
-			blob,
-			2*stories.Dim,
-			stories.Dim,
-			seq,
-		)
-		if err != nil {
-			o.notef("rms backward compile failed: %v", err)
-		}
-	} else {
-		o.notef("rms weight blob failed: %v", err)
 	}
 	o.clsFwdDyn, o.clsFwdTile, err = prepareDynamicClassifierForward(clsFwdDyn, mw.Embed, seq)
 	if err != nil {
@@ -328,6 +319,9 @@ func disableKernel(k **model.Kernel) {
 }
 
 func (o *offload) runRMSForward(out, x []float32) error {
+	if err := o.rmsFwd.WriteInputFP16(1, o.rmsW); err != nil {
+		return err
+	}
 	if err := o.rmsFwd.WriteInputFP16(0, x); err != nil {
 		return err
 	}
@@ -476,6 +470,9 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 func (o *offload) runRMSBackward(dx, dy, x []float32) error {
 	copy(o.rmsBwdIn, dy)
 	copy(o.rmsBwdIn[len(dy):], x)
+	if err := o.rmsBwd.WriteInputFP16(1, o.rmsW); err != nil {
+		return err
+	}
 	if err := o.rmsBwd.WriteInputFP16(0, o.rmsBwdIn); err != nil {
 		return err
 	}

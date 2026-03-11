@@ -108,6 +108,39 @@ func GenFinalRMSNorm(dim, seq int) string {
 	)
 }
 
+// GenFinalRMSNormDynamic generates a final-layer RMSNorm kernel with runtime-provided weights.
+func GenFinalRMSNormDynamic(dim, seq int) string {
+	invd := 1.0 / float64(dim)
+	return fmt.Sprintf(
+		buildInfoHeader+
+			"{\n"+
+			"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x, tensor<fp16, [1, %d, 1, 1]> rw) {\n"+
+			"        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n"+
+			"        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n"+
+			"        bool kd = const()[name=string(\"kd\"), val=bool(true)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss = reduce_sum(x=sq,axes=rax,keep_dims=kd)[name=string(\"ss\")];\n"+
+			"        fp16 invd = const()[name=string(\"invd\"), val=fp16(%f)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss2 = mul(x=ss,y=invd)[name=string(\"ss2\")];\n"+
+			"        fp16 eps = const()[name=string(\"eps\"), val=fp16(0.00001)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss3 = add(x=ss2,y=eps)[name=string(\"ss3\")];\n"+
+			"        fp16 nhalf = const()[name=string(\"nhalf\"), val=fp16(-0.5)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> rrms = pow(x=ss3,y=nhalf)[name=string(\"rrms\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xr = mul(x=x,y=rrms)[name=string(\"xr\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> out = mul(x=xr,y=rw)[name=string(\"out\")];\n"+
+			"    } -> (out);\n"+
+			"}\n",
+		dim, seq, dim,
+		dim, seq,
+		seq,
+		invd,
+		seq,
+		seq,
+		seq,
+		dim, seq,
+		dim, seq,
+	)
+}
+
 // GenRMSNormBackward generates the dx half of RMSNorm backward with baked weights.
 // The input is concat(dy, x) along the channel dimension; dw remains a cheap CPU reduction.
 func GenRMSNormBackward(dim, seq int) string {
@@ -167,6 +200,63 @@ func GenRMSNormBackward(dim, seq int) string {
 	)
 }
 
+// GenRMSNormBackwardDynamic generates the dx half of RMSNorm backward with runtime-provided weights.
+// The input is concat(dy, x) along the channel dimension; dw remains a cheap CPU reduction.
+func GenRMSNormBackwardDynamic(dim, seq int) string {
+	invd := 1.0 / float64(dim)
+	return fmt.Sprintf(
+		buildInfoHeader+
+			"{\n"+
+			"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> inp, tensor<fp16, [1, %d, 1, 1]> w) {\n"+
+			"        tensor<int32, [4]> sz = const()[name=string(\"sz\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n"+
+			"        tensor<int32, [4]> b0 = const()[name=string(\"b0\"), val=tensor<int32, [4]>([0,0,0,0])];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> dy = slice_by_size(x=inp,begin=b0,size=sz)[name=string(\"sdy\")];\n"+
+			"        tensor<int32, [4]> b1 = const()[name=string(\"b1\"), val=tensor<int32, [4]>([0,%d,0,0])];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> x = slice_by_size(x=inp,begin=b1,size=sz)[name=string(\"sx\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n"+
+			"        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n"+
+			"        bool kd = const()[name=string(\"kd\"), val=bool(true)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss = reduce_sum(x=sq,axes=rax,keep_dims=kd)[name=string(\"ss\")];\n"+
+			"        fp16 invd = const()[name=string(\"invd\"), val=fp16(%f)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss2 = mul(x=ss,y=invd)[name=string(\"ss2\")];\n"+
+			"        fp16 eps = const()[name=string(\"eps\"), val=fp16(0.00001)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss3 = add(x=ss2,y=eps)[name=string(\"ss3\")];\n"+
+			"        fp16 nhalf = const()[name=string(\"nhalf\"), val=fp16(-0.5)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> rrms = pow(x=ss3,y=nhalf)[name=string(\"rrms\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> dyw = mul(x=dy,y=w)[name=string(\"dyw\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> dywx = mul(x=dyw,y=x)[name=string(\"dywx\")];\n"+
+			"        tensor<fp16, [1,1,1,%d]> dot_sum = reduce_sum(x=dywx,axes=rax,keep_dims=kd)[name=string(\"ds\")];\n"+
+			"        tensor<fp16, [1,1,1,%d]> dot_sc = mul(x=dot_sum,y=invd)[name=string(\"dsc\")];\n"+
+			"        tensor<fp16, [1,1,1,%d]> rrms2 = mul(x=rrms,y=rrms)[name=string(\"rr2\")];\n"+
+			"        tensor<fp16, [1,1,1,%d]> coeff = mul(x=dot_sc,y=rrms2)[name=string(\"cof\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xc = mul(x=x,y=coeff)[name=string(\"xc\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> diff = sub(x=dyw,y=xc)[name=string(\"dif\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> out = mul(x=diff,y=rrms)[name=string(\"out\")];\n"+
+			"    } -> (out);\n"+
+			"}\n",
+		2*dim, seq, dim,
+		dim, seq,
+		dim, seq,
+		dim,
+		dim, seq,
+		dim, seq,
+		seq,
+		invd,
+		seq,
+		seq,
+		seq,
+		dim, seq,
+		dim, seq,
+		seq,
+		seq,
+		seq,
+		seq,
+		dim, seq,
+		dim, seq,
+		dim, seq,
+	)
+}
+
 // GenFFNForward generates a fused FFN block with baked W1/W2/W3 weights.
 // It computes W2(silu(W1(x)) * W3(x)).
 func GenFFNForward(dim, hidden, seq int) string {
@@ -203,8 +293,67 @@ func GenFFNForward(dim, hidden, seq int) string {
 	)
 }
 
+// GenFFNForwardRMS generates the full FFN block with internal RMSNorm and the
+// final residual-free output only.
+func GenFFNForwardRMS(dim, hidden, seq int) string {
+	invd := 1.0 / float64(dim)
+	return fmt.Sprintf(
+		buildInfoHeader+
+			"{\n"+
+			"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n"+
+			"        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n"+
+			"        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n"+
+			"        bool kd = const()[name=string(\"kd\"), val=bool(true)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss = reduce_sum(x=sq,axes=rax,keep_dims=kd)[name=string(\"ss\")];\n"+
+			"        fp16 invd = const()[name=string(\"invd\"), val=fp16(%f)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss2 = mul(x=ss,y=invd)[name=string(\"ss2\")];\n"+
+			"        fp16 eps = const()[name=string(\"eps\"), val=fp16(0.00001)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss3 = add(x=ss2,y=eps)[name=string(\"ss3\")];\n"+
+			"        fp16 nhalf = const()[name=string(\"nhalf\"), val=fp16(-0.5)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> rrms = pow(x=ss3,y=nhalf)[name=string(\"rrms\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xr = mul(x=x,y=rrms)[name=string(\"xr\")];\n"+
+			"        tensor<fp16, [1,%d,1,1]> rw = const()[name=string(\"rw\"), val=tensor<fp16, [1,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/rms2.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xn = mul(x=xr,y=rw)[name=string(\"xn\")];\n"+
+			"        string pt = const()[name=string(\"pt\"), val=string(\"valid\")];\n"+
+			"        tensor<int32, [2]> st = const()[name=string(\"st\"), val=tensor<int32, [2]>([1,1])];\n"+
+			"        tensor<int32, [4]> pd = const()[name=string(\"pd\"), val=tensor<int32, [4]>([0,0,0,0])];\n"+
+			"        tensor<int32, [2]> dl = const()[name=string(\"dl\"), val=tensor<int32, [2]>([1,1])];\n"+
+			"        int32 gr = const()[name=string(\"gr\"), val=int32(1)];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> W1 = const()[name=string(\"W1\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/w1.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> W3 = const()[name=string(\"W3\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/w3.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> W2 = const()[name=string(\"W2\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/w2.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> h1 = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=W1,x=xn)[name=string(\"c1\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> h3 = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=W3,x=xn)[name=string(\"c3\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> sig = sigmoid(x=h1)[name=string(\"sg\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> silu = mul(x=h1,y=sig)[name=string(\"si\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> gate = mul(x=silu,y=h3)[name=string(\"gt\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> out = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=W2,x=gate)[name=string(\"c2\")];\n"+
+			"    } -> (out);\n"+
+			"}\n",
+		dim, seq,
+		dim, seq,
+		seq,
+		invd,
+		seq,
+		seq,
+		seq,
+		dim, seq,
+		dim, dim,
+		dim, seq,
+		hidden, dim, hidden, dim,
+		hidden, dim, hidden, dim,
+		dim, hidden, dim, hidden,
+		hidden, seq,
+		hidden, seq,
+		hidden, seq,
+		hidden, seq,
+		hidden, seq,
+		dim, seq,
+	)
+}
+
 // GenFFNForwardTaps generates a fused FFN block that also returns intermediates.
-// The output layout is concat(out, h1, h3, gate, xnorm) along the channel dimension.
+// The output layout is concat(out, h1, h3) along the channel dimension.
 func GenFFNForwardTaps(dim, hidden, seq int) string {
 	invd := 1.0 / float64(dim)
 	return fmt.Sprintf(
@@ -240,7 +389,7 @@ func GenFFNForwardTaps(dim, hidden, seq int) string {
 			"        tensor<fp16, [1,%d,1,%d]> out = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=W2,x=gate)[name=string(\"c2\")];\n"+
 			"        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n"+
 			"        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n"+
-			"        tensor<fp16, [1,%d,1,%d]> taps = concat(axis=cax,interleave=cid,values=(out,h1,h3,gate,xn))[name=string(\"cat\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> taps = concat(axis=cax,interleave=cid,values=(out,h1,h3))[name=string(\"cat\")];\n"+
 			"    } -> (taps);\n"+
 			"}\n",
 		dim, seq,
@@ -262,7 +411,7 @@ func GenFFNForwardTaps(dim, hidden, seq int) string {
 		hidden, seq,
 		hidden, seq,
 		dim, seq,
-		2*dim+3*hidden, seq,
+		dim+2*hidden, seq,
 	)
 }
 
@@ -403,8 +552,169 @@ func buildMILBlob(fp16Data []byte) []byte {
 	return buf
 }
 
+// GenSDPAForward generates the fused attention forward block and returns x2 only.
+func GenSDPAForward(dim, heads, seq int) string {
+	headDim := dim / heads
+	scale := 1.0 / math.Sqrt(float64(headDim))
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s{\n", buildInfoHeader)
+	fmt.Fprintf(&b, "    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n", dim, seq)
+	b.WriteString("        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n")
+	b.WriteString("        bool kd = const()[name=string(\"kd\"), val=bool(true)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,1,%d]> ss = reduce_sum(x=sq,axes=rax,keep_dims=kd)[name=string(\"ss\")];\n", seq)
+	fmt.Fprintf(&b, "        fp16 invd = const()[name=string(\"invd\"), val=fp16(%f)];\n", 1.0/float64(dim))
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,1,%d]> ss2 = mul(x=ss,y=invd)[name=string(\"ss2\")];\n", seq)
+	b.WriteString("        fp16 eps = const()[name=string(\"eps\"), val=fp16(0.00001)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,1,%d]> ss3 = add(x=ss2,y=eps)[name=string(\"ss3\")];\n", seq)
+	b.WriteString("        fp16 nhalf = const()[name=string(\"nhalf\"), val=fp16(-0.5)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,1,%d]> rrms = pow(x=ss3,y=nhalf)[name=string(\"rrms\")];\n", seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> xr = mul(x=x,y=rrms)[name=string(\"xr\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,1]> rw = const()[name=string(\"rw\"), val=tensor<fp16, [1,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/rms1.bin\"), offset=uint64(64)))];\n", dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> xn = mul(x=xr,y=rw)[name=string(\"xn\")];\n", dim, seq)
+	appendConvConsts(&b)
+	fmt.Fprintf(&b, "        tensor<fp16, [%d,%d,1,1]> Wq = const()[name=string(\"Wq\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wq.bin\"), offset=uint64(64)))];\n", dim, dim, dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [%d,%d,1,1]> Wk = const()[name=string(\"Wk\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wk.bin\"), offset=uint64(64)))];\n", dim, dim, dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [%d,%d,1,1]> Wv = const()[name=string(\"Wv\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wv.bin\"), offset=uint64(64)))];\n", dim, dim, dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [%d,%d,1,1]> Wo = const()[name=string(\"Wo\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wo.bin\"), offset=uint64(64)))];\n", dim, dim, dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> qf = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wq,x=xn)[name=string(\"cq\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> kf = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wk,x=xn)[name=string(\"ck\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> vf = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wv,x=xn)[name=string(\"cv\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> qsh = const()[name=string(\"qsh\"), val=tensor<int32, [4]>([1,%d,%d,%d])];\n", heads, headDim, seq)
+	b.WriteString("        tensor<int32, [4]> pm = const()[name=string(\"pm\"), val=tensor<int32, [4]>([0,1,3,2])];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> q4 = reshape(shape=qsh,x=qf)[name=string(\"rq\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> q = transpose(perm=pm,x=q4)[name=string(\"tq\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k4 = reshape(shape=qsh,x=kf)[name=string(\"rk\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k = transpose(perm=pm,x=k4)[name=string(\"tk\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> v4 = reshape(shape=qsh,x=vf)[name=string(\"rv\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> v = transpose(perm=pm,x=v4)[name=string(\"tv\")];\n", heads, seq, headDim)
+	b.WriteString("        bool tx = const()[name=string(\"tx\"), val=bool(false)];\n")
+	b.WriteString("        bool ty = const()[name=string(\"ty\"), val=bool(true)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc1 = matmul(transpose_x=tx,transpose_y=ty,x=q,y=k)[name=string(\"mm1\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        fp16 scv = const()[name=string(\"scv\"), val=fp16(%f)];\n", scale)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc2 = mul(x=sc1,y=scv)[name=string(\"scl\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,%d,%d]> cm = const()[name=string(\"cm\"), val=tensor<fp16, [1,1,%d,%d]>(BLOBFILE(path=string(\"@model_path/weights/mask.bin\"), offset=uint64(64)))];\n", seq, seq, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> ms = add(x=sc2,y=cm)[name=string(\"msk\")];\n", heads, seq, seq)
+	b.WriteString("        int32 sax = const()[name=string(\"sax\"), val=int32(-1)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> aw = softmax(axis=sax,x=ms)[name=string(\"sm\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> a4 = matmul(transpose_x=tx,transpose_y=tx,x=aw,y=v)[name=string(\"mm2\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> at = transpose(perm=pm,x=a4)[name=string(\"ta\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> os = const()[name=string(\"os\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> af = reshape(shape=os,x=at)[name=string(\"ra\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> oo = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wo,x=af)[name=string(\"co\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = add(x=x,y=oo)[name=string(\"x2\")];\n", dim, seq)
+	b.WriteString("    } -> (out);\n}\n")
+	return b.String()
+}
+
+// GenQKVForwardRMS generates the RMSNorm plus QKV projection block.
+// Output layout is concat(q, k, v) along the channel dimension.
+func GenQKVForwardRMS(dim, seq int) string {
+	invd := 1.0 / float64(dim)
+	return fmt.Sprintf(
+		buildInfoHeader+
+			"{\n"+
+			"    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x) {\n"+
+			"        tensor<fp16, [1,%d,1,%d]> sq = mul(x=x,y=x)[name=string(\"sq\")];\n"+
+			"        tensor<int32, [1]> rax = const()[name=string(\"rax\"), val=tensor<int32, [1]>([1])];\n"+
+			"        bool kd = const()[name=string(\"kd\"), val=bool(true)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss = reduce_sum(x=sq,axes=rax,keep_dims=kd)[name=string(\"ss\")];\n"+
+			"        fp16 invd = const()[name=string(\"invd\"), val=fp16(%f)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss2 = mul(x=ss,y=invd)[name=string(\"ss2\")];\n"+
+			"        fp16 eps = const()[name=string(\"eps\"), val=fp16(0.00001)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> ss3 = add(x=ss2,y=eps)[name=string(\"ss3\")];\n"+
+			"        fp16 nhalf = const()[name=string(\"nhalf\"), val=fp16(-0.5)];\n"+
+			"        tensor<fp16, [1,1,1,%d]> rrms = pow(x=ss3,y=nhalf)[name=string(\"rrms\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xr = mul(x=x,y=rrms)[name=string(\"xr\")];\n"+
+			"        tensor<fp16, [1,%d,1,1]> rw = const()[name=string(\"rw\"), val=tensor<fp16, [1,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/rms1.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> xn = mul(x=xr,y=rw)[name=string(\"xn\")];\n"+
+			"        string pt = const()[name=string(\"pt\"), val=string(\"valid\")];\n"+
+			"        tensor<int32, [2]> st = const()[name=string(\"st\"), val=tensor<int32, [2]>([1,1])];\n"+
+			"        tensor<int32, [4]> pd = const()[name=string(\"pd\"), val=tensor<int32, [4]>([0,0,0,0])];\n"+
+			"        tensor<int32, [2]> dl = const()[name=string(\"dl\"), val=tensor<int32, [2]>([1,1])];\n"+
+			"        int32 gr = const()[name=string(\"gr\"), val=int32(1)];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> Wq = const()[name=string(\"Wq\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wq.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> Wk = const()[name=string(\"Wk\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wk.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [%d,%d,1,1]> Wv = const()[name=string(\"Wv\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wv.bin\"), offset=uint64(64)))];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> q = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wq,x=xn)[name=string(\"cq\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> k = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wk,x=xn)[name=string(\"ck\")];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> v = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wv,x=xn)[name=string(\"cv\")];\n"+
+			"        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n"+
+			"        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n"+
+			"        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(q,k,v))[name=string(\"cat\")];\n"+
+			"    } -> (out);\n"+
+			"}\n",
+		dim, seq,
+		dim, seq,
+		seq,
+		invd,
+		seq,
+		seq,
+		seq,
+		dim, seq,
+		dim, dim,
+		dim, seq,
+		dim, dim, dim, dim,
+		dim, dim, dim, dim,
+		dim, dim, dim, dim,
+		dim, seq,
+		dim, seq,
+		dim, seq,
+		3*dim, seq,
+	)
+}
+
+// GenSDPAApplyForward generates the attention application block.
+// Input0 is x and input1 is concat(q, k, v). Output layout is concat(x2, attn).
+func GenSDPAApplyForward(dim, heads, seq int) string {
+	headDim := dim / heads
+	scale := 1.0 / math.Sqrt(float64(headDim))
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s{\n", buildInfoHeader)
+	fmt.Fprintf(&b, "    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> x, tensor<fp16, [1, %d, 1, %d]> qkv) {\n", dim, seq, 3*dim, seq)
+	appendConvConsts(&b)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> sz = const()[name=string(\"sz\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	b.WriteString("        tensor<int32, [4]> b0 = const()[name=string(\"b0\"), val=tensor<int32, [4]>([0,0,0,0])];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> qf = slice_by_size(x=qkv,begin=b0,size=sz)[name=string(\"sq\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> b1 = const()[name=string(\"b1\"), val=tensor<int32, [4]>([0,%d,0,0])];\n", dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> kf = slice_by_size(x=qkv,begin=b1,size=sz)[name=string(\"sk\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> b2 = const()[name=string(\"b2\"), val=tensor<int32, [4]>([0,%d,0,0])];\n", 2*dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> vf = slice_by_size(x=qkv,begin=b2,size=sz)[name=string(\"sv\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> qsh = const()[name=string(\"qsh\"), val=tensor<int32, [4]>([1,%d,%d,%d])];\n", heads, headDim, seq)
+	b.WriteString("        tensor<int32, [4]> pm = const()[name=string(\"pm\"), val=tensor<int32, [4]>([0,1,3,2])];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> q4 = reshape(shape=qsh,x=qf)[name=string(\"rq\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> q = transpose(perm=pm,x=q4)[name=string(\"tq\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k4 = reshape(shape=qsh,x=kf)[name=string(\"rk\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k = transpose(perm=pm,x=k4)[name=string(\"tk\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> v4 = reshape(shape=qsh,x=vf)[name=string(\"rv\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> v = transpose(perm=pm,x=v4)[name=string(\"tv\")];\n", heads, seq, headDim)
+	b.WriteString("        bool tx = const()[name=string(\"tx\"), val=bool(false)];\n")
+	b.WriteString("        bool ty = const()[name=string(\"ty\"), val=bool(true)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc1 = matmul(transpose_x=tx,transpose_y=ty,x=q,y=k)[name=string(\"mm1\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        fp16 scv = const()[name=string(\"scv\"), val=fp16(%f)];\n", scale)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc2 = mul(x=sc1,y=scv)[name=string(\"scl\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,%d,%d]> cm = const()[name=string(\"cm\"), val=tensor<fp16, [1,1,%d,%d]>(BLOBFILE(path=string(\"@model_path/weights/mask.bin\"), offset=uint64(64)))];\n", seq, seq, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> ms = add(x=sc2,y=cm)[name=string(\"msk\")];\n", heads, seq, seq)
+	b.WriteString("        int32 sax = const()[name=string(\"sax\"), val=int32(-1)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> aw = softmax(axis=sax,x=ms)[name=string(\"sm\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> a4 = matmul(transpose_x=tx,transpose_y=tx,x=aw,y=v)[name=string(\"mm2\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> at = transpose(perm=pm,x=a4)[name=string(\"ta\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> os = const()[name=string(\"os\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> af = reshape(shape=os,x=at)[name=string(\"ra\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [%d,%d,1,1]> Wo = const()[name=string(\"Wo\"), val=tensor<fp16, [%d,%d,1,1]>(BLOBFILE(path=string(\"@model_path/weights/wo.bin\"), offset=uint64(64)))];\n", dim, dim, dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> oo = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wo,x=af)[name=string(\"co\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x2 = add(x=x,y=oo)[name=string(\"x2\")];\n", dim, seq)
+	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
+	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(x2,af))[name=string(\"cat\")];\n", 2*dim, seq)
+	b.WriteString("    } -> (out);\n}\n")
+	return b.String()
+}
+
 // GenSDPAForwardTaps generates the fused attention forward block with taps.
-// Output layout is concat(out, q, k, v, attn, xnorm) along the channel dimension.
+// Output layout is concat(x2, q, k, v, attn) along the channel dimension.
 func GenSDPAForwardTaps(dim, heads, seq int) string {
 	headDim := dim / heads
 	scale := 1.0 / math.Sqrt(float64(headDim))
@@ -455,9 +765,10 @@ func GenSDPAForwardTaps(dim, heads, seq int) string {
 	fmt.Fprintf(&b, "        tensor<int32, [4]> os = const()[name=string(\"os\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> af = reshape(shape=os,x=at)[name=string(\"ra\")];\n", dim, seq)
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> oo = conv(dilations=dl,groups=gr,pad=pd,pad_type=pt,strides=st,weight=Wo,x=af)[name=string(\"co\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x2 = add(x=x,y=oo)[name=string(\"x2\")];\n", dim, seq)
 	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
 	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
-	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(oo,qf,kf,vf,af,xn))[name=string(\"cat\")];\n", 6*dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(x2,qf,kf,vf,af))[name=string(\"cat\")];\n", 5*dim, seq)
 	b.WriteString("    } -> (out);\n}\n")
 	return b.String()
 }

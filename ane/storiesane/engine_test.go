@@ -127,7 +127,7 @@ func TestFlushPendingAppliesUpdate(t *testing.T) {
 		},
 	}
 
-	if err := e.Flush(); err != nil {
+	if _, err := e.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
 	}
 	if e.state.PendingSteps != 0 {
@@ -148,6 +148,93 @@ func TestFlushPendingAppliesUpdate(t *testing.T) {
 		if v != 0 {
 			t.Fatalf("accumGEmbed[%d]=%v want 0", i, v)
 		}
+	}
+}
+
+func TestEnsureLayerCachesPopulateMissingTaps(t *testing.T) {
+	const seq = 2
+
+	layer := newLayerGrad()
+	for i := range layer.RMSAtt {
+		layer.RMSAtt[i] = 0.9 + 0.0001*float32(i%11)
+		layer.RMSFFN[i] = 1.1 - 0.0001*float32(i%7)
+	}
+	for i := range layer.Wq {
+		layer.Wq[i] = 0.0002 * float32((i%13)-6)
+		layer.Wk[i] = 0.00015 * float32((i%17)-8)
+		layer.Wv[i] = 0.0001 * float32((i%19)-9)
+		layer.Wo[i] = 0.00018 * float32((i%23)-11)
+	}
+	for i := range layer.W1 {
+		layer.W1[i] = 0.00012 * float32((i%29)-14)
+		layer.W3[i] = 0.00009 * float32((i%31)-15)
+	}
+	for i := range layer.W2 {
+		layer.W2[i] = 0.00011 * float32((i%27)-13)
+	}
+
+	cache := newLayerCache(seq)
+	for i := range cache.x {
+		cache.x[i] = 0.01 * float32((i%9)-4)
+		cache.x2[i] = 0.015 * float32((i%7)-3)
+	}
+	e := &Engine{seq: seq}
+
+	e.ensureAttentionCache(&layer, &cache)
+	if !cache.attTapsReady {
+		t.Fatal("attTapsReady=false want true")
+	}
+	wantXNorm := make([]float32, len(cache.xNorm))
+	wantQ := make([]float32, len(cache.q))
+	wantK := make([]float32, len(cache.k))
+	wantV := make([]float32, len(cache.v))
+	wantAtt := make([]float32, len(cache.attOut))
+	rmsNormCF(wantXNorm, cache.x, layer.RMSAtt, stories.Dim, seq)
+	linearCF(wantQ, layer.Wq, wantXNorm, stories.Dim, stories.Dim, seq)
+	linearCF(wantK, layer.Wk, wantXNorm, stories.Dim, stories.Dim, seq)
+	linearCF(wantV, layer.Wv, wantXNorm, stories.Dim, stories.Dim, seq)
+	causalAttentionCF(wantAtt, wantQ, wantK, wantV, stories.Heads, stories.Dim/stories.Heads, seq)
+	if !slicesClose(cache.xNorm, wantXNorm, 0) {
+		t.Fatal("xNorm mismatch")
+	}
+	if !slicesClose(cache.q, wantQ, 0) {
+		t.Fatal("q mismatch")
+	}
+	if !slicesClose(cache.k, wantK, 0) {
+		t.Fatal("k mismatch")
+	}
+	if !slicesClose(cache.v, wantV, 0) {
+		t.Fatal("v mismatch")
+	}
+	if !slicesClose(cache.attOut, wantAtt, 0) {
+		t.Fatal("attOut mismatch")
+	}
+
+	e.ensureFFNCache(&layer, &cache)
+	if !cache.ffnTapsReady {
+		t.Fatal("ffnTapsReady=false want true")
+	}
+	wantX2Norm := make([]float32, len(cache.x2Norm))
+	wantH1 := make([]float32, len(cache.h1))
+	wantH3 := make([]float32, len(cache.h3))
+	wantGate := make([]float32, len(cache.gate))
+	rmsNormCF(wantX2Norm, cache.x2, layer.RMSFFN, stories.Dim, seq)
+	linearCF(wantH1, layer.W1, wantX2Norm, stories.Hidden, stories.Dim, seq)
+	linearCF(wantH3, layer.W3, wantX2Norm, stories.Hidden, stories.Dim, seq)
+	for i := range wantGate {
+		wantGate[i] = silu32(wantH1[i]) * wantH3[i]
+	}
+	if !slicesClose(cache.x2Norm, wantX2Norm, 0) {
+		t.Fatal("x2Norm mismatch")
+	}
+	if !slicesClose(cache.h1, wantH1, 0) {
+		t.Fatal("h1 mismatch")
+	}
+	if !slicesClose(cache.h3, wantH3, 0) {
+		t.Fatal("h3 mismatch")
+	}
+	if !slicesClose(cache.gate, wantGate, 0) {
+		t.Fatal("gate mismatch")
 	}
 }
 
@@ -211,6 +298,18 @@ func TestTrailerRoundTripAccumV2(t *testing.T) {
 	}
 }
 
+func slicesClose(got, want []float32, tol float64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if math.Abs(float64(got[i]-want[i])) > tol {
+			return false
+		}
+	}
+	return true
+}
+
 func TestFillDecodeWindow(t *testing.T) {
 	got := make([]uint16, 5)
 	fillDecodeWindow(got, []int{7, 8})
@@ -242,6 +341,35 @@ func TestDiagnosticsReportsLayerFailure(t *testing.T) {
 	}
 	if d.BackwardInitError == "" {
 		t.Fatalf("Diagnostics() missing BackwardInitError: %+v", d)
+	}
+}
+
+func TestEnsureLayersCompileFailureSetsDiagnostics(t *testing.T) {
+	old := compileStoriesLayerForwardFunc
+	compileStoriesLayerForwardFunc = func(stories.LayerWeights, int) (*layerForward, error) {
+		return nil, os.ErrPermission
+	}
+	defer func() {
+		compileStoriesLayerForwardFunc = old
+	}()
+
+	e := &Engine{
+		mw: &stories.ModelWeights{
+			Layers: make([]stories.LayerWeights, stories.NLayers),
+		},
+		seq:    8,
+		useANE: true,
+	}
+	err := e.ensureLayers()
+	if err == nil {
+		t.Fatal("ensureLayers succeeded; want error")
+	}
+	d := e.Diagnostics()
+	if !d.LayerForwardRequested || d.LayerForwardEnabled {
+		t.Fatalf("unexpected diagnostics: %+v", d)
+	}
+	if d.LayerInitError == "" {
+		t.Fatalf("LayerInitError is empty: %+v", d)
 	}
 }
 

@@ -136,6 +136,7 @@ for seq in ${SEQ_LIST//,/ }; do
 			--c-model "$MODEL" \
 			--go-model "$MODEL" \
 			--go-backend ane \
+			--allow-mismatch \
 			--c-mode ane \
 			--seq-override "$seq" \
 			$( [[ "$SKIP_BUILD" == "1" ]] && echo --skip-build ) \

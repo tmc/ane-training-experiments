@@ -247,7 +247,6 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 		return fmt.Errorf("run layer backward attention: layer is closed")
 	}
 	dimN := lb.dim * lb.seq
-	scoreN := lb.scoreCh * lb.seq
 	if err := checkLen("run layer backward attention", "q", q, dimN); err != nil {
 		return err
 	}
@@ -280,34 +279,35 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := lb.sdpa1.Eval(); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa1: %w", err)
 	}
-	if err := lb.sdpa1.ReadOutputFP16(0, lb.sdpa1Out); err != nil {
-		return fmt.Errorf("run layer backward attention: read sdpa1 output: %w", err)
+	if err := model.CopyOutputChannelsToInput(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
+		return fmt.Errorf("run layer backward attention: copy sdpa1 output into sdpa2 input: %w", err)
 	}
-
-	copy(dv, lb.sdpa1Out[:dimN])
-	probs := lb.sdpa1Out[dimN : dimN+scoreN]
-	dp := lb.sdpa1Out[dimN+scoreN : dimN+2*scoreN]
-
-	concatInto(lb.sdpa2In, probs, dp, q, k)
-	if err := lb.sdpa2.WriteInputFP16(0, lb.sdpa2In); err != nil {
-		return fmt.Errorf("run layer backward attention: write sdpa2 input: %w", err)
+	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh, q); err != nil {
+		return fmt.Errorf("run layer backward attention: write q into sdpa2 input: %w", err)
+	}
+	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh+lb.dim, k); err != nil {
+		return fmt.Errorf("run layer backward attention: write k into sdpa2 input: %w", err)
 	}
 	if err := lb.sdpa2.Eval(); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa2: %w", err)
 	}
-	if err := lb.sdpa2.ReadOutputFP16(0, lb.sdpa2Out); err != nil {
-		return fmt.Errorf("run layer backward attention: read sdpa2 output: %w", err)
+	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 0, lb.sdpa2, 0, 0, 2*lb.dim); err != nil {
+		return fmt.Errorf("run layer backward attention: copy sdpa2 output into qkv input: %w", err)
 	}
-
-	copy(dq, lb.sdpa2Out[:dimN])
-	copy(dk, lb.sdpa2Out[dimN:2*dimN])
-
-	concatInto(lb.qkvIn, dq, dk, dv)
-	if err := lb.qkv.WriteInputFP16(0, lb.qkvIn); err != nil {
-		return fmt.Errorf("run layer backward attention: write qkv input: %w", err)
+	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 2*lb.dim, lb.sdpa1, 0, 0, lb.dim); err != nil {
+		return fmt.Errorf("run layer backward attention: copy sdpa1 dv into qkv input: %w", err)
 	}
 	if err := lb.qkv.Eval(); err != nil {
 		return fmt.Errorf("run layer backward attention: eval qkv: %w", err)
+	}
+	if err := lb.sdpa2.ReadOutputFP16Channels(0, 0, dq); err != nil {
+		return fmt.Errorf("run layer backward attention: read dq: %w", err)
+	}
+	if err := lb.sdpa2.ReadOutputFP16Channels(0, lb.dim, dk); err != nil {
+		return fmt.Errorf("run layer backward attention: read dk: %w", err)
+	}
+	if err := lb.sdpa1.ReadOutputFP16Channels(0, 0, dv); err != nil {
+		return fmt.Errorf("run layer backward attention: read dv: %w", err)
 	}
 	if err := lb.qkv.ReadOutputFP16(0, dxNorm); err != nil {
 		return fmt.Errorf("run layer backward attention: read qkv output: %w", err)
@@ -339,21 +339,23 @@ func (e *Engine) ensureBackward() error {
 			e.backward[i].close()
 		}
 	}
-	e.backward = make([]*layerBackward, len(e.mw.Layers))
-	for i := range e.mw.Layers {
+	backward, err := compileParallel(len(e.mw.Layers), func(i int) (*layerBackward, error) {
 		lb, err := compileStoriesLayerBackwardFunc(e.mw.Layers[i], e.seq)
 		if err != nil {
-			for j := 0; j < i; j++ {
-				if e.backward[j] != nil {
-					e.backward[j].close()
-				}
-			}
-			e.backward = nil
-			e.backwardInitErr = fmt.Errorf("storiesane step: compile backward layer %d: %w", i, err)
-			return e.backwardInitErr
+			return nil, fmt.Errorf("storiesane step: compile backward layer %d: %w", i, err)
 		}
-		e.backward[i] = lb
+		return lb, nil
+	}, func(lb *layerBackward) {
+		if lb != nil {
+			lb.close()
+		}
+	})
+	if err != nil {
+		e.backward = nil
+		e.backwardInitErr = err
+		return e.backwardInitErr
 	}
+	e.backward = backward
 	return nil
 }
 

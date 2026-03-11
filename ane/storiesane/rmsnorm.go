@@ -1,9 +1,52 @@
 package storiesane
 
-import "math"
+import (
+	"math"
+	"runtime"
+	"sync"
+)
 
 func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
-	for t := 0; t < s; t++ {
+	workers := runtime.GOMAXPROCS(0)
+	if workers < 2 || s < workers*4 {
+		rmsNormGradWeightsRange(dw, dy, x, d, s, 0, s)
+		return
+	}
+	if workers > s {
+		workers = s
+	}
+	shards := make([][]float32, workers)
+	chunk := (s + workers - 1) / workers
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		start := worker * chunk
+		if start >= s {
+			break
+		}
+		end := start + chunk
+		if end > s {
+			end = s
+		}
+		shards[worker] = make([]float32, d)
+		wg.Add(1)
+		go func(start, end, worker int) {
+			defer wg.Done()
+			rmsNormGradWeightsRange(shards[worker], dy, x, d, s, start, end)
+		}(start, end, worker)
+	}
+	wg.Wait()
+	for _, shard := range shards {
+		if shard == nil {
+			continue
+		}
+		for i := range dw {
+			dw[i] += shard[i]
+		}
+	}
+}
+
+func rmsNormGradWeightsRange(dw, dy, x []float32, d, s, start, end int) {
+	for t := start; t < end; t++ {
 		sum := 0.0
 		for i := 0; i < d; i++ {
 			v := float64(x[i*s+t])
