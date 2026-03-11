@@ -13,7 +13,7 @@ typedef struct {
     Kern *woFwd;       // attn_out @ Wo^T → o_out (Q_DIM → DIM)
     Kern *ffnFused;    // W1,W3 + SiLU + W2 + residual (fused)
     Kern *ffnBwdW2t;   // dffn @ W2^T → dsilu_raw (DIM → HIDDEN)
-    Kern *ffnBwdW13t;  // dh1@W1^T + dh3@W3^T → dx_ffn (HIDDEN → DIM)
+    Kern *ffnBwdW13t;  // dsilu + SiLU bwd + dh1@W1^T + dh3@W3^T
     Kern *wotBwd;      // dx2 @ Wo → da (DIM → Q_DIM)
     Kern *sdpaBwd1;    // Q,K,V,da → dV_full,probs,dp (weight-free, has mask)
     Kern *sdpaBwd2;    // probs,dp,Q,K → dQ,dK_full (weight-free)
@@ -37,7 +37,7 @@ static bool compile_dynamic_kernels(DynLayerKernels *dk) {
         @"@model_path/weights/rope_sin.bin": @{@"offset":@0, @"data":get_rope_sin_blob()}
     };
 
-    int sdpa_out_ch = Q_DIM + Q_DIM + KV_DIM + KV_DIM + DIM;
+    int sdpa_out_ch = Q_DIM + Q_DIM + KV_DIM + KV_DIM;
 
     // SDPA forward (no Wo): [1, DIM, 1, SDPA_FWD_SP] → [1, sdpa_out_ch, 1, SEQ]
     printf("  Compiling sdpaFwd (GQA)...\n");
@@ -64,10 +64,10 @@ static bool compile_dynamic_kernels(DynLayerKernels *dk) {
         DIM*FFN_BWD_W2T_SP*2, HIDDEN*SEQ*2);
     if (!dk->ffnBwdW2t) return false;
 
-    // FFN backward W1^T+W3^T: [1, HIDDEN, 1, 2*SEQ+2*DIM] → [1, DIM, 1, SEQ]
+    // FFN backward fused tail: [1, HIDDEN, 1, 3*SEQ+2*DIM] → [1, DIM+2*HIDDEN, 1, SEQ]
     printf("  Compiling ffnBwdW13t...\n");
     dk->ffnBwdW13t = compile_kern_mil_w(gen_ffn_bwd_w13t_dynamic(), @{},
-        HIDDEN*FFN_BWD_W13T_SP*2, DIM*SEQ*2);
+        HIDDEN*FFN_BWD_W13T_SP*2, (DIM + 2*HIDDEN)*SEQ*2);
     if (!dk->ffnBwdW13t) return false;
 
     // Wo^T backward: [1, DIM, 1, SEQ+Q_DIM] → [1, Q_DIM, 1, SEQ]
@@ -99,6 +99,55 @@ static bool compile_dynamic_kernels(DynLayerKernels *dk) {
     dk->kvBwd = compile_kern_mil_w(gen_kv_bwd_dynamic(), @{},
         KV_DIM*KV_BWD_SP*2, DIM*SEQ*2);
     if (!dk->kvBwd) return false;
+
+    return true;
+}
+
+static bool compile_dynamic_aux_kernels(int compact_vocab,
+                                        Kern **rmsBwd,
+                                        Kern **rmsFinalBwd,
+                                        Kern **clsFwd,
+                                        Kern **clsBwd,
+                                        Kern **softmax) {
+    *rmsBwd = compile_kern_mil_w(gen_rmsnorm_bwd_dynamic(), @{},
+        DIM*RMS_BWD_SP*2, DIM*SEQ*2);
+    if (!*rmsBwd) {
+        return false;
+    }
+
+    *rmsFinalBwd = compile_kern_mil_w(gen_rmsnorm_bwd_chan_dynamic(), @{},
+        3*DIM*SEQ*2, DIM*SEQ*2);
+    if (!*rmsFinalBwd) {
+        free_kern(*rmsBwd);
+        return false;
+    }
+
+    *clsFwd = compile_kern_mil_w(gen_classifier_fwd_dynamic(compact_vocab), @{},
+        DIM*(SEQ + compact_vocab)*2, compact_vocab*SEQ*2);
+    if (!*clsFwd) {
+        free_kern(*rmsBwd);
+        free_kern(*rmsFinalBwd);
+        return false;
+    }
+
+    *clsBwd = compile_kern_mil_w(gen_classifier_bwd_dynamic(compact_vocab), @{},
+        compact_vocab*(SEQ + DIM)*2, DIM*SEQ*2);
+    if (!*clsBwd) {
+        free_kern(*rmsBwd);
+        free_kern(*rmsFinalBwd);
+        free_kern(*clsFwd);
+        return false;
+    }
+
+    *softmax = compile_kern_mil_w(gen_softmax_dynamic(compact_vocab), @{},
+        compact_vocab*SEQ*2, compact_vocab*SEQ*2);
+    if (!*softmax) {
+        free_kern(*rmsBwd);
+        free_kern(*rmsFinalBwd);
+        free_kern(*clsFwd);
+        free_kern(*clsBwd);
+        return false;
+    }
 
     return true;
 }
@@ -240,7 +289,7 @@ int main(int argc, char *argv[]) {
             double xformer_m = (double)NLAYERS*(WQ_SZ + WK_SZ + WV_SZ + (double)WO_SZ + W1_SZ + W2_SZ + W3_SZ + 2.0*DIM) / 1e6;
             double embed_m = (double)VOCAB*DIM / 1e6;
             printf("Params: %.1fM (transformer %.1fM + embed %.1fM)\n", xformer_m+embed_m, xformer_m, embed_m);
-            printf("Kernels: 10 compiled (sdpaFwd+woFwd, ffnFused, ffnBwdW2t+W13t, wotBwd, sdpaBwd1+2, qBwd+kvBwd)\n");
+            printf("Kernels: 15 compiled (base dynamic stack with fused FFN bwd tail + RMSNorm bwd/final-bwd + classifier fwd/bwd + softmax)\n");
             printf("Accum %d steps, LR=%g\n", accum_steps, max_lr);
             // FLOPs estimate: 6*N*B*T for transformer (forward+backward ≈ 3x forward)
             double fwd_flops = 2.0*NLAYERS*(4.0*WQ_SZ + 2.0*W1_SZ + W2_SZ + W3_SZ) * SEQ;
@@ -313,18 +362,27 @@ int main(int argc, char *argv[]) {
         printf("Vocab compaction: %d → %d active tokens (%.1fx reduction)\n", VOCAB, CV, (float)VOCAB/CV);
 
         float *cembed = vocab_compact_embed(embed, &vm, DIM);
+        float *cembed_t = (float*)malloc((size_t)DIM*CV*4);
+        transpose_weight(cembed_t, cembed, CV, DIM);
         float *gcembed = (float*)calloc((size_t)CV*DIM, 4);
         AdamState acembed = adam_alloc((size_t)CV*DIM);
 
         // ===== Compile all kernels ONCE =====
-        printf("Compiling 10 dynamic kernels (one-time)...\n");
+        printf("Compiling 15 dynamic kernels (one-time)...\n");
         uint64_t tc = mach_absolute_time();
         DynLayerKernels dk;
         if (!compile_dynamic_kernels(&dk)) {
             printf("Compilation failed!\n"); return 1;
         }
+        Kern *rmsBwdKern = NULL, *rmsFinalBwdKern = NULL;
+        Kern *clsFwdKern = NULL, *clsBwdKern = NULL, *softmaxKern = NULL;
+        if (!compile_dynamic_aux_kernels(CV, &rmsBwdKern, &rmsFinalBwdKern,
+                                         &clsFwdKern, &clsBwdKern, &softmaxKern)) {
+            printf("Aux kernel compilation failed!\n");
+            return 1;
+        }
         double compile_ms = tb_ms(mach_absolute_time() - tc);
-        printf("Compiled 10 kernels in %.0fms (shared across all %d layers)\n", compile_ms, NLAYERS);
+        printf("Compiled 15 kernels in %.0fms (shared across all %d layers)\n", compile_ms, NLAYERS);
 
         // Allocate per-layer IOSurfaces + requests
         printf("Allocating per-layer IOSurfaces...\n");
@@ -399,13 +457,12 @@ int main(int argc, char *argv[]) {
         float *da_buf = (float*)malloc(SEQ*Q_DIM*4);  // Q_DIM for attn grads
         float *x_cur = (float*)malloc(SEQ*DIM*4);
         float *x_final = (float*)malloc(SEQ*DIM*4);
-        float *xnorm_buf = (float*)malloc(SEQ*DIM*4);
+        float *logits_cf = (float*)malloc(SEQ*CV*4);   // channel-first [CV, SEQ]
         float *logits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE
         float *dlogits_sv = (float*)malloc(SEQ*CV*4);   // row-major [SEQ, CV] for CE grad
-        float *gate_buf = (float*)malloc(SEQ*HIDDEN*4);
+        float *dlogits_cf = (float*)malloc(SEQ*CV*4);   // channel-first [CV, SEQ] for ANE cls bwd
         float *dh1 = (float*)malloc(SEQ*HIDDEN*4);
         float *dh3 = (float*)malloc(SEQ*HIDDEN*4);
-        float *dsilu = (float*)malloc(SEQ*HIDDEN*4);
         // GQA tile/reduce buffers
         float *k_tiled = (float*)malloc(SEQ*Q_DIM*4);  // KV_DIM → Q_DIM
         float *v_tiled = (float*)malloc(SEQ*Q_DIM*4);
@@ -446,10 +503,9 @@ int main(int argc, char *argv[]) {
                 LayerActs *ac = &acts[L];
                 memcpy(ac->layer_in, x_cur, SEQ*DIM*4);
 
-                // RMSNorm1 (CPU)
+                // RMSNorm1 on CPU.
                 t0 = mach_absolute_time();
-                rmsnorm(xnorm_buf, x_cur, lw[L].rms_att, DIM, SEQ);
-                memcpy(ac->xnorm, xnorm_buf, SEQ*DIM*4);
+                rmsnorm(ac->xnorm, x_cur, lw[L].rms_att, DIM, SEQ);
                 t_rms += tb_ms(mach_absolute_time() - t0);
 
                 // Wait for any pending dW cblas
@@ -457,15 +513,15 @@ int main(int argc, char *argv[]) {
                 dispatch_group_wait(dw_grp, DISPATCH_TIME_FOREVER);
                 t_cblas_wait += tb_ms(mach_absolute_time() - t0);
 
-                // SDPA forward (ANE): xnorm + Wq,Wk,Wv → attn_out[Q_DIM], Q_rope[Q_DIM], K_rope[KV_DIM], V[KV_DIM], xnorm[DIM]
+                // SDPA forward (ANE): xnorm + Wq,Wk,Wv → attn_out[Q_DIM], Q_rope[Q_DIM], K_rope[KV_DIM], V[KV_DIM]
                 t0 = mach_absolute_time();
-                write_sdpa_fwd_acts(pls[L].sdpaFwd_in, xnorm_buf);
+                write_sdpa_fwd_acts(pls[L].sdpaFwd_in, ac->xnorm);
                 t_io_fwd += tb_ms(mach_absolute_time() - t0);
                 t0 = mach_absolute_time();
                 ane_eval_req(dk.sdpaFwd, plr[L].sdpaFwd);
                 t_ane_fwd += tb_ms(mach_absolute_time() - t0);
 
-                // Read SDPA output: [1, Q_DIM+Q_DIM+KV_DIM+KV_DIM+DIM, 1, SEQ] fp16
+                // Read SDPA output: [1, Q_DIM+Q_DIM+KV_DIM+KV_DIM, 1, SEQ] fp16
                 t0 = mach_absolute_time();
                 IOSurfaceLock(dk.sdpaFwd->ioOut, kIOSurfaceLockReadOnly, NULL);
                 _Float16 *fwd_out = (_Float16*)IOSurfaceGetBaseAddress(dk.sdpaFwd->ioOut);
@@ -473,8 +529,7 @@ int main(int argc, char *argv[]) {
                 cvt_f16_f32(ac->attn_out, fwd_out + off, Q_DIM*SEQ); off += Q_DIM*SEQ;
                 cvt_f16_f32(ac->Q,        fwd_out + off, Q_DIM*SEQ); off += Q_DIM*SEQ;
                 cvt_f16_f32(ac->K,        fwd_out + off, KV_DIM*SEQ); off += KV_DIM*SEQ;
-                cvt_f16_f32(ac->V,        fwd_out + off, KV_DIM*SEQ); off += KV_DIM*SEQ;
-                // xnorm passthrough (DIM*SEQ) — not needed, already saved
+                cvt_f16_f32(ac->V,        fwd_out + off, KV_DIM*SEQ);
                 IOSurfaceUnlock(dk.sdpaFwd->ioOut, kIOSurfaceLockReadOnly, NULL);
                 t_io_fwd += tb_ms(mach_absolute_time() - t0);
 
@@ -489,9 +544,11 @@ int main(int argc, char *argv[]) {
                 io_read_dyn(dk.woFwd->ioOut, ac->o_out, DIM, SEQ);
                 t_io_fwd += tb_ms(mach_absolute_time() - t0);
 
-                // CPU: scaled residual + RMSNorm
+                // CPU residual, then RMSNorm2 on CPU.
                 t0 = mach_absolute_time();
                 vDSP_vsma(ac->o_out, 1, &res_alpha, x_cur, 1, ac->x2, 1, (vDSP_Length)(SEQ*DIM));
+                t_rms += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
                 rmsnorm(ac->x2norm, ac->x2, lw[L].rms_ffn, DIM, SEQ);
                 t_rms += tb_ms(mach_absolute_time() - t0);
 
@@ -516,26 +573,47 @@ int main(int argc, char *argv[]) {
                 t_io_fwd += tb_ms(mach_absolute_time() - t0);
             }
 
-            // Final RMSNorm + classifier + loss (CPU)
+            // Final RMSNorm on CPU, then classifier + softmax on ANE, CE/NLL on CPU.
             t0 = mach_absolute_time();
             rmsnorm(x_final, x_cur, rms_final, DIM, SEQ);
             t_rms += tb_ms(mach_absolute_time() - t0);
-            // Forward classifier: logits_sv[SEQ,CV] = x_final^T @ cembed^T
+
             t0 = mach_absolute_time();
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
-                        SEQ, CV, DIM, 1.0f, x_final, SEQ, cembed, DIM, 0.0f, logits_sv, CV);
-            float loss = cross_entropy_loss_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
+            io_write_dyn(clsFwdKern->ioIn, x_final, DIM, SEQ, cembed_t, CV);
+            t_io_fwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            ane_eval(clsFwdKern);
+            t_ane_fwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            io_copy(softmaxKern->ioIn, 0, clsFwdKern->ioOut, 0, CV, SEQ);
+            t_io_fwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            ane_eval(softmaxKern);
+            t_ane_fwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            io_read_dyn(softmaxKern->ioOut, logits_cf, CV, SEQ);
+            t_io_fwd += tb_ms(mach_absolute_time() - t0);
+
+            t0 = mach_absolute_time();
+            transpose_vs(logits_sv, logits_cf, CV, SEQ);
+            float loss = cross_entropy_probs_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
             t_cls += tb_ms(mach_absolute_time() - t0);
             last_loss = loss;
 
             // ===== BACKWARD =====
             vDSP_vsmul(dlogits_sv, 1, &loss_scale, dlogits_sv, 1, (vDSP_Length)(SEQ*CV));
+            transpose_vs(dlogits_cf, dlogits_sv, SEQ, CV);
 
-            // Classifier backward: dy[DIM,SEQ] = cembed^T @ dlogits_sv^T
+            // Classifier backward on ANE.
             t0 = mach_absolute_time();
-            cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
-                        DIM, SEQ, CV, 1.0f, cembed, DIM, dlogits_sv, CV, 0.0f, dy, SEQ);
-            t_cls += tb_ms(mach_absolute_time() - t0);
+            io_write_dyn(clsBwdKern->ioIn, dlogits_cf, CV, SEQ, cembed, DIM);
+            t_io_bwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            ane_eval(clsBwdKern);
+            t_ane_bwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            io_read_dyn(clsBwdKern->ioOut, dy, DIM, SEQ);
+            t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
             // dEmbed async: gcembed[CV,DIM] += dlogits_sv^T @ x_final^T
             dispatch_group_async(dw_grp, dw_q, ^{
@@ -543,10 +621,19 @@ int main(int argc, char *argv[]) {
                             CV, DIM, SEQ, 1.0f, dlogits_sv, CV, x_final, SEQ, 1.0f, gcembed, DIM);
             });
 
-            // Final RMSNorm backward (reuse dx_ffn as scratch)
-            memset(dx_ffn, 0, SEQ*DIM*4);
-            rmsnorm_bwd(dx_ffn, grms_final, dy, x_cur, rms_final, DIM, SEQ);
-            memcpy(dy, dx_ffn, SEQ*DIM*4);
+            // Final RMSNorm backward on ANE via the channel-concatenated kernel.
+            t0 = mach_absolute_time();
+            io_write_rmsnorm_bwd_chan(rmsFinalBwdKern->ioIn, dy, x_cur, rms_final);
+            t_io_bwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            rmsnorm_dw_only(grms_final, dy, x_cur, rms_final, DIM, SEQ);
+            t_rms_bwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            ane_eval(rmsFinalBwdKern);
+            t_ane_bwd += tb_ms(mach_absolute_time() - t0);
+            t0 = mach_absolute_time();
+            io_read_dyn(rmsFinalBwdKern->ioOut, dy, DIM, SEQ);
+            t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
             // ===== BACKWARD (28 layers, reverse) =====
             for (int L=NLAYERS-1; L>=0; L--) {
@@ -563,24 +650,20 @@ int main(int argc, char *argv[]) {
                 t0 = mach_absolute_time();
                 ane_eval_req(dk.ffnBwdW2t, plr[L].ffnBwdW2t);
                 t_ane_bwd += tb_ms(mach_absolute_time() - t0);
-                t0 = mach_absolute_time();
-                io_read_dyn(dk.ffnBwdW2t->ioOut, dsilu, HIDDEN, SEQ);
-                t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
-                // SiLU derivative (fused single-pass)
+                // Fused FFN tail: dsilu + SiLU derivative + dh1@W1^T + dh3@W3^T.
                 t0 = mach_absolute_time();
-                silu_backward_fused(dh1, dh3, dsilu, ac->h1, ac->h3, HIDDEN*SEQ);
-                t_silu += tb_ms(mach_absolute_time() - t0);
-
-                // dh1@W1^T + dh3@W3^T → dx_ffn (ANE)
-                t0 = mach_absolute_time();
-                write_ffn_bwd_w13t_acts(pls[L].ffnBwdW13t_in, dh1, dh3);
+                io_copy_rect(pls[L].ffnBwdW13t_in, 0, FFN_BWD_W13T_SP,
+                             dk.ffnBwdW2t->ioOut, 0, SEQ, HIDDEN, SEQ);
+                write_ffn_bwd_w13t_acts(pls[L].ffnBwdW13t_in, ac->h1, ac->h3);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
                 t0 = mach_absolute_time();
                 ane_eval_req(dk.ffnBwdW13t, plr[L].ffnBwdW13t);
                 t_ane_bwd += tb_ms(mach_absolute_time() - t0);
                 t0 = mach_absolute_time();
-                io_read_dyn(dk.ffnBwdW13t->ioOut, dx_ffn, DIM, SEQ);
+                io_read_fp16(dk.ffnBwdW13t->ioOut, dx_ffn, 0, DIM, SEQ);
+                io_read_fp16(dk.ffnBwdW13t->ioOut, dh1, DIM, HIDDEN, SEQ);
+                io_read_fp16(dk.ffnBwdW13t->ioOut, dh3, DIM + HIDDEN, HIDDEN, SEQ);
                 t_io_bwd += tb_ms(mach_absolute_time() - t0);
 
                 // dW FFN async (pre-allocated capture buffers)
@@ -606,10 +689,18 @@ int main(int argc, char *argv[]) {
                     });
                 }
 
-                // RMSNorm2 backward
+                // RMSNorm2 backward: dx on ANE, dw on CPU.
                 t0 = mach_absolute_time();
-                memset(dx2, 0, SEQ*DIM*4);
-                rmsnorm_bwd(dx2, gr->rms_ffn, dx_ffn, ac->x2, lw[L].rms_ffn, DIM, SEQ);
+                io_write_rmsnorm_bwd(rmsBwdKern->ioIn, dx_ffn, ac->x2, lw[L].rms_ffn);
+                t_io_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                ane_eval(rmsBwdKern);
+                t_ane_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                io_read_dyn(rmsBwdKern->ioOut, dx2, DIM, SEQ);
+                t_io_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                rmsnorm_dw_only(gr->rms_ffn, dx_ffn, ac->x2, lw[L].rms_ffn, DIM, SEQ);
                 for(int i=0;i<SEQ*DIM;i++) dx2[i] += dy[i];
                 t_rms_bwd += tb_ms(mach_absolute_time() - t0);
 
@@ -739,10 +830,18 @@ int main(int argc, char *argv[]) {
                 // dx_attn = dx_q + dx_kv
                 for(int i=0; i<SEQ*DIM; i++) dx_attn[i] += dx_kv[i];
 
-                // RMSNorm1 backward (reuse dx_kv as scratch)
+                // RMSNorm1 backward: dx on ANE, dw on CPU.
                 t0 = mach_absolute_time();
-                memset(dx_kv, 0, SEQ*DIM*4);
-                rmsnorm_bwd(dx_kv, gr->rms_att, dx_attn, ac->layer_in, lw[L].rms_att, DIM, SEQ);
+                io_write_rmsnorm_bwd(rmsBwdKern->ioIn, dx_attn, ac->layer_in, lw[L].rms_att);
+                t_io_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                ane_eval(rmsBwdKern);
+                t_ane_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                io_read_dyn(rmsBwdKern->ioOut, dx_kv, DIM, SEQ);
+                t_io_bwd += tb_ms(mach_absolute_time() - t0);
+                t0 = mach_absolute_time();
+                rmsnorm_dw_only(gr->rms_att, dx_attn, ac->layer_in, lw[L].rms_att, DIM, SEQ);
                 for(int i=0;i<SEQ*DIM;i++) dy[i] = dx_kv[i] + dx2[i];
                 t_rms_bwd += tb_ms(mach_absolute_time() - t0);
             }
@@ -893,6 +992,7 @@ int main(int argc, char *argv[]) {
                 adam_update(embed, gembed, &aembed, adam_t, lr, adam_b1, adam_b2, adam_eps, wd);
                 free(cembed);
                 cembed = vocab_compact_embed(embed, &vm, DIM);
+                transpose_weight(cembed_t, cembed, CV, DIM);
 
                 // Zero grads
                 for (int L=0; L<NLAYERS; L++) layer_grads_zero(&grads[L]);
@@ -932,9 +1032,17 @@ int main(int argc, char *argv[]) {
         free_kern(dk.ffnBwdW2t); free_kern(dk.ffnBwdW13t); free_kern(dk.wotBwd);
         free_kern(dk.sdpaBwd1); free_kern(dk.sdpaBwd2);
         free_kern(dk.qBwd); free_kern(dk.kvBwd);
+        free_kern(rmsBwdKern); free_kern(rmsFinalBwdKern);
+        free_kern(clsFwdKern); free_kern(clsBwdKern); free_kern(softmaxKern);
+        free(dy); free(dffn); free(dx_ffn); free(dx2); free(dx_attn);
         free(da_buf); free(k_tiled); free(v_tiled);
         free(dq_full); free(dk_full); free(dv_full);
         free(dq); free(dk_buf); free(dv);
+        free(x_cur); free(x_final);
+        free(logits_cf); free(logits_sv); free(dlogits_sv); free(dlogits_cf);
+        free(dh1); free(dh3); free(dx_kv);
+        free(cembed); free(gcembed); adam_free(&acembed);
+        free(cembed_t);
         munmap(token_data, data_len); close(data_fd);
     }
     return 0;

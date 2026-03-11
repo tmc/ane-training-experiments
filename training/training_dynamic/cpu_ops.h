@@ -70,6 +70,30 @@ static void rmsnorm_bwd(float *dx, float *dw, const float *dy, const float *x, c
     }
 }
 
+// RMSNorm weight-gradient only. The dx path can stay on ANE while dw
+// accumulation remains on CPU.
+static void rmsnorm_dw_only(float *dw, const float *dy, const float *x, const float *w, int d, int S) {
+    (void)w;
+    float *tmp = must_tmp_buf(&g_rms_tmp, &g_rms_tmp_cap, S, "rms_tmp");
+    float ss[S], rrms[S];
+    memset(ss, 0, (size_t)S * sizeof(float));
+    for (int i = 0; i < d; i++) {
+        vDSP_vmul(x+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vadd(tmp, 1, ss, 1, ss, 1, (vDSP_Length)S);
+    }
+    float invd = 1.0f/d, eps = 1e-5f;
+    vDSP_vsmsa(ss, 1, &invd, &eps, ss, 1, (vDSP_Length)S);
+    int n = S;
+    vvrsqrtf(rrms, ss, &n);
+    for (int i = 0; i < d; i++) {
+        vDSP_vmul(dy+i*S, 1, x+i*S, 1, tmp, 1, (vDSP_Length)S);
+        vDSP_vmul(tmp, 1, rrms, 1, tmp, 1, (vDSP_Length)S);
+        float s;
+        vDSP_sve(tmp, 1, &s, (vDSP_Length)S);
+        dw[i] += s;
+    }
+}
+
 static void adam_update(float *w, const float *g, AdamState *s, int t, float lr, float b1, float b2, float eps, float wd) {
     float bc1 = 1.0f - powf(b1, t), bc2 = 1.0f - powf(b2, t);
     for (size_t i=0; i<s->n; i++) {
@@ -103,6 +127,22 @@ static float cross_entropy_loss_rowmajor(float *dlogits_sv, const float *logits_
         float inv = 1.0f / sum;
         vDSP_vsmul(drow, 1, &inv, drow, 1, (vDSP_Length)V);
         total_loss -= logf(drow[targets[t]] + 1e-10f);
+        drow[targets[t]] -= 1.0f;
+        vDSP_vsmul(drow, 1, &invS, drow, 1, (vDSP_Length)V);
+    }
+    return total_loss / S;
+}
+
+// Cross-entropy from probabilities already normalized by softmax.
+static float cross_entropy_probs_rowmajor(float *dlogits_sv, const float *probs_sv,
+                                          const uint16_t *targets, int V, int S) {
+    float total_loss = 0;
+    float invS = 1.0f / S;
+    for (int t = 0; t < S; t++) {
+        const float *row = probs_sv + t*V;
+        float *drow = dlogits_sv + t*V;
+        memcpy(drow, row, (size_t)V * sizeof(float));
+        total_loss -= logf(row[targets[t]] + 1e-10f);
         drow[targets[t]] -= 1.0f;
         vDSP_vsmul(drow, 1, &invS, drow, 1, (vDSP_Length)V);
     }
@@ -177,32 +217,6 @@ static void embed_backward(float *d_embed, const float *dx, const uint16_t *toke
         int tok = tokens[t];
         for (int d = 0; d < dim; d++)
             d_embed[tok*dim + d] += dx[d*seq + t];
-    }
-}
-
-// Fused SiLU backward: compute sigmoid via vForce, then single scalar loop.
-// 4 vDSP/vv* calls for sigmoid + 1 fused loop (2 reads + 2 writes per element)
-// instead of 13 separate vectorized calls with 13 full array sweeps.
-static float *g_silu_sig = NULL;
-static int g_silu_sig_cap = 0;
-
-static void silu_backward_fused(float *dh1, float *dh3,
-                                 const float *dsilu, const float *h1,
-                                 const float *h3, int n) {
-    float *sig = must_tmp_buf(&g_silu_sig, &g_silu_sig_cap, n, "silu_sig");
-    float minus1 = -1.0f, one = 1.0f;
-
-    // sig = sigmoid(h1) = 1/(1+exp(-h1)) — vectorized transcendentals
-    vDSP_vsmul(h1, 1, &minus1, sig, 1, (vDSP_Length)n);
-    vvexpf(sig, sig, &n);
-    vDSP_vsadd(sig, 1, &one, sig, 1, (vDSP_Length)n);
-    vvrecf(sig, sig, &n);
-
-    // Single pass: compute dh3 and dh1 from sig, h1, h3, dsilu
-    for (int i = 0; i < n; i++) {
-        float s = sig[i], x = h1[i], ds = dsilu[i];
-        dh3[i] = ds * x * s;
-        dh1[i] = ds * h3[i] * s * (1.0f + x * (1.0f - s));
     }
 }
 

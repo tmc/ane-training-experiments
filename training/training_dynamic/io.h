@@ -69,6 +69,18 @@ static void io_copy(IOSurfaceRef dst, int dst_ch, IOSurfaceRef src, int src_ch, 
     IOSurfaceUnlock(src, kIOSurfaceLockReadOnly, NULL);
     IOSurfaceUnlock(dst, 0, NULL);
 }
+static void io_copy_rect(IOSurfaceRef dst, int dst_ch, int dst_sp,
+                         IOSurfaceRef src, int src_ch, int src_sp,
+                         int channels, int cols) {
+    IOSurfaceLock(dst, 0, NULL);
+    IOSurfaceLock(src, kIOSurfaceLockReadOnly, NULL);
+    _Float16 *db = (_Float16*)IOSurfaceGetBaseAddress(dst) + dst_ch*dst_sp;
+    _Float16 *sb = (_Float16*)IOSurfaceGetBaseAddress(src) + src_ch*src_sp;
+    for (int c = 0; c < channels; c++)
+        memcpy(db + c*dst_sp, sb + c*src_sp, (size_t)cols * sizeof(_Float16));
+    IOSurfaceUnlock(src, kIOSurfaceLockReadOnly, NULL);
+    IOSurfaceUnlock(dst, 0, NULL);
+}
 static void io_write_fp16_at(IOSurfaceRef s, int ch_off, const float *data, int channels, int sp) {
     IOSurfaceLock(s, 0, NULL);
     cvt_f32_f16((_Float16*)IOSurfaceGetBaseAddress(s) + ch_off * sp, data, channels * sp);
@@ -95,12 +107,38 @@ static void io_read_dyn(IOSurfaceRef s, float *out, int oc, int seq) {
     IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
 }
 
-// Compile MIL to ANE kernel
-static Kern *compile_kern_mil_w(NSString *mil, NSDictionary *weights, int ic_bytes, int oc_bytes) {
+// RMSNorm backward: input layout per channel is dy[SEQ], x[SEQ], w[1].
+#define RMS_BWD_SP (2*SEQ + 1)
+static void io_write_rmsnorm_bwd(IOSurfaceRef s, const float *dy, const float *x, const float *w) {
+    IOSurfaceLock(s, 0, NULL);
+    _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
+    for (int d = 0; d < DIM; d++) {
+        _Float16 *row = buf + d*RMS_BWD_SP;
+        cvt_f32_f16(row, dy + d*SEQ, SEQ);
+        cvt_f32_f16(row + SEQ, x + d*SEQ, SEQ);
+        row[2*SEQ] = (_Float16)w[d];
+    }
+    IOSurfaceUnlock(s, 0, NULL);
+}
+// Final RMSNorm backward: channels are concatenated as dy, x, and w broadcast across SEQ.
+static void io_write_rmsnorm_bwd_chan(IOSurfaceRef s, const float *dy, const float *x, const float *w) {
+    IOSurfaceLock(s, 0, NULL);
+    _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
+    for (int d = 0; d < DIM; d++) {
+        _Float16 wd = (_Float16)w[d];
+        cvt_f32_f16(buf + d*SEQ, dy + d*SEQ, SEQ);
+        cvt_f32_f16(buf + (DIM + d)*SEQ, x + d*SEQ, SEQ);
+        _Float16 *wrow = buf + (2*DIM + d)*SEQ;
+        for (int t = 0; t < SEQ; t++) wrow[t] = wd;
+    }
+    IOSurfaceUnlock(s, 0, NULL);
+}
+
+static bool compile_model_mil_w(NSString *mil, NSDictionary *weights, void **model_out, void **tmp_dir_out) {
     @autoreleasepool {
     NSData *md = [mil dataUsingEncoding:NSUTF8StringEncoding];
     id desc = ((id(*)(Class,SEL,id,id,id))objc_msgSend)(g_D, @selector(modelWithMILText:weights:optionsPlist:), md, weights, nil);
-    if (!desc) { printf("  [compile] desc=NULL\n"); return NULL; }
+    if (!desc) { printf("  [compile] desc=NULL\n"); return false; }
     id mdl = ((id(*)(Class,SEL,id))objc_msgSend)(g_I, @selector(inMemoryModelWithDescriptor:), desc);
     id hx = ((id(*)(id,SEL))objc_msgSend)(mdl, @selector(hexStringIdentifier));
     NSString *td = [NSTemporaryDirectory() stringByAppendingPathComponent:hx];
@@ -112,62 +150,100 @@ static Kern *compile_kern_mil_w(NSString *mil, NSDictionary *weights, int ic_byt
     }
     NSError *e = nil;
     if (!((BOOL(*)(id,SEL,unsigned int,id,NSError**))objc_msgSend)(mdl, @selector(compileWithQoS:options:error:), 21, @{}, &e)) {
-        printf("  [compile] FAIL: %s\n", e ? [[e description] UTF8String] : "no error"); return NULL;
+        printf("  [compile] FAIL: %s\n", e ? [[e description] UTF8String] : "no error");
+        [[NSFileManager defaultManager] removeItemAtPath:td error:nil];
+        return false;
     }
     if (!((BOOL(*)(id,SEL,unsigned int,id,NSError**))objc_msgSend)(mdl, @selector(loadWithQoS:options:error:), 21, @{}, &e)) {
-        printf("  [compile] load FAIL\n"); return NULL;
+        printf("  [compile] load FAIL\n");
+        [[NSFileManager defaultManager] removeItemAtPath:td error:nil];
+        return false;
     }
     __sync_fetch_and_add(&g_compile_count, 1);
+    *model_out = (void*)CFBridgingRetain(mdl);
+    *tmp_dir_out = (void*)CFBridgingRetain(td);
+    return true;
+    }
+}
+
+static void *make_request_multi(IOSurfaceRef *inputs, int nin, IOSurfaceRef *outputs, int nout) {
+    NSMutableArray *in_arr = [NSMutableArray arrayWithCapacity:(NSUInteger)nin];
+    NSMutableArray *in_idx = [NSMutableArray arrayWithCapacity:(NSUInteger)nin];
+    NSMutableArray *out_arr = [NSMutableArray arrayWithCapacity:(NSUInteger)nout];
+    NSMutableArray *out_idx = [NSMutableArray arrayWithCapacity:(NSUInteger)nout];
+    for (int i = 0; i < nin; i++) {
+        [in_arr addObject:((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), inputs[i])];
+        [in_idx addObject:@(i)];
+    }
+    for (int i = 0; i < nout; i++) {
+        [out_arr addObject:((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), outputs[i])];
+        [out_idx addObject:@(i)];
+    }
+    id req = ((id(*)(Class,SEL,id,id,id,id,id,id,id))objc_msgSend)(g_AR,
+        @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
+        in_arr, in_idx, out_arr, out_idx, nil, nil, @0);
+    return (void*)CFBridgingRetain(req);
+}
+
+// Compile MIL to ANE kernel
+static Kern *compile_kern_mil_w(NSString *mil, NSDictionary *weights, int ic_bytes, int oc_bytes) {
     Kern *k = (Kern*)calloc(1, sizeof(Kern));
-    k->model = (void*)CFBridgingRetain(mdl);
+    if (!compile_model_mil_w(mil, weights, &k->model, &k->tmpDir)) {
+        free(k);
+        return NULL;
+    }
     k->ioIn = make_surface(ic_bytes);
     k->ioOut = make_surface(oc_bytes);
-    id wI = ((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), k->ioIn);
-    id wO = ((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), k->ioOut);
-    k->request = (void*)CFBridgingRetain(((id(*)(Class,SEL,id,id,id,id,id,id,id))objc_msgSend)(g_AR,
-        @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
-        @[wI], @[@0], @[wO], @[@0], nil, nil, @0));
-    k->tmpDir = (void*)CFBridgingRetain(td);
+    IOSurfaceRef ins[] = {k->ioIn};
+    IOSurfaceRef outs[] = {k->ioOut};
+    k->request = make_request_multi(ins, 1, outs, 1);
     return k;
-    }
+}
+static void unload_compiled_model(void *model, void *tmp_dir) {
+    if (!model || !tmp_dir) return;
+    id mdl = (__bridge id)model;
+    NSError *e = nil;
+    ((BOOL(*)(id,SEL,unsigned int,NSError**))objc_msgSend)(mdl, @selector(unloadWithQoS:error:), 21, &e);
+    [[NSFileManager defaultManager] removeItemAtPath:(__bridge id)tmp_dir error:nil];
+    CFRelease(model);
+    CFRelease(tmp_dir);
 }
 static void free_kern(Kern *k) {
     if (!k) return;
-    id mdl = (__bridge id)k->model; NSError *e = nil;
-    ((BOOL(*)(id,SEL,unsigned int,NSError**))objc_msgSend)(mdl, @selector(unloadWithQoS:error:), 21, &e);
-    CFRelease(k->ioIn); CFRelease(k->ioOut);
-    [[NSFileManager defaultManager] removeItemAtPath:(__bridge id)k->tmpDir error:nil];
-    CFRelease(k->model); CFRelease(k->request); CFRelease(k->tmpDir);
+    if (k->ioIn) CFRelease(k->ioIn);
+    if (k->ioOut) CFRelease(k->ioOut);
+    unload_compiled_model(k->model, k->tmpDir);
+    if (k->request) CFRelease(k->request);
     free(k);
 }
 static void ane_eval(Kern *k) {
     id mdl = (__bridge id)k->model; id req = (__bridge id)k->request; NSError *e = nil;
     ((BOOL(*)(id,SEL,unsigned int,id,id,NSError**))objc_msgSend)(mdl, @selector(evaluateWithQoS:options:request:error:), 21, @{}, req, &e);
 }
-static void ane_eval_req(Kern *k, void *request) {
-    id mdl = (__bridge id)k->model; id req = (__bridge id)request; NSError *e = nil;
+static void ane_eval_model_req(void *model, void *request) {
+    id mdl = (__bridge id)model; id req = (__bridge id)request; NSError *e = nil;
     ((BOOL(*)(id,SEL,unsigned int,id,id,NSError**))objc_msgSend)(mdl, @selector(evaluateWithQoS:options:request:error:), 21, @{}, req, &e);
 }
+static void ane_eval_req(Kern *k, void *request) {
+    ane_eval_model_req(k->model, request);
+}
 static void *make_request(Kern *k, IOSurfaceRef ioIn) {
-    id wI = ((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), ioIn);
-    id wO = ((id(*)(Class,SEL,IOSurfaceRef))objc_msgSend)(g_AIO, @selector(objectWithIOSurface:), k->ioOut);
-    id req = ((id(*)(Class,SEL,id,id,id,id,id,id,id))objc_msgSend)(g_AR,
-        @selector(requestWithInputs:inputIndices:outputs:outputIndices:weightsBuffer:perfStats:procedureIndex:),
-        @[wI], @[@0], @[wO], @[@0], nil, nil, @0);
-    return (void*)CFBridgingRetain(req);
+    IOSurfaceRef ins[] = {ioIn};
+    IOSurfaceRef outs[] = {k->ioOut};
+    return make_request_multi(ins, 1, outs, 1);
 }
 
 // ===== Per-layer weight staging for GQA =====
-// sdpaFwd: [1, DIM, 1, SEQ + Q_DIM + KV_DIM + KV_DIM] fp16 — no Wo (separate kernel)
-//   Wq: [DIM, Q_DIM], Wk: [DIM, KV_DIM], Wv: [DIM, KV_DIM]
+// sdpaFwd: [1, DIM, 1, SEQ + Q_DIM + KV_DIM + KV_DIM] fp16 — xnorm then QKV weights.
 #define SDPA_FWD_SP (SEQ + Q_DIM + KV_DIM + KV_DIM)
 static void stage_sdpa_fwd_weights(IOSurfaceRef s, const float *Wq, const float *Wk, const float *Wv) {
     IOSurfaceLock(s, 0, NULL);
     _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
     for (int d = 0; d < DIM; d++) {
-        cvt_f32_f16(buf + d*SDPA_FWD_SP + SEQ,                   Wq + d*Q_DIM, Q_DIM);
-        cvt_f32_f16(buf + d*SDPA_FWD_SP + SEQ+Q_DIM,             Wk + d*KV_DIM, KV_DIM);
-        cvt_f32_f16(buf + d*SDPA_FWD_SP + SEQ+Q_DIM+KV_DIM,     Wv + d*KV_DIM, KV_DIM);
+        _Float16 *row = buf + d*SDPA_FWD_SP;
+        cvt_f32_f16(row + SEQ,                  Wq + d*Q_DIM, Q_DIM);
+        cvt_f32_f16(row + SEQ + Q_DIM,          Wk + d*KV_DIM, KV_DIM);
+        cvt_f32_f16(row + SEQ + Q_DIM + KV_DIM, Wv + d*KV_DIM, KV_DIM);
     }
     IOSurfaceUnlock(s, 0, NULL);
 }
@@ -196,16 +272,17 @@ static void write_wo_fwd_acts(IOSurfaceRef s, const float *attn_out) {
     IOSurfaceUnlock(s, 0, NULL);
 }
 
-// ffnFused: [1, DIM, 1, 2*SEQ+3*HIDDEN] fp16
+// ffnFused: [1, DIM, 1, 2*SEQ + 3*HIDDEN] fp16 — x2norm, x2, then FFN weights.
 #define FFN_FUSED_SP (2*SEQ + 3*HIDDEN)
 static void stage_ffn_fused_weights(IOSurfaceRef s,
-                                     const float *W1t, const float *W3t, const float *W2_orig) {
+                                    const float *W1t, const float *W3t, const float *W2_orig) {
     IOSurfaceLock(s, 0, NULL);
     _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
     for (int d = 0; d < DIM; d++) {
-        cvt_f32_f16(buf + d*FFN_FUSED_SP + 2*SEQ,          W1t + d*HIDDEN, HIDDEN);
-        cvt_f32_f16(buf + d*FFN_FUSED_SP + 2*SEQ+HIDDEN,   W3t + d*HIDDEN, HIDDEN);
-        cvt_f32_f16(buf + d*FFN_FUSED_SP + 2*SEQ+2*HIDDEN, W2_orig + d*HIDDEN, HIDDEN);
+        _Float16 *row = buf + d*FFN_FUSED_SP;
+        cvt_f32_f16(row + 2*SEQ,             W1t + d*HIDDEN, HIDDEN);
+        cvt_f32_f16(row + 2*SEQ + HIDDEN,    W3t + d*HIDDEN, HIDDEN);
+        cvt_f32_f16(row + 2*SEQ + 2*HIDDEN,  W2_orig + d*HIDDEN, HIDDEN);
     }
     IOSurfaceUnlock(s, 0, NULL);
 }
@@ -236,23 +313,23 @@ static void write_ffn_bwd_w2t_acts(IOSurfaceRef s, const float *dffn) {
     IOSurfaceUnlock(s, 0, NULL);
 }
 
-// ffnBwdW13t: [1, HIDDEN, 1, 2*SEQ+2*DIM] fp16
-#define FFN_BWD_W13T_SP (2*SEQ + 2*DIM)
+// ffnBwdW13t: [1, HIDDEN, 1, 3*SEQ+2*DIM] fp16
+#define FFN_BWD_W13T_SP (3*SEQ + 2*DIM)
 static void stage_ffn_bwd_w13t_weights(IOSurfaceRef s, const float *W1, const float *W3) {
     IOSurfaceLock(s, 0, NULL);
     _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
     for (int d = 0; d < HIDDEN; d++) {
-        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + 2*SEQ,       W1 + d*DIM, DIM);
-        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + 2*SEQ + DIM, W3 + d*DIM, DIM);
+        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + 3*SEQ,       W1 + d*DIM, DIM);
+        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + 3*SEQ + DIM, W3 + d*DIM, DIM);
     }
     IOSurfaceUnlock(s, 0, NULL);
 }
-static void write_ffn_bwd_w13t_acts(IOSurfaceRef s, const float *dh1, const float *dh3) {
+static void write_ffn_bwd_w13t_acts(IOSurfaceRef s, const float *h1, const float *h3) {
     IOSurfaceLock(s, 0, NULL);
     _Float16 *buf = (_Float16*)IOSurfaceGetBaseAddress(s);
     for (int d = 0; d < HIDDEN; d++) {
-        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP,       dh1 + d*SEQ, SEQ);
-        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + SEQ, dh3 + d*SEQ, SEQ);
+        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + SEQ,   h1 + d*SEQ, SEQ);
+        cvt_f32_f16(buf + d*FFN_BWD_W13T_SP + 2*SEQ, h3 + d*SEQ, SEQ);
     }
     IOSurfaceUnlock(s, 0, NULL);
 }
