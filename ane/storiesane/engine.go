@@ -18,6 +18,11 @@ type Options struct {
 	AccumSteps     int
 	LR             float32
 	Seed           int64
+	AdamBeta1      float32
+	AdamBeta2      float32
+	AdamEps        float32
+	WeightDecay    float32
+	GradClip       float32
 	GradTaskLimit  int
 	UseANE         bool // best-effort ANE layer forward plus final-head offload on Darwin
 	HybridBackward bool // best-effort ANE backward dx propagation on Darwin
@@ -62,16 +67,21 @@ type Engine struct {
 	opt *stories.OptimState
 	off *offload
 
-	tokens     []uint16
-	seq        int
-	accumSteps int
-	lr         float32
-	seed       int64
-	useANE     bool
-	offDirty   bool
-	rng        uint64
-	state      State
-	start      time.Time
+	tokens      []uint16
+	seq         int
+	accumSteps  int
+	lr          float32
+	seed        int64
+	adamBeta1   float32
+	adamBeta2   float32
+	adamEps     float32
+	weightDecay float32
+	gradClip    float32
+	useANE      bool
+	offDirty    bool
+	rng         uint64
+	state       State
+	start       time.Time
 
 	layers                  []*layerForward
 	layersInit              bool
@@ -138,6 +148,18 @@ func Open(opts Options) (*Engine, error) {
 	if opts.Seed == 0 {
 		opts.Seed = 42
 	}
+	if opts.AdamBeta1 <= 0 {
+		opts.AdamBeta1 = 0.9
+	}
+	if opts.AdamBeta2 <= 0 {
+		opts.AdamBeta2 = 0.999
+	}
+	if opts.AdamEps <= 0 {
+		opts.AdamEps = 1e-8
+	}
+	if opts.GradClip < 0 {
+		opts.GradClip = 0
+	}
 	if opts.GradTaskLimit > 0 {
 		SetGradTaskConcurrency(opts.GradTaskLimit)
 	}
@@ -183,6 +205,11 @@ func Open(opts Options) (*Engine, error) {
 		accumSteps:              opts.AccumSteps,
 		lr:                      opts.LR,
 		seed:                    opts.Seed,
+		adamBeta1:               opts.AdamBeta1,
+		adamBeta2:               opts.AdamBeta2,
+		adamEps:                 opts.AdamEps,
+		weightDecay:             opts.WeightDecay,
+		gradClip:                opts.GradClip,
 		useANE:                  opts.UseANE,
 		hybridBackwardRequested: opts.HybridBackward,
 		rng:                     drand48Seed(opts.Seed),
@@ -212,6 +239,26 @@ func Open(opts Options) (*Engine, error) {
 		gradV:                   make([]float32, stories.Dim*seq),
 		gradPrev:                make([]float32, stories.Dim*seq),
 	}, nil
+}
+
+// LR returns the current learning rate used by optimizer updates.
+func (e *Engine) LR() float32 {
+	if e == nil {
+		return 0
+	}
+	return e.lr
+}
+
+// SetLR updates the learning rate used by optimizer updates.
+func (e *Engine) SetLR(lr float32) error {
+	if e == nil || e.mw == nil || e.opt == nil {
+		return fmt.Errorf("storiesane set lr: engine is closed")
+	}
+	if lr <= 0 {
+		return fmt.Errorf("storiesane set lr: lr must be > 0")
+	}
+	e.lr = lr
+	return nil
 }
 
 // Step runs one engine step.
@@ -456,13 +503,24 @@ func (e *Engine) flushPending() time.Duration {
 	}
 	scale := float32(1.0 / float64(e.state.PendingSteps))
 	scaleModelGrad(e.accum, scale)
+	e.clipLayerGradients(e.accum.Layers, e.accum.RMSFinal, e.accum.Embed)
 	e.state.AdamT++
 	adamStart := time.Now()
 	for i := range e.mw.Layers {
-		applyLayerAdam(&e.mw.Layers[i], &e.accum.Layers[i], &e.opt.Layers[i], int(e.state.AdamT), e.lr)
+		applyLayerAdam(
+			&e.mw.Layers[i],
+			&e.accum.Layers[i],
+			&e.opt.Layers[i],
+			int(e.state.AdamT),
+			e.lr,
+			e.adamBeta1,
+			e.adamBeta2,
+			e.adamEps,
+			e.weightDecay,
+		)
 	}
-	adamUpdateCF(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	adamUpdateCF(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0)
+	adamUpdateCF(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay)
 	e.stepMetrics.addAdam(time.Since(adamStart))
 	compileDur := e.refreshANERuntimeForWeights()
 	clearModelGrad(e.accum)

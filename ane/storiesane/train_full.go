@@ -141,6 +141,49 @@ func scaleSlice(v []float32, scale float32) {
 	}
 }
 
+func sumSquares(v []float32) float64 {
+	var s float64
+	for _, x := range v {
+		f := float64(x)
+		s += f * f
+	}
+	return s
+}
+
+func (e *Engine) clipLayerGradients(layers []stories.LayerWeights, gRMS, gEmbed []float32) {
+	if e == nil || e.gradClip <= 0 {
+		return
+	}
+	var norm2 float64
+	for i := range layers {
+		g := &layers[i]
+		norm2 += sumSquares(g.Wq)
+		norm2 += sumSquares(g.Wk)
+		norm2 += sumSquares(g.Wv)
+		norm2 += sumSquares(g.Wo)
+		norm2 += sumSquares(g.W1)
+		norm2 += sumSquares(g.W2)
+		norm2 += sumSquares(g.W3)
+		norm2 += sumSquares(g.RMSAtt)
+		norm2 += sumSquares(g.RMSFFN)
+	}
+	norm2 += sumSquares(gRMS)
+	norm2 += sumSquares(gEmbed)
+	if norm2 <= 0 {
+		return
+	}
+	norm := float32(math.Sqrt(norm2))
+	if norm <= e.gradClip {
+		return
+	}
+	scale := e.gradClip / norm
+	for i := range layers {
+		scaleLayerGrad(&layers[i], scale)
+	}
+	scaleSlice(gRMS, scale)
+	scaleSlice(gEmbed, scale)
+}
+
 func addLayerGrad(dst, src *stories.LayerWeights) {
 	addSlice(dst.Wq, src.Wq)
 	addSlice(dst.Wk, src.Wk)
@@ -706,12 +749,23 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 	begin := time.Now()
 	stories.EmbedBackward(e.gEmbed, dCur, input, stories.Dim, e.seq)
 	e.stepMetrics.addEmbedGrad(time.Since(begin))
+	e.clipLayerGradients(e.applyGrads, e.gRMS, e.gEmbed)
 	adamStart := time.Now()
 	for l := range e.mw.Layers {
-		applyLayerAdam(&e.mw.Layers[l], &e.applyGrads[l], &e.opt.Layers[l], stepT, e.lr)
+		applyLayerAdam(
+			&e.mw.Layers[l],
+			&e.applyGrads[l],
+			&e.opt.Layers[l],
+			stepT,
+			e.lr,
+			e.adamBeta1,
+			e.adamBeta2,
+			e.adamEps,
+			e.weightDecay,
+		)
 	}
-	adamUpdateCF(e.mw.RMSFinal, e.gRMS, &e.opt.RMSFinal, stepT, e.lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(e.mw.Embed, e.gEmbed, &e.opt.Embed, stepT, e.lr, 0.9, 0.999, 1e-8)
+	adamUpdateCF(e.mw.RMSFinal, e.gRMS, &e.opt.RMSFinal, stepT, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0)
+	adamUpdateCF(e.mw.Embed, e.gEmbed, &e.opt.Embed, stepT, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay)
 	e.stepMetrics.addAdam(time.Since(adamStart))
 	compileDur := e.refreshANERuntimeForWeights()
 	e.state.AdamT = uint32(stepT)
@@ -744,19 +798,19 @@ func (e *Engine) waitDWJobs() {
 	e.stepMetrics.addDWWait(time.Since(begin))
 }
 
-func applyLayerAdam(dst *stories.LayerWeights, grad *stories.LayerWeights, st *stories.LayerOptimState, t int, lr float32) {
-	adamUpdateCF(dst.Wq, grad.Wq, &st.Wq, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.Wk, grad.Wk, &st.Wk, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.Wv, grad.Wv, &st.Wv, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.Wo, grad.Wo, &st.Wo, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.W1, grad.W1, &st.W1, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.W2, grad.W2, &st.W2, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.W3, grad.W3, &st.W3, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.RMSAtt, grad.RMSAtt, &st.RMSAtt, t, lr, 0.9, 0.999, 1e-8)
-	adamUpdateCF(dst.RMSFFN, grad.RMSFFN, &st.RMSFFN, t, lr, 0.9, 0.999, 1e-8)
+func applyLayerAdam(dst *stories.LayerWeights, grad *stories.LayerWeights, st *stories.LayerOptimState, t int, lr, b1, b2, eps, wd float32) {
+	adamUpdateCF(dst.Wq, grad.Wq, &st.Wq, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.Wk, grad.Wk, &st.Wk, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.Wv, grad.Wv, &st.Wv, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.Wo, grad.Wo, &st.Wo, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.W1, grad.W1, &st.W1, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.W2, grad.W2, &st.W2, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.W3, grad.W3, &st.W3, t, lr, b1, b2, eps, wd)
+	adamUpdateCF(dst.RMSAtt, grad.RMSAtt, &st.RMSAtt, t, lr, b1, b2, eps, 0)
+	adamUpdateCF(dst.RMSFFN, grad.RMSFFN, &st.RMSFFN, t, lr, b1, b2, eps, 0)
 }
 
-func adamUpdateCF(w, g []float32, st *stories.AdamState, t int, lr, b1, b2, eps float32) {
+func adamUpdateCF(w, g []float32, st *stories.AdamState, t int, lr, b1, b2, eps, wd float32) {
 	if len(w) == 0 {
 		return
 	}
@@ -768,7 +822,11 @@ func adamUpdateCF(w, g []float32, st *stories.AdamState, t int, lr, b1, b2, eps 
 			st.V[i] = b2*st.V[i] + (1-b2)*g[i]*g[i]
 			mh := st.M[i] / bc1
 			vh := st.V[i] / bc2
-			w[i] -= lr * mh / (float32(math.Sqrt(float64(vh))) + eps)
+			update := mh / (float32(math.Sqrt(float64(vh))) + eps)
+			if wd != 0 {
+				update += wd * w[i]
+			}
+			w[i] -= lr * update
 		}
 	})
 }

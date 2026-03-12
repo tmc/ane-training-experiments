@@ -77,7 +77,7 @@ func BenchmarkDirectGoCPUHotspots(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			adamUpdateCF(w, g, st, i+1, 3e-4, 0.9, 0.999, 1e-8)
+			adamUpdateCF(w, g, st, i+1, 3e-4, 0.9, 0.999, 1e-8, 0)
 		}
 	})
 	b.Run("adam_embed_serial", func(b *testing.B) {
@@ -93,7 +93,7 @@ func BenchmarkDirectGoCPUHotspots(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			adamUpdateCF(w, g, st, i+1, 3e-4, 0.9, 0.999, 1e-8)
+			adamUpdateCF(w, g, st, i+1, 3e-4, 0.9, 0.999, 1e-8, 0)
 		}
 	})
 	b.Run("adam_w2_serial", func(b *testing.B) {
