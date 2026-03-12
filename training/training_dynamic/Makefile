@@ -9,10 +9,10 @@ MODEL_HDR = models/$(MODEL).h
 
 DEFS =
 ifneq ($(strip $(SEQ_OVERRIDE)),)
-DEFS += -DSEQ=$(SEQ_OVERRIDE)
+DEFS += -DSEQ_OVERRIDE=$(SEQ_OVERRIDE)
 endif
 ifneq ($(strip $(ACCUM_STEPS_OVERRIDE)),)
-DEFS += -DACCUM_STEPS=$(ACCUM_STEPS_OVERRIDE)
+DEFS += -DACCUM_STEPS_OVERRIDE=$(ACCUM_STEPS_OVERRIDE)
 endif
 
 OUTBIN = $(if $(strip $(OUT)),$(OUT),$@)

@@ -1,6 +1,16 @@
 // train.m — Dynamic weight ANE training (model-agnostic GQA support)
 // Model selected at compile time via: make MODEL=qwen3_06b (or stories110m)
 // Compile kernels ONCE at startup, update weights via IOSurface every step.
+#ifdef SEQ_OVERRIDE
+#undef SEQ
+#define SEQ SEQ_OVERRIDE
+#endif
+
+#ifdef ACCUM_STEPS_OVERRIDE
+#undef ACCUM_STEPS
+#define ACCUM_STEPS ACCUM_STEPS_OVERRIDE
+#endif
+
 #include "mil_dynamic.h"
 #include "cpu_ops.h"
 
@@ -316,9 +326,6 @@ int main(int argc, char *argv[]) {
                 for(int i=0;i<DIM;i++) rms_final[i]=1.0f;
                 float escale = 0.02f;
                 for(size_t i=0;i<(size_t)VOCAB*DIM;i++) embed[i]=escale*(2*drand48()-1);
-            } else {
-                printf("  ERROR: Pretrained weight loading not implemented for Qwen3. Use --scratch.\n");
-                return 1;
             }
         }
 
