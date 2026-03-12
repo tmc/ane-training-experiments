@@ -13,6 +13,7 @@ import (
 	"github.com/tmc/apple/coregraphics"
 	appleiosurface "github.com/tmc/apple/iosurface"
 	xane "github.com/tmc/apple/x/ane"
+	xanetelemetry "github.com/tmc/apple/x/ane/telemetry"
 )
 
 const defaultQoS = uint32(21)
@@ -305,7 +306,7 @@ func (k *Kernel) EvalWithStats() (EvalStats, error) {
 	if k == nil || k.k == nil {
 		return EvalStats{}, fmt.Errorf("eval with stats: kernel is closed")
 	}
-	st, err := k.k.EvalWithStats()
+	st, err := xanetelemetry.EvalWithStats(k.k)
 	if err != nil {
 		return EvalStats{}, err
 	}
@@ -321,14 +322,14 @@ func (k *Kernel) EvalHWExecutionNS() (uint64, error) {
 	if k == nil || k.k == nil {
 		return 0, fmt.Errorf("eval hw execution ns: kernel is closed")
 	}
-	st, err := k.k.EvalWithStats()
+	st, err := xanetelemetry.EvalWithStats(k.k)
 	if err != nil {
 		return 0, err
 	}
 	return st.HWExecutionNS, nil
 }
 
-func evalStatsMetrics(st xane.EvalStats) map[string]float64 {
+func evalStatsMetrics(st xanetelemetry.EvalStats) map[string]float64 {
 	rv := reflect.ValueOf(st)
 	rt := rv.Type()
 	var metrics map[string]float64
@@ -376,7 +377,7 @@ func skipEvalMetricField(name string) bool {
 	}
 }
 
-func addEvalStatsBytes(metrics map[string]float64, st xane.EvalStats) map[string]float64 {
+func addEvalStatsBytes(metrics map[string]float64, st xanetelemetry.EvalStats) map[string]float64 {
 	if n := len(st.PerfCounterData); n > 0 {
 		metrics = addEvalMetric(metrics, "PerfCounterBytes", float64(n))
 	}
@@ -386,7 +387,7 @@ func addEvalStatsBytes(metrics map[string]float64, st xane.EvalStats) map[string
 	return metrics
 }
 
-func addPerfCounterMetrics(metrics map[string]float64, counters []xane.PerfCounter) map[string]float64 {
+func addPerfCounterMetrics(metrics map[string]float64, counters []xanetelemetry.PerfCounter) map[string]float64 {
 	for _, counter := range counters {
 		name := counter.Name
 		if name == "" {
@@ -413,11 +414,11 @@ func adaptCompileStats(st xane.CompileStats) CompileStats {
 	}
 }
 
-func (k *Kernel) Diagnostics() xane.Diagnostics {
+func (k *Kernel) Diagnostics() xanetelemetry.Diagnostics {
 	if k == nil || k.k == nil {
-		return xane.Diagnostics{}
+		return xanetelemetry.Diagnostics{}
 	}
-	return k.k.Diagnostics()
+	return xanetelemetry.ProbeDiagnostics(k.k)
 }
 
 func (k *Kernel) EvalWithSignalEvent(signalPort uint32, signalValue uint64, cfg xane.SharedEventEvalOptions) error {
