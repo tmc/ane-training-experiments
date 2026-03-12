@@ -3,6 +3,7 @@ package dynamicmatmul
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/maderix/ANE/ane/mil"
 	"github.com/maderix/ANE/ane/model"
@@ -25,6 +26,7 @@ type Options struct {
 // EvalStats reports per-eval ANE timing.
 type EvalStats struct {
 	HWExecutionNS uint64
+	Metrics       map[string]float64
 }
 
 // Executor evaluates row-major y = x*w with runtime-provided weights.
@@ -132,12 +134,14 @@ func (e *Executor) EvalInto(dst, x, w []float32) (EvalStats, error) {
 	}
 
 	var hwNS uint64
+	var metrics map[string]float64
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		packInputTile(tile.inputPacked, x, w, e.batch, e.inDim, e.outDim, tile.outOffset, tile.outDim)
 		if err := tile.k.WriteInputF32(0, tile.inputPacked); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write input tile %d: %w", i, err)
 		}
+		evalStart := time.Now()
 		st, err := tile.k.EvalWithStats()
 		if err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: eval tile %d: %w", i, err)
@@ -146,9 +150,14 @@ func (e *Executor) EvalInto(dst, x, w []float32) (EvalStats, error) {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read output tile %d: %w", i, err)
 		}
 		unpackOutputTile(dst, tile.outputPacked, e.batch, e.outDim, tile.outOffset, tile.outDim)
-		hwNS += st.HWExecutionNS
+		if st.HWExecutionNS != 0 {
+			hwNS += st.HWExecutionNS
+		} else {
+			hwNS += uint64(time.Since(evalStart).Nanoseconds())
+		}
+		metrics = addEvalMetrics(metrics, st.Metrics)
 	}
-	return EvalStats{HWExecutionNS: hwNS}, nil
+	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
 }
 
 // EvalCF evaluates a channel-first input tensor against previously primed
@@ -171,21 +180,66 @@ func (e *Executor) EvalCF(xCF []float32) (EvalStats, error) {
 	if !e.weightsReady {
 		return EvalStats{}, fmt.Errorf("dynamic matmul: weights are not primed")
 	}
+	return e.evalCFLocked(xCF, true)
+}
 
+// EvalCFHW evaluates a channel-first input tensor against previously primed
+// weights and returns only aggregate hardware execution time.
+func (e *Executor) EvalCFHW(xCF []float32) (uint64, error) {
+	if e == nil {
+		return 0, fmt.Errorf("dynamic matmul: executor is nil")
+	}
+	if len(xCF) != e.inDim*e.batch {
+		return 0, fmt.Errorf("dynamic matmul: channel-first input length=%d want=%d", len(xCF), e.inDim*e.batch)
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.tiles) == 0 {
+		return 0, fmt.Errorf("dynamic matmul: executor is closed")
+	}
+	if !e.weightsReady {
+		return 0, fmt.Errorf("dynamic matmul: weights are not primed")
+	}
+	st, err := e.evalCFLocked(xCF, false)
+	if err != nil {
+		return 0, err
+	}
+	return st.HWExecutionNS, nil
+}
+
+func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, error) {
 	var hwNS uint64
+	var metrics map[string]float64
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
 		if err := tile.k.WriteInputF32(0, tile.inputPacked); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, err)
 		}
-		st, err := tile.k.EvalWithStats()
-		if err != nil {
-			return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
+		evalStart := time.Now()
+		var tileHW uint64
+		if collectMetrics {
+			st, err := tile.k.EvalWithStats()
+			if err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
+			}
+			tileHW = st.HWExecutionNS
+			metrics = addEvalMetrics(metrics, st.Metrics)
+		} else {
+			var err error
+			tileHW, err = tile.k.EvalHWExecutionNS()
+			if err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
+			}
 		}
-		hwNS += st.HWExecutionNS
+		if tileHW != 0 {
+			hwNS += tileHW
+		} else {
+			hwNS += uint64(time.Since(evalStart).Nanoseconds())
+		}
 	}
-	return EvalStats{HWExecutionNS: hwNS}, nil
+	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
 }
 
 // ReadOutputCF reads the last evaluated output tensor in channel-first order.
@@ -228,6 +282,20 @@ func (e *Executor) EvalCFIOInto(dstCF, xCF []float32) (EvalStats, error) {
 		return EvalStats{}, err
 	}
 	return st, nil
+}
+
+// EvalCFIOIntoHW evaluates a channel-first input tensor into a channel-first
+// output tensor using previously primed weights and returns only aggregate
+// hardware execution time.
+func (e *Executor) EvalCFIOIntoHW(dstCF, xCF []float32) (uint64, error) {
+	hwNS, err := e.EvalCFHW(xCF)
+	if err != nil {
+		return 0, err
+	}
+	if err := e.ReadOutputCF(dstCF); err != nil {
+		return 0, err
+	}
+	return hwNS, nil
 }
 
 // PrimeWeightsIO copies the full IO-layout weight matrix into the cached ANE
@@ -325,12 +393,14 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 	defer e.clearTouchedRows(rows)
 
 	var hwNS uint64
+	var metrics map[string]float64
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageOneHotActivations(tile.inputPacked, e.prevOneHot, xs, e.batch, tile.outDim)
 		if err := writeTileRows(tile, rows); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write one-hot tile %d: %w", i, err)
 		}
+		evalStart := time.Now()
 		st, err := tile.k.EvalWithStats()
 		if err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: eval one-hot tile %d: %w", i, err)
@@ -339,10 +409,28 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read one-hot tile %d: %w", i, err)
 		}
 		unpackOutputTileRows(dst, tile.outputPacked, logicalBatch, e.batch, e.outDim, tile.outOffset, tile.outDim)
-		hwNS += st.HWExecutionNS
+		if st.HWExecutionNS != 0 {
+			hwNS += st.HWExecutionNS
+		} else {
+			hwNS += uint64(time.Since(evalStart).Nanoseconds())
+		}
+		metrics = addEvalMetrics(metrics, st.Metrics)
 	}
 	updatePrevOneHot(e.prevOneHot, xs)
-	return EvalStats{HWExecutionNS: hwNS}, nil
+	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
+}
+
+func addEvalMetrics(dst, src map[string]float64) map[string]float64 {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]float64, len(src))
+	}
+	for k, v := range src {
+		dst[k] += v
+	}
+	return dst
 }
 
 // CopyOutputToInput copies the last evaluated output tensor into a destination

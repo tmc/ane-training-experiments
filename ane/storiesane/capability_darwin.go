@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/maderix/ANE/ane/mil"
-	"github.com/maderix/ANE/ane/model"
 	"github.com/maderix/ANE/ane/stories"
 )
 
@@ -52,20 +50,33 @@ func ProbeDirectSequence(seq int) error {
 }
 
 func compileDirectSequenceProbe(seq int) error {
-	blob, err := mil.BuildWeightBlob(make([]float32, stories.Dim*stories.Dim), stories.Dim, stories.Dim)
-	if err != nil {
-		return fmt.Errorf("build probe weights: %w", err)
+	layer := stories.LayerWeights{
+		Wq:     make([]float32, stories.WQSize),
+		Wk:     make([]float32, stories.WQSize),
+		Wv:     make([]float32, stories.WQSize),
+		Wo:     make([]float32, stories.WOSize),
+		W1:     make([]float32, stories.W1Size),
+		W2:     make([]float32, stories.W2Size),
+		W3:     make([]float32, stories.W3Size),
+		RMSAtt: make([]float32, stories.Dim),
+		RMSFFN: make([]float32, stories.Dim),
 	}
-	k, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenConvFP16(stories.Dim, stories.Dim, seq),
-		WeightFiles: []model.WeightFile{{
-			Path: "@model_path/weights/weight.bin",
-			Blob: blob,
-		}},
-	})
+	lf, err := compileStoriesLayerForwardDynamic(layer, seq)
 	if err != nil {
-		return fmt.Errorf("compile probe kernel: %w", err)
+		return fmt.Errorf("compile direct forward layer: %w", err)
 	}
-	defer k.Close()
+	defer lf.close()
+	lb, err := compileStoriesLayerBackwardDynamic(layer, seq)
+	if err != nil {
+		return fmt.Errorf("compile direct backward layer: %w", err)
+	}
+	defer lb.close()
+	off := newOffload(&stories.ModelWeights{
+		RMSFinal: make([]float32, stories.Dim),
+		Embed:    make([]float32, stories.Vocab*stories.Dim),
+	}, seq, true)
+	if off != nil {
+		defer off.close()
+	}
 	return nil
 }

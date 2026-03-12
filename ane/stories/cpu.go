@@ -300,7 +300,15 @@ func MatMulVocabSeq(logits, embed, x []float32, vocab, dim, seq int) {
 }
 
 func MatMulEmbedT(dx, embed, dLogits []float32, vocab, dim, seq int) {
-	if matMulEmbedTAccelerate(dx, embed, dLogits, vocab, dim, seq) {
+	MatMulEmbedTScale(dx, embed, dLogits, vocab, dim, seq, 1)
+}
+
+func MatMulEmbedTScale(dx, embed, dLogits []float32, vocab, dim, seq int, scale float32) {
+	if scale == 0 {
+		clear(dx)
+		return
+	}
+	if matMulEmbedTAccelerateScale(dx, embed, dLogits, vocab, dim, seq, scale) {
 		return
 	}
 	parallelFor(dim, func(start, end int) {
@@ -318,14 +326,22 @@ func MatMulEmbedT(dx, embed, dLogits []float32, vocab, dim, seq int) {
 			}
 			out := dx[d*seq : (d+1)*seq]
 			for t := 0; t < seq; t++ {
-				out[t] = acc[t]
+				out[t] = acc[t] * scale
 			}
 		}
 	})
 }
 
 func MatMulGradEmbed(dEmbed, dLogits, x []float32, vocab, dim, seq int) {
-	if matMulGradEmbedAccelerate(dEmbed, dLogits, x, vocab, dim, seq) {
+	MatMulGradEmbedScale(dEmbed, dLogits, x, vocab, dim, seq, 1)
+}
+
+func MatMulGradEmbedScale(dEmbed, dLogits, x []float32, vocab, dim, seq int, scale float32) {
+	if scale == 0 {
+		clear(dEmbed)
+		return
+	}
+	if matMulGradEmbedAccelerateScale(dEmbed, dLogits, x, vocab, dim, seq, scale) {
 		return
 	}
 	parallelFor(vocab, func(start, end int) {
@@ -335,7 +351,7 @@ func MatMulGradEmbed(dEmbed, dLogits, x []float32, vocab, dim, seq int) {
 				for t := 0; t < seq; t++ {
 					sum += dLogits[v*seq+t] * x[d*seq+t]
 				}
-				dEmbed[v*dim+d] += sum
+				dEmbed[v*dim+d] = sum * scale
 			}
 		}
 	})

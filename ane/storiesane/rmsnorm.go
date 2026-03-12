@@ -7,9 +7,13 @@ import (
 )
 
 func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
+	rmsNormGradWeightsWithRRMS(dw, dy, x, nil, d, s)
+}
+
+func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
 	workers := runtime.GOMAXPROCS(0)
 	if workers < 2 || s < workers*4 {
-		rmsNormGradWeightsRange(dw, dy, x, d, s, 0, s)
+		rmsNormGradWeightsRange(dw, dy, x, rrms, d, s, 0, s)
 		return
 	}
 	if workers > s {
@@ -31,7 +35,7 @@ func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 		wg.Add(1)
 		go func(start, end, worker int) {
 			defer wg.Done()
-			rmsNormGradWeightsRange(shards[worker], dy, x, d, s, start, end)
+			rmsNormGradWeightsRange(shards[worker], dy, x, rrms, d, s, start, end)
 		}(start, end, worker)
 	}
 	wg.Wait()
@@ -45,16 +49,21 @@ func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 	}
 }
 
-func rmsNormGradWeightsRange(dw, dy, x []float32, d, s, start, end int) {
+func rmsNormGradWeightsRange(dw, dy, x, rrms []float32, d, s, start, end int) {
 	for t := start; t < end; t++ {
-		sum := 0.0
-		for i := 0; i < d; i++ {
-			v := float64(x[i*s+t])
-			sum += v * v
+		scale := 0.0
+		if len(rrms) > t {
+			scale = float64(rrms[t])
+		} else {
+			sum := 0.0
+			for i := 0; i < d; i++ {
+				v := float64(x[i*s+t])
+				sum += v * v
+			}
+			scale = 1.0 / math.Sqrt(sum/float64(d)+1e-5)
 		}
-		rrms := 1.0 / math.Sqrt(sum/float64(d)+1e-5)
 		for i := 0; i < d; i++ {
-			dw[i] += float32(float64(dy[i*s+t]*x[i*s+t]) * rrms)
+			dw[i] += float32(float64(dy[i*s+t]*x[i*s+t]) * scale)
 		}
 	}
 }

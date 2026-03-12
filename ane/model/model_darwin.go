@@ -4,7 +4,10 @@ package model
 
 import (
 	"fmt"
+	"os"
+	"reflect"
 	"runtime"
+	"strconv"
 	"unsafe"
 
 	"github.com/tmc/apple/coregraphics"
@@ -30,8 +33,15 @@ type WeightFile struct {
 	Blob []byte
 }
 
+type CompileStats struct {
+	CompileNS int64
+	LoadNS    int64
+	TotalNS   int64
+}
+
 type EvalStats struct {
 	HWExecutionNS uint64
+	Metrics       map[string]float64
 }
 
 // Kernel adapts github.com/tmc/apple/x/ane for the local model API.
@@ -53,6 +63,15 @@ type Kernel struct {
 // Both tensors must have matching element size and spatial shape. This mirrors
 // the native io_copy helper used to chain ANE kernels through IOSurfaces.
 func CopyOutputChannelsToInput(dst *Kernel, dstInput, dstChannel int, src *Kernel, srcOutput, srcChannel, channels int) error {
+	return CopyOutputRangeToInput(dst, dstInput, dstChannel, 0, src, srcOutput, srcChannel, 0, channels, -1)
+}
+
+// CopyOutputRangeToInput copies a contiguous width range for a contiguous block
+// of channels from src output into dst input without converting through float32.
+//
+// Offsets and width are expressed in elements along the width axis. A width of
+// -1 copies the full logical row width.
+func CopyOutputRangeToInput(dst *Kernel, dstInput, dstChannel, dstOffset int, src *Kernel, srcOutput, srcChannel, srcOffset, channels, width int) error {
 	if dst == nil || dst.k == nil {
 		return fmt.Errorf("copy output to input: destination kernel is closed")
 	}
@@ -76,11 +95,23 @@ func CopyOutputChannelsToInput(dst *Kernel, dstInput, dstChannel int, src *Kerne
 	if dstLayout.Height != 1 || srcLayout.Height != 1 {
 		return fmt.Errorf("copy output to input: height > 1 is not supported")
 	}
-	if dstLayout.Width != srcLayout.Width {
-		return fmt.Errorf("copy output to input: width mismatch dst=%d src=%d", dstLayout.Width, srcLayout.Width)
+	if width < 0 {
+		if dstOffset != 0 || srcOffset != 0 {
+			return fmt.Errorf("copy output to input: full-width copy requires zero offsets")
+		}
+		if dstLayout.Width != srcLayout.Width {
+			return fmt.Errorf("copy output to input: width mismatch dst=%d src=%d", dstLayout.Width, srcLayout.Width)
+		}
+		width = srcLayout.Width
 	}
 	if dstLayout.ElemSize != srcLayout.ElemSize {
 		return fmt.Errorf("copy output to input: elem size mismatch dst=%d src=%d", dstLayout.ElemSize, srcLayout.ElemSize)
+	}
+	if dstOffset < 0 || dstOffset+width > dstLayout.Width {
+		return fmt.Errorf("copy output to input: destination width range [%d,%d) out of range [0,%d)", dstOffset, dstOffset+width, dstLayout.Width)
+	}
+	if srcOffset < 0 || srcOffset+width > srcLayout.Width {
+		return fmt.Errorf("copy output to input: source width range [%d,%d) out of range [0,%d)", srcOffset, srcOffset+width, srcLayout.Width)
 	}
 	if srcChannel < 0 || srcChannel+channels > srcLayout.Channels {
 		return fmt.Errorf("copy output to input: source channels [%d,%d) out of range [0,%d)", srcChannel, srcChannel+channels, srcLayout.Channels)
@@ -88,29 +119,32 @@ func CopyOutputChannelsToInput(dst *Kernel, dstInput, dstChannel int, src *Kerne
 	if dstChannel < 0 || dstChannel+channels > dstLayout.Channels {
 		return fmt.Errorf("copy output to input: destination channels [%d,%d) out of range [0,%d)", dstChannel, dstChannel+channels, dstLayout.Channels)
 	}
-	return copySurfaceChannels(
-		dst.k.InputSurface(dstInput), dstLayout, dstChannel,
-		src.k.OutputSurface(srcOutput), srcLayout, srcChannel,
-		channels,
+	return copySurfaceRange(
+		dst.k.InputSurface(dstInput), dstLayout, dstChannel, dstOffset,
+		src.k.OutputSurface(srcOutput), srcLayout, srcChannel, srcOffset,
+		channels, width,
 	)
 }
 
 func Compile(opts CompileOptions) (*Kernel, error) {
-	if opts.QoS == 0 {
-		opts.QoS = defaultQoS
-	}
+	k, _, err := CompileWithStats(opts)
+	return k, err
+}
+
+func CompileWithStats(opts CompileOptions) (*Kernel, CompileStats, error) {
+	opts = compileOptionsWithDefaults(opts)
 	if opts.PackagePath == "" && opts.MILText == "" {
-		return nil, fmt.Errorf("compile: MILText or PackagePath is required")
+		return nil, CompileStats{}, fmt.Errorf("compile: MILText or PackagePath is required")
 	}
 
 	rt, err := xane.Open()
 	if err != nil {
-		return nil, fmt.Errorf("compile: open runtime: %w", err)
+		return nil, CompileStats{}, fmt.Errorf("compile: open runtime: %w", err)
 	}
-	k, err := rt.Compile(xaneCompileOptions(opts))
+	k, st, err := rt.CompileWithStats(xaneCompileOptions(opts))
 	if err != nil {
 		_ = rt.Close()
-		return nil, fmt.Errorf("compile: %w", err)
+		return nil, CompileStats{}, fmt.Errorf("compile: %w", err)
 	}
 
 	out := &Kernel{
@@ -119,10 +153,10 @@ func Compile(opts CompileOptions) (*Kernel, error) {
 	}
 	if err := out.initIO(); err != nil {
 		out.Close()
-		return nil, err
+		return nil, CompileStats{}, err
 	}
 	runtime.SetFinalizer(out, (*Kernel).Close)
-	return out, nil
+	return out, adaptCompileStats(st), nil
 }
 
 func (k *Kernel) InputBytes(i int) int {
@@ -275,7 +309,108 @@ func (k *Kernel) EvalWithStats() (EvalStats, error) {
 	if err != nil {
 		return EvalStats{}, err
 	}
-	return EvalStats{HWExecutionNS: st.HWExecutionNS}, nil
+	return EvalStats{
+		HWExecutionNS: st.HWExecutionNS,
+		Metrics:       evalStatsMetrics(st),
+	}, nil
+}
+
+// EvalHWExecutionNS executes the kernel and returns only hardware execution
+// time. It skips metric-map materialization for the fast training path.
+func (k *Kernel) EvalHWExecutionNS() (uint64, error) {
+	if k == nil || k.k == nil {
+		return 0, fmt.Errorf("eval hw execution ns: kernel is closed")
+	}
+	st, err := k.k.EvalWithStats()
+	if err != nil {
+		return 0, err
+	}
+	return st.HWExecutionNS, nil
+}
+
+func evalStatsMetrics(st xane.EvalStats) map[string]float64 {
+	rv := reflect.ValueOf(st)
+	rt := rv.Type()
+	var metrics map[string]float64
+	for i := 0; i < rv.NumField(); i++ {
+		field := rt.Field(i)
+		if !field.IsExported() || skipEvalMetricField(field.Name) {
+			continue
+		}
+		val, ok := numericEvalMetric(rv.Field(i))
+		if !ok {
+			continue
+		}
+		if metrics == nil {
+			metrics = make(map[string]float64)
+		}
+		metrics[field.Name] = val
+	}
+	metrics = addEvalStatsBytes(metrics, st)
+	metrics = addPerfCounterMetrics(metrics, st.PerfCounters)
+	if st.PerfCountersTruncated {
+		metrics = addEvalMetric(metrics, "PerfCountersTruncated", 1)
+	}
+	return metrics
+}
+
+func numericEvalMetric(v reflect.Value) (float64, bool) {
+	switch v.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(v.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return float64(v.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return v.Float(), true
+	default:
+		return 0, false
+	}
+}
+
+func skipEvalMetricField(name string) bool {
+	switch name {
+	case "HWExecutionNS", "PerfCounterData", "RawStatsData", "PerfCounters", "PerfCountersTruncated":
+		return true
+	default:
+		return false
+	}
+}
+
+func addEvalStatsBytes(metrics map[string]float64, st xane.EvalStats) map[string]float64 {
+	if n := len(st.PerfCounterData); n > 0 {
+		metrics = addEvalMetric(metrics, "PerfCounterBytes", float64(n))
+	}
+	if n := len(st.RawStatsData); n > 0 {
+		metrics = addEvalMetric(metrics, "RawStatsBytes", float64(n))
+	}
+	return metrics
+}
+
+func addPerfCounterMetrics(metrics map[string]float64, counters []xane.PerfCounter) map[string]float64 {
+	for _, counter := range counters {
+		name := counter.Name
+		if name == "" {
+			name = fmt.Sprintf("%d", counter.Index)
+		}
+		metrics = addEvalMetric(metrics, "PerfCounter."+name, float64(counter.Value))
+	}
+	return metrics
+}
+
+func addEvalMetric(metrics map[string]float64, name string, value float64) map[string]float64 {
+	if metrics == nil {
+		metrics = make(map[string]float64)
+	}
+	metrics[name] += value
+	return metrics
+}
+
+func adaptCompileStats(st xane.CompileStats) CompileStats {
+	return CompileStats{
+		CompileNS: st.CompileNS,
+		LoadNS:    st.LoadNS,
+		TotalNS:   st.TotalNS,
+	}
 }
 
 func (k *Kernel) Diagnostics() xane.Diagnostics {
@@ -338,6 +473,28 @@ func xaneCompileOptions(opts CompileOptions) xane.CompileOptions {
 	return xc
 }
 
+func compileOptionsWithDefaults(opts CompileOptions) CompileOptions {
+	if opts.QoS == 0 {
+		opts.QoS = defaultQoS
+	}
+	if opts.PerfStatsMask == 0 {
+		opts.PerfStatsMask = defaultPerfStatsMask()
+	}
+	return opts
+}
+
+func defaultPerfStatsMask() uint32 {
+	if s := os.Getenv("ANE_PERF_STATS_MASK"); s != "" {
+		if v, err := strconv.ParseUint(s, 0, 32); err == nil {
+			return uint32(v)
+		}
+	}
+	if os.Getenv("ANE_BENCH") == "1" {
+		return ^uint32(0)
+	}
+	return 0
+}
+
 func (k *Kernel) initIO() error {
 	nIn := k.k.NumInputs()
 	nOut := k.k.NumOutputs()
@@ -377,19 +534,22 @@ func (k *Kernel) initIO() error {
 	return nil
 }
 
-func copySurfaceChannels(
+func copySurfaceRange(
 	dstRef coregraphics.IOSurfaceRef,
 	dstLayout xane.TensorLayout,
 	dstChannel int,
+	dstOffset int,
 	srcRef coregraphics.IOSurfaceRef,
 	srcLayout xane.TensorLayout,
 	srcChannel int,
+	srcOffset int,
 	channels int,
+	width int,
 ) error {
 	if channels == 0 {
 		return nil
 	}
-	rowBytes := srcLayout.Width * srcLayout.ElemSize
+	rowBytes := width * srcLayout.ElemSize
 	if rowBytes <= 0 {
 		return fmt.Errorf("copy output to input: invalid row bytes %d", rowBytes)
 	}
@@ -410,8 +570,8 @@ func copySurfaceChannels(
 	dstBytes := unsafe.Slice((*byte)(dstBase), dstAlloc)
 	srcBytes := unsafe.Slice((*byte)(srcBase), srcAlloc)
 	for c := 0; c < channels; c++ {
-		dstOff := (dstChannel + c) * dstLayout.PlaneStride
-		srcOff := (srcChannel + c) * srcLayout.PlaneStride
+		dstOff := (dstChannel+c)*dstLayout.PlaneStride + dstOffset*dstLayout.ElemSize
+		srcOff := (srcChannel+c)*srcLayout.PlaneStride + srcOffset*srcLayout.ElemSize
 		if dstOff < 0 || dstOff+rowBytes > len(dstBytes) {
 			return fmt.Errorf("copy output to input: destination offset %d out of range", dstOff)
 		}

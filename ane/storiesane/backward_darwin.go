@@ -17,11 +17,15 @@ type layerBackward struct {
 	seq     int
 	scoreCh int
 
+	ffnW2 *model.Kernel
 	ffn   *model.Kernel
+	wot   *model.Kernel
 	sdpa1 *model.Kernel
 	sdpa2 *model.Kernel
 	qkv   *model.Kernel
 
+	metrics  *aneStepMetrics
+	dynamic  bool
 	ffnIn    []float32
 	ffnOut   []float32
 	sdpa1In  []float32
@@ -34,6 +38,9 @@ type layerBackward struct {
 var compileStoriesLayerBackwardFunc = compileStoriesLayerBackward
 
 func compileStoriesLayerBackward(layer stories.LayerWeights, seq int) (*layerBackward, error) {
+	if lb, err := compileStoriesLayerBackwardDynamic(layer, seq); err == nil {
+		return lb, nil
+	}
 	const (
 		dim    = stories.Dim
 		hidden = stories.Hidden
@@ -184,11 +191,15 @@ func (lb *layerBackward) close() {
 	if lb == nil {
 		return
 	}
+	closeKernel(lb.ffnW2)
 	closeKernel(lb.ffn)
+	closeKernel(lb.wot)
 	closeKernel(lb.sdpa1)
 	closeKernel(lb.sdpa2)
 	closeKernel(lb.qkv)
+	lb.ffnW2 = nil
 	lb.ffn = nil
+	lb.wot = nil
 	lb.sdpa1 = nil
 	lb.sdpa2 = nil
 	lb.qkv = nil
@@ -202,6 +213,9 @@ func (lb *layerBackward) close() {
 }
 
 func (lb *layerBackward) runFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error {
+	if lb != nil && lb.dynamic {
+		return lb.runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3)
+	}
 	if lb == nil || lb.ffn == nil {
 		return fmt.Errorf("run layer backward ffn: layer is closed")
 	}
@@ -230,7 +244,7 @@ func (lb *layerBackward) runFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error 
 	if err := lb.ffn.WriteInputFP16(0, lb.ffnIn); err != nil {
 		return fmt.Errorf("run layer backward ffn: write input: %w", err)
 	}
-	if err := lb.ffn.Eval(); err != nil {
+	if err := evalKernelTracked(lb.metrics, lb.ffn); err != nil {
 		return fmt.Errorf("run layer backward ffn: eval: %w", err)
 	}
 	if err := lb.ffn.ReadOutputFP16(0, lb.ffnOut); err != nil {
@@ -243,6 +257,9 @@ func (lb *layerBackward) runFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error 
 }
 
 func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32) error {
+	if lb != nil && lb.dynamic {
+		return lb.runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2)
+	}
 	if lb == nil || lb.sdpa1 == nil || lb.sdpa2 == nil || lb.qkv == nil {
 		return fmt.Errorf("run layer backward attention: layer is closed")
 	}
@@ -276,7 +293,7 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := lb.sdpa1.WriteInputFP16(0, lb.sdpa1In); err != nil {
 		return fmt.Errorf("run layer backward attention: write sdpa1 input: %w", err)
 	}
-	if err := lb.sdpa1.Eval(); err != nil {
+	if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa1: %w", err)
 	}
 	if err := model.CopyOutputChannelsToInput(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
@@ -288,7 +305,7 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh+lb.dim, k); err != nil {
 		return fmt.Errorf("run layer backward attention: write k into sdpa2 input: %w", err)
 	}
-	if err := lb.sdpa2.Eval(); err != nil {
+	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa2: %w", err)
 	}
 	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 0, lb.sdpa2, 0, 0, 2*lb.dim); err != nil {
@@ -297,7 +314,7 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 2*lb.dim, lb.sdpa1, 0, 0, lb.dim); err != nil {
 		return fmt.Errorf("run layer backward attention: copy sdpa1 dv into qkv input: %w", err)
 	}
-	if err := lb.qkv.Eval(); err != nil {
+	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {
 		return fmt.Errorf("run layer backward attention: eval qkv: %w", err)
 	}
 	if err := lb.sdpa2.ReadOutputFP16Channels(0, 0, dq); err != nil {
@@ -313,6 +330,16 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 		return fmt.Errorf("run layer backward attention: read qkv output: %w", err)
 	}
 	return nil
+}
+
+func (lb *layerBackward) refreshWeights(layer stories.LayerWeights) error {
+	if lb == nil {
+		return fmt.Errorf("refresh layer backward: layer is nil")
+	}
+	if !lb.dynamic {
+		return fmt.Errorf("refresh layer backward: baked weights require recompile")
+	}
+	return lb.stageDynamicWeights(layer)
 }
 
 func (e *Engine) ensureBackward() error {

@@ -50,6 +50,10 @@ func linearCF(out, weights, in []float32, outCh, inCh, seq int) {
 }
 
 func rmsNormCF(out, x, w []float32, dim, seq int) {
+	rmsNormCFWithRRMS(out, nil, x, w, dim, seq)
+}
+
+func rmsNormCFWithRRMS(out, rrms, x, w []float32, dim, seq int) {
 	parallelForCF(seq, func(start, end int) {
 		for t := start; t < end; t++ {
 			sum := 0.0
@@ -57,10 +61,29 @@ func rmsNormCF(out, x, w []float32, dim, seq int) {
 				v := float64(x[i*seq+t])
 				sum += v * v
 			}
-			rrms := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
-			for i := 0; i < dim; i++ {
-				out[i*seq+t] = x[i*seq+t] * rrms * w[i]
+			scale := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
+			if rrms != nil {
+				rrms[t] = scale
 			}
+			for i := 0; i < dim; i++ {
+				out[i*seq+t] = x[i*seq+t] * scale * w[i]
+			}
+		}
+	})
+}
+
+func rmsNormRRMS(rrms, x []float32, dim, seq int) {
+	if len(rrms) < seq {
+		return
+	}
+	parallelForCF(seq, func(start, end int) {
+		for t := start; t < end; t++ {
+			sum := 0.0
+			for i := 0; i < dim; i++ {
+				v := float64(x[i*seq+t])
+				sum += v * v
+			}
+			rrms[t] = float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
 		}
 	})
 }

@@ -351,11 +351,11 @@ func TestResolveSelectedBackend(t *testing.T) {
 }
 
 func TestEffectiveGoImplBackend(t *testing.T) {
-	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{}); got != "storiesane" {
-		t.Fatalf("effectiveGoImplBackend(bin)=%q want storiesane", got)
+	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{}); got != "direct" {
+		t.Fatalf("effectiveGoImplBackend(bin)=%q want direct", got)
 	}
-	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{HybridBackwardEnabled: true}); got != "storiesane+hybrid-bwd" {
-		t.Fatalf("effectiveGoImplBackend(bin hybrid)=%q want storiesane+hybrid-bwd", got)
+	if got := effectiveGoImplBackend("ane", "stories110M.bin", storiestrainer.Diagnostics{HybridBackwardEnabled: true}); got != "direct_hybrid_bwd" {
+		t.Fatalf("effectiveGoImplBackend(bin hybrid)=%q want direct_hybrid_bwd", got)
 	}
 	if got := effectiveGoImplBackend("ane", "model.mlmodelc", storiestrainer.Diagnostics{}); got != "direct_modelc" {
 		t.Fatalf("effectiveGoImplBackend(modelc)=%q want direct_modelc", got)

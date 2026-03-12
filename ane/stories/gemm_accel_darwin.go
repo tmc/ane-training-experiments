@@ -36,6 +36,10 @@ func matMulVocabSeqAccelerate(logits, embed, x []float32, vocab, dim, seq int) b
 }
 
 func matMulEmbedTAccelerate(dx, embed, dLogits []float32, vocab, dim, seq int) bool {
+	return matMulEmbedTAccelerateScale(dx, embed, dLogits, vocab, dim, seq, 1.0)
+}
+
+func matMulEmbedTAccelerateScale(dx, embed, dLogits []float32, vocab, dim, seq int, scale float32) bool {
 	if vocab <= 0 || dim <= 0 || seq <= 0 {
 		return false
 	}
@@ -49,7 +53,7 @@ func matMulEmbedTAccelerate(dx, embed, dLogits []float32, vocab, dim, seq int) b
 		C.int(dim),
 		C.int(seq),
 		C.int(vocab),
-		C.float(1.0),
+		C.float(scale),
 		(*C.float)(&embed[0]),
 		C.int(dim),
 		(*C.float)(&dLogits[0]),
@@ -62,6 +66,10 @@ func matMulEmbedTAccelerate(dx, embed, dLogits []float32, vocab, dim, seq int) b
 }
 
 func matMulGradEmbedAccelerate(dEmbed, dLogits, x []float32, vocab, dim, seq int) bool {
+	return matMulGradEmbedAccelerateScale(dEmbed, dLogits, x, vocab, dim, seq, 1.0)
+}
+
+func matMulGradEmbedAccelerateScale(dEmbed, dLogits, x []float32, vocab, dim, seq int, scale float32) bool {
 	if vocab <= 0 || dim <= 0 || seq <= 0 {
 		return false
 	}
@@ -75,12 +83,12 @@ func matMulGradEmbedAccelerate(dEmbed, dLogits, x []float32, vocab, dim, seq int
 		C.int(vocab),
 		C.int(dim),
 		C.int(seq),
-		C.float(1.0),
+		C.float(scale),
 		(*C.float)(&dLogits[0]),
 		C.int(seq),
 		(*C.float)(&x[0]),
 		C.int(seq),
-		C.float(1.0),
+		C.float(0.0),
 		(*C.float)(&dEmbed[0]),
 		C.int(dim),
 	)

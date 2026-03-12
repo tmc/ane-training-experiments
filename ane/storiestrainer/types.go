@@ -58,6 +58,10 @@ type Options struct {
 	// HybridBackward enables experimental ANE dx propagation for .bin storiesane training.
 	HybridBackward bool
 
+	// GradTaskConcurrency caps concurrent CPU gradient tasks for .bin storiesane training.
+	// Zero uses the runtime default.
+	GradTaskConcurrency int
+
 	// CompileBudget enables restart signaling after N compiles.
 	// Zero means "use default" unless DisableCompileBudget is true.
 	CompileBudget uint32
@@ -81,15 +85,24 @@ type Options struct {
 
 // StepStats reports one trainer step.
 type StepStats struct {
-	Step            uint32
-	Loss            float32
-	StepDuration    time.Duration
-	CompileDuration time.Duration
-	WriteDuration   time.Duration
-	EvalDuration    time.Duration
-	ReadDuration    time.Duration
-	Compiles        uint32
-	RestartRequired bool
+	Step                   uint32
+	Loss                   float32
+	StepDuration           time.Duration
+	CompileDuration        time.Duration
+	StartupCompileDuration time.Duration
+	WeightRefreshDuration  time.Duration
+	WriteDuration          time.Duration
+	EvalDuration           time.Duration
+	CPUWorkDuration        time.Duration
+	ReadDuration           time.Duration
+	FinalHeadDuration      time.Duration
+	EmbedGradDuration      time.Duration
+	RMSDWDuration          time.Duration
+	DWGEMMDuration         time.Duration
+	DWWaitDuration         time.Duration
+	AdamDuration           time.Duration
+	Compiles               uint32
+	RestartRequired        bool
 }
 
 // Diagnostics reports best-effort runtime signals for the trainer backend.

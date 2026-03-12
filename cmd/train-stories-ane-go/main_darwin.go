@@ -27,8 +27,11 @@ type stepJSON struct {
 	Step            uint32  `json:"step"`
 	Loss            float32 `json:"loss"`
 	TANE            float64 `json:"t_ane"`
+	TCPU            float64 `json:"t_cpu"`
 	TIO             float64 `json:"t_io"`
 	TCompile        float64 `json:"t_compile,omitempty"`
+	TStartup        float64 `json:"t_startup_compile,omitempty"`
+	TRefresh        float64 `json:"t_weight_refresh,omitempty"`
 	TCLS            float64 `json:"t_cls"`
 	TElem           float64 `json:"t_elem"`
 	TRMS            float64 `json:"t_rms"`
@@ -163,6 +166,11 @@ func main() {
 	if *saveFinal && requiresCheckpoint && strings.TrimSpace(*ckptPath) == "" {
 		fatalf("save-final requires -ckpt")
 	}
+	if selectedBackend == "ane" && isStoriesBinModel(model) && *veclibThreads > 0 {
+		if err := os.Setenv("VECLIB_MAXIMUM_THREADS", strconv.Itoa(*veclibThreads)); err != nil {
+			fatalf("set VECLIB_MAXIMUM_THREADS: %v", err)
+		}
+	}
 	if err := validateDirectStoriesBackend(selectedBackend, *trainerBackend, model, *seqOverride, directSequenceErr); err != nil {
 		fatalf("%v", err)
 	}
@@ -275,6 +283,7 @@ func main() {
 		LearningRate:         float32(*learningRate),
 		DisableANEExtras:     *noANEExtras,
 		HybridBackward:       *aneHybridBwd,
+		GradTaskConcurrency:  *dwConcurrency,
 		CompileBudget:        budget,
 		DisableCompileBudget: *disableBudget,
 		RecompileEachStep:    *recompileEach,
@@ -344,6 +353,20 @@ func main() {
 		batchTrainMS   float64
 		batchCompileMS float64
 		batchCount     uint32
+		totalStepMS    float64
+		totalCompileMS float64
+		totalStartupMS float64
+		totalRefreshMS float64
+		totalANEEvalMS float64
+		totalCPUWorkMS float64
+		totalIOMS      float64
+		totalFinalMS   float64
+		totalEmbedMS   float64
+		totalRMSDWMS   float64
+		totalDWGEMMMS  float64
+		totalDWWaitMS  float64
+		totalAdamMS    float64
+		stepsDone      uint32
 	)
 	started := time.Now()
 	for i := uint32(0); i < uint32(*steps); i++ {
@@ -358,7 +381,16 @@ func main() {
 		stepMS := float64(st.StepDuration) / float64(time.Millisecond)
 		compileMS := float64(st.CompileDuration) / float64(time.Millisecond)
 		evalMS := float64(st.EvalDuration) / float64(time.Millisecond)
+		cpuMS := float64(st.CPUWorkDuration) / float64(time.Millisecond)
 		ioMS := float64(st.WriteDuration+st.ReadDuration) / float64(time.Millisecond)
+		startupMS := float64(st.StartupCompileDuration) / float64(time.Millisecond)
+		refreshMS := float64(st.WeightRefreshDuration) / float64(time.Millisecond)
+		finalMS := float64(st.FinalHeadDuration) / float64(time.Millisecond)
+		embedMS := float64(st.EmbedGradDuration) / float64(time.Millisecond)
+		rmsDWMS := float64(st.RMSDWDuration) / float64(time.Millisecond)
+		dwGEMMMS := float64(st.DWGEMMDuration) / float64(time.Millisecond)
+		dwWaitMS := float64(st.DWWaitDuration) / float64(time.Millisecond)
+		adamMS := float64(st.AdamDuration) / float64(time.Millisecond)
 		stepOut := st.Step
 		if stepOut > 0 {
 			stepOut--
@@ -366,19 +398,38 @@ func main() {
 		batchTrainMS += stepMS
 		batchCompileMS += compileMS
 		batchCount++
-		fmt.Printf("step %d loss=%.6f step_ms=%.3f compile_ms=%.3f ane_ms=%.3f io_ms=%.3f compiles=%d restart_required=%v\n",
-			stepOut, st.Loss, stepMS, compileMS, evalMS, ioMS, st.Compiles, st.RestartRequired)
+		totalStepMS += stepMS
+		totalCompileMS += compileMS
+		totalStartupMS += startupMS
+		totalRefreshMS += refreshMS
+		totalANEEvalMS += evalMS
+		totalCPUWorkMS += cpuMS
+		totalIOMS += ioMS
+		totalFinalMS += finalMS
+		totalEmbedMS += embedMS
+		totalRMSDWMS += rmsDWMS
+		totalDWGEMMMS += dwGEMMMS
+		totalDWWaitMS += dwWaitMS
+		totalAdamMS += adamMS
+		stepsDone++
+		fmt.Printf("step %d loss=%.6f step_ms=%.3f compile_ms=%.3f startup_compile_ms=%.3f refresh_ms=%.3f ane_eval_ms=%.3f cpu_ms=%.3f io_ms=%.3f compiles=%d restart_required=%v\n",
+			stepOut, st.Loss, stepMS, compileMS, startupMS, refreshMS, evalMS, cpuMS, ioMS, st.Compiles, st.RestartRequired)
+		if *diagnostics && isStoriesBinModel(model) && selectedBackend == "ane" {
+			fmt.Printf("  cpu_diag final_head_ms=%.3f embed_ms=%.3f rms_dw_ms=%.3f dw_gemm_ms=%.3f dw_wait_ms=%.3f adam_ms=%.3f\n",
+				finalMS, embedMS, rmsDWMS, dwGEMMMS, dwWaitMS, adamMS)
+		}
 
 		if *jsonOut {
-			tANE := float64(st.EvalDuration) / float64(time.Millisecond)
-			tIO := float64(st.WriteDuration+st.ReadDuration) / float64(time.Millisecond)
 			emitJSON(stepJSON{
 				Type:            "step",
 				Step:            stepOut,
 				Loss:            st.Loss,
-				TANE:            tANE,
-				TIO:             tIO,
+				TANE:            evalMS,
+				TCPU:            cpuMS,
+				TIO:             ioMS,
 				TCompile:        compileMS,
+				TStartup:        startupMS,
+				TRefresh:        refreshMS,
 				TCLS:            0,
 				TElem:           0,
 				TRMS:            0,
@@ -485,6 +536,18 @@ func main() {
 			fatalf("save final checkpoint: %v", err)
 		}
 		fmt.Printf("saved checkpoint: %s\n", *ckptPath)
+	}
+	startupCompileMS := float64(trainer.StartupCompileDuration()) / float64(time.Millisecond)
+	printDirectSummary(model, effectiveStoriesSequence(*seqOverride), trainer.Diagnostics(), stepsDone, totalStepMS, totalCompileMS, totalStartupMS, startupCompileMS, totalRefreshMS, totalANEEvalMS, totalCPUWorkMS, totalIOMS)
+	if *diagnostics && isStoriesBinModel(model) && selectedBackend == "ane" && stepsDone > 0 {
+		fmt.Printf("Diagnostics CPU avg: final_head=%.1f embed=%.1f rms_dw=%.1f dw_gemm=%.1f dw_wait=%.1f adam=%.1f ms/step\n",
+			totalFinalMS/float64(stepsDone),
+			totalEmbedMS/float64(stepsDone),
+			totalRMSDWMS/float64(stepsDone),
+			totalDWGEMMMS/float64(stepsDone),
+			totalDWWaitMS/float64(stepsDone),
+			totalAdamMS/float64(stepsDone),
+		)
 	}
 	fmt.Printf("wall_ms=%.3f\n", float64(time.Since(started))/float64(time.Millisecond))
 }
@@ -627,6 +690,66 @@ func buildRestartArgs(
 	return args
 }
 
+func printDirectSummary(model string, seq int, d storiestrainer.Diagnostics, stepsDone uint32, totalStepMS, totalCompileMS, totalStepStartupMS, startupCompileMS, totalRefreshMS, totalANEEvalMS, totalCPUWorkMS, totalIOMS float64) {
+	if !isStoriesBinModel(model) || stepsDone == 0 {
+		return
+	}
+	compileTotalMS := startupCompileMS + totalCompileMS
+	trainMS := totalStepMS - totalCompileMS
+	if trainMS < 0 {
+		trainMS = 0
+	}
+	avgTrainMS := 0.0
+	if stepsDone > 0 {
+		avgTrainMS = trainMS / float64(stepsDone)
+	}
+	compilePct := 0.0
+	if totalStepMS+startupCompileMS > 0 {
+		compilePct = 100.0 * compileTotalMS / (totalStepMS + startupCompileMS)
+	}
+	aneOccupancy := 0.0
+	if trainMS > 0 {
+		aneOccupancy = 100.0 * totalANEEvalMS / trainMS
+	}
+	aneFlopsPerStep := storiesANEFlopsPerStep(seq, d)
+	aneTFLOPS := 0.0
+	if trainMS > 0 && aneFlopsPerStep > 0 {
+		aneTFLOPS = (aneFlopsPerStep * float64(stepsDone)) / (trainMS * 1e9)
+	}
+	fmt.Printf("Compile time:    %.0f ms (%.1f%%)\n", compileTotalMS, compilePct)
+	fmt.Printf("Startup compile: %.0f ms\n", startupCompileMS+totalStepStartupMS)
+	fmt.Printf("Weight refresh:  %.0f ms\n", totalRefreshMS)
+	fmt.Printf("Train time:      %.0f ms total, %.1f ms/step\n", trainMS, avgTrainMS)
+	fmt.Printf("ANE eval time:   %.0f ms total, %.1f ms/step\n", totalANEEvalMS, totalANEEvalMS/float64(stepsDone))
+	fmt.Printf("CPU work time:   %.0f ms total, %.1f ms/step\n", totalCPUWorkMS, totalCPUWorkMS/float64(stepsDone))
+	fmt.Printf("IO time:         %.0f ms total, %.1f ms/step\n", totalIOMS, totalIOMS/float64(stepsDone))
+	fmt.Printf("ANE TFLOPS:      %.2f sustained\n", aneTFLOPS)
+	fmt.Printf("ANE utilization: %.1f%% of 15.8 TFLOPS\n", 100.0*aneTFLOPS/15.8)
+	fmt.Printf("ANE occupancy:   %.1f%% of train time\n", aneOccupancy)
+}
+
+func storiesANEFlopsPerStep(seq int, d storiestrainer.Diagnostics) float64 {
+	s := float64(seq)
+	fwdFlops := float64(stories.NLayers) * (4.0*2.0*float64(stories.Dim*stories.Dim)*s + 2.0*2.0*float64(stories.Dim*stories.Hidden)*s + 2.0*float64(stories.Hidden*stories.Dim)*s)
+	headDim := stories.Dim / stories.Heads
+	sdpaFlops := float64(stories.NLayers) * 2.0 * float64(stories.Heads) * 5.0 * s * s * float64(headDim)
+	clsFlops := 2.0 * float64(stories.Vocab*stories.Dim) * s
+	ane := 0.0
+	if d.LayerForwardEnabled {
+		ane += fwdFlops + sdpaFlops
+	}
+	if d.HybridBackwardEnabled {
+		ane += fwdFlops
+	}
+	if d.HasClassifierForward {
+		ane += clsFlops
+	}
+	if d.HasClassifierBackward {
+		ane += clsFlops
+	}
+	return ane
+}
+
 func defaultIfEmpty(v, fallback string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -713,9 +836,9 @@ func effectiveGoImplBackend(selectedBackend, model string, d storiestrainer.Diag
 	case "ane":
 		if isStoriesBinModel(model) {
 			if d.HybridBackwardEnabled {
-				return "storiesane+hybrid-bwd"
+				return "direct_hybrid_bwd"
 			}
-			return "storiesane"
+			return "direct"
 		}
 		return "direct_modelc"
 	default:

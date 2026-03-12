@@ -15,7 +15,7 @@ import (
 var (
 	classifierForwardTileCandidates  = []int{2048, 1024, 512}
 	classifierBackwardTileCandidates = []int{2048, 1024}
-	classifierDynamicTileCandidates  = []int{8192, 4096, 2048, 1024, 512}
+	classifierDynamicTileCandidates  = []int{32000, 16384, 8192, 4096, 2048, 1024, 512}
 )
 
 type classifierTile struct {
@@ -31,10 +31,12 @@ type classifierDynamicTile struct {
 }
 
 type offload struct {
+	metrics   *aneStepMetrics
 	rmsFwd    *model.Kernel
 	clsFwdDyn []classifierDynamicTile
 	clsFwd    *model.Kernel
 	clsFwdTil []classifierTile
+	clsFwdIO  []float32
 	softmax   *model.Kernel
 	clsBwdDyn []classifierDynamicTile
 	clsBwd    *model.Kernel
@@ -55,21 +57,24 @@ func newOffload(mw *stories.ModelWeights, seq int, useANE bool) *offload {
 
 func refreshOffload(prev *offload, mw *stories.ModelWeights, seq int, useANE bool) *offload {
 	var rmsFwd *model.Kernel
+	var rmsBwd *model.Kernel
 	var softmax *model.Kernel
 	var clsFwdDyn []classifierDynamicTile
 	var clsBwdDyn []classifierDynamicTile
 	if prev != nil {
 		rmsFwd = prev.rmsFwd
+		rmsBwd = prev.rmsBwd
 		softmax = prev.softmax
 		clsFwdDyn = prev.clsFwdDyn
 		clsBwdDyn = prev.clsBwdDyn
 		prev.rmsFwd = nil
+		prev.rmsBwd = nil
 		prev.softmax = nil
 		prev.clsFwdDyn = nil
 		prev.clsBwdDyn = nil
 		prev.close()
 	}
-	return newOffloadWithState(mw, seq, useANE, rmsFwd, nil, softmax, clsFwdDyn, clsBwdDyn)
+	return newOffloadWithState(mw, seq, useANE, rmsFwd, rmsBwd, softmax, clsFwdDyn, clsBwdDyn)
 }
 
 func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, rmsFwd, rmsBwd, softmax *model.Kernel, clsFwdDyn, clsBwdDyn []classifierDynamicTile) *offload {
@@ -96,6 +101,14 @@ func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, rmsFwd,
 		})
 		if err != nil {
 			o.notef("rms forward compile failed: %v", err)
+		}
+	}
+	if o.rmsBwd == nil {
+		o.rmsBwd, err = model.Compile(model.CompileOptions{
+			MILText: mil.GenRMSNormBackwardDynamic(stories.Dim, seq),
+		})
+		if err != nil {
+			o.notef("rms backward compile failed: %v", err)
 		}
 	}
 	o.clsFwdDyn, o.clsFwdTile, err = prepareDynamicClassifierForward(clsFwdDyn, mw.Embed, seq)
@@ -233,6 +246,7 @@ func (o *offload) close() {
 	o.clsFwdDyn = nil
 	o.clsFwd = nil
 	o.clsFwdTil = nil
+	o.clsFwdIO = nil
 	o.softmax = nil
 	o.clsBwdDyn = nil
 	o.clsBwd = nil
@@ -325,7 +339,7 @@ func (o *offload) runRMSForward(out, x []float32) error {
 	if err := o.rmsFwd.WriteInputFP16(0, x); err != nil {
 		return err
 	}
-	if err := o.rmsFwd.Eval(); err != nil {
+	if err := evalKernelTracked(o.metrics, o.rmsFwd); err != nil {
 		return err
 	}
 	return o.rmsFwd.ReadOutputFP16(0, out)
@@ -333,11 +347,24 @@ func (o *offload) runRMSForward(out, x []float32) error {
 
 func (o *offload) runClassifierForward(logits, xNorm []float32) error {
 	if len(o.clsFwdDyn) > 0 {
+		collectCustom := o.metrics != nil && o.metrics.wantsCustomMetrics()
 		seq := len(xNorm) / stories.Dim
 		for _, tile := range o.clsFwdDyn {
 			dst := logits[tile.start*seq : (tile.start+tile.size)*seq]
-			if _, err := tile.exec.EvalCFIOInto(dst, xNorm); err != nil {
-				return err
+			if collectCustom {
+				st, err := tile.exec.EvalCFIOInto(dst, xNorm)
+				if err != nil {
+					return err
+				}
+				o.metrics.addDynamicEvalStats(st)
+			} else {
+				hwNS, err := tile.exec.EvalCFIOIntoHW(dst, xNorm)
+				if err != nil {
+					return err
+				}
+				if o.metrics != nil {
+					o.metrics.addHW(hwNS)
+				}
 			}
 		}
 		return nil
@@ -346,7 +373,7 @@ func (o *offload) runClassifierForward(logits, xNorm []float32) error {
 		if err := o.clsFwd.WriteInputFP16(0, xNorm); err != nil {
 			return err
 		}
-		if err := o.clsFwd.Eval(); err != nil {
+		if err := evalKernelTracked(o.metrics, o.clsFwd); err != nil {
 			return err
 		}
 		return o.clsFwd.ReadOutputFP16(0, logits)
@@ -355,7 +382,7 @@ func (o *offload) runClassifierForward(logits, xNorm []float32) error {
 		if err := tile.kernel.WriteInputFP16(0, xNorm); err != nil {
 			return err
 		}
-		if err := tile.kernel.Eval(); err != nil {
+		if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
 			return err
 		}
 		seq := len(xNorm) / stories.Dim
@@ -372,9 +399,22 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 		return fmt.Errorf("softmax kernel is unavailable")
 	}
 	if len(o.clsFwdDyn) > 0 {
+		collectCustom := o.metrics != nil && o.metrics.wantsCustomMetrics()
 		for _, tile := range o.clsFwdDyn {
-			if _, err := tile.exec.EvalCF(xNorm); err != nil {
-				return err
+			if collectCustom {
+				st, err := tile.exec.EvalCF(xNorm)
+				if err != nil {
+					return err
+				}
+				o.metrics.addDynamicEvalStats(st)
+			} else {
+				hwNS, err := tile.exec.EvalCFHW(xNorm)
+				if err != nil {
+					return err
+				}
+				if o.metrics != nil {
+					o.metrics.addHW(hwNS)
+				}
 			}
 			if err := tile.exec.CopyOutputToInput(o.softmax, 0, tile.start); err != nil {
 				return err
@@ -384,7 +424,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 		if err := o.clsFwd.WriteInputFP16(0, xNorm); err != nil {
 			return err
 		}
-		if err := o.clsFwd.Eval(); err != nil {
+		if err := evalKernelTracked(o.metrics, o.clsFwd); err != nil {
 			return err
 		}
 		if err := model.CopyOutputChannelsToInput(o.softmax, 0, 0, o.clsFwd, 0, 0, stories.Vocab); err != nil {
@@ -395,7 +435,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 			if err := tile.kernel.WriteInputFP16(0, xNorm); err != nil {
 				return err
 			}
-			if err := tile.kernel.Eval(); err != nil {
+			if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
 				return err
 			}
 			if err := model.CopyOutputChannelsToInput(o.softmax, 0, tile.start, tile.kernel, 0, 0, tile.size); err != nil {
@@ -403,7 +443,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 			}
 		}
 	}
-	if err := o.softmax.Eval(); err != nil {
+	if err := evalKernelTracked(o.metrics, o.softmax); err != nil {
 		return err
 	}
 	return o.softmax.ReadOutputFP16(0, probs)
@@ -413,7 +453,7 @@ func (o *offload) runSoftmax(probs []float32) error {
 	if err := o.softmax.WriteInputFP16(0, probs); err != nil {
 		return err
 	}
-	if err := o.softmax.Eval(); err != nil {
+	if err := evalKernelTracked(o.metrics, o.softmax); err != nil {
 		return err
 	}
 	return o.softmax.ReadOutputFP16(0, probs)
@@ -421,14 +461,27 @@ func (o *offload) runSoftmax(probs []float32) error {
 
 func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 	if len(o.clsBwdDyn) > 0 {
+		collectCustom := o.metrics != nil && o.metrics.wantsCustomMetrics()
 		for i := range dy {
 			dy[i] = 0
 		}
 		seq := len(dy) / stories.Dim
 		for _, tile := range o.clsBwdDyn {
 			src := dLogits[tile.start*seq : (tile.start+tile.size)*seq]
-			if _, err := tile.exec.EvalCFIOInto(o.clsBwdTmp, src); err != nil {
-				return err
+			if collectCustom {
+				st, err := tile.exec.EvalCFIOInto(o.clsBwdTmp, src)
+				if err != nil {
+					return err
+				}
+				o.metrics.addDynamicEvalStats(st)
+			} else {
+				hwNS, err := tile.exec.EvalCFIOIntoHW(o.clsBwdTmp, src)
+				if err != nil {
+					return err
+				}
+				if o.metrics != nil {
+					o.metrics.addHW(hwNS)
+				}
 			}
 			for i, v := range o.clsBwdTmp {
 				dy[i] += v
@@ -440,7 +493,7 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 		if err := o.clsBwd.WriteInputFP16(0, dLogits); err != nil {
 			return err
 		}
-		if err := o.clsBwd.Eval(); err != nil {
+		if err := evalKernelTracked(o.metrics, o.clsBwd); err != nil {
 			return err
 		}
 		return o.clsBwd.ReadOutputFP16(0, dy)
@@ -454,7 +507,7 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 		if err := tile.kernel.WriteInputFP16(0, src); err != nil {
 			return err
 		}
-		if err := tile.kernel.Eval(); err != nil {
+		if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
 			return err
 		}
 		if err := tile.kernel.ReadOutputFP16(0, o.clsBwdTmp); err != nil {
@@ -468,18 +521,62 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 }
 
 func (o *offload) runRMSBackward(dx, dy, x []float32) error {
+	return o.runRMSBackwardWithWeights(dx, dy, x, o.rmsW)
+}
+
+func (o *offload) runRMSBackwardWithWeights(dx, dy, x, w []float32) error {
+	if o == nil || o.rmsBwd == nil {
+		return fmt.Errorf("rms backward kernel is unavailable")
+	}
 	copy(o.rmsBwdIn, dy)
 	copy(o.rmsBwdIn[len(dy):], x)
-	if err := o.rmsBwd.WriteInputFP16(1, o.rmsW); err != nil {
+	if err := o.rmsBwd.WriteInputFP16(1, w); err != nil {
 		return err
 	}
 	if err := o.rmsBwd.WriteInputFP16(0, o.rmsBwdIn); err != nil {
 		return err
 	}
-	if err := o.rmsBwd.Eval(); err != nil {
+	if err := evalKernelTracked(o.metrics, o.rmsBwd); err != nil {
 		return err
 	}
 	return o.rmsBwd.ReadOutputFP16(0, dx)
+}
+
+func (o *offload) refreshWeights(mw *stories.ModelWeights) error {
+	if o == nil {
+		return fmt.Errorf("refresh offload weights: offload is nil")
+	}
+	if mw == nil {
+		return fmt.Errorf("refresh offload weights: model weights are nil")
+	}
+	o.rmsW = mw.RMSFinal
+	if err := o.refreshClassifierForwardWeights(mw.Embed); err != nil {
+		return err
+	}
+	if err := o.refreshClassifierBackwardWeights(mw.Embed); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (o *offload) refreshClassifierForwardWeights(embed []float32) error {
+	if len(o.clsFwdDyn) > 0 {
+		return primeDynamicClassifierForwardInto(o, embed)
+	}
+	if o.clsFwd != nil || len(o.clsFwdTil) > 0 {
+		return fmt.Errorf("refresh classifier forward weights: baked classifier requires rebuild")
+	}
+	return nil
+}
+
+func (o *offload) refreshClassifierBackwardWeights(embed []float32) error {
+	if len(o.clsBwdDyn) > 0 {
+		return primeDynamicClassifierBackward(o.clsBwdDyn, embed)
+	}
+	if o.clsBwd != nil || len(o.clsBwdTil) > 0 {
+		return fmt.Errorf("refresh classifier backward weights: baked classifier requires rebuild")
+	}
+	return nil
 }
 
 func prepareDynamicClassifierForward(prev []classifierDynamicTile, embed []float32, seq int) ([]classifierDynamicTile, int, error) {
@@ -594,14 +691,26 @@ func primeDynamicClassifierForward(tiles []classifierDynamicTile, embed []float3
 	if len(tiles) == 0 {
 		return nil
 	}
+	o := &offload{clsFwdDyn: tiles}
+	return primeDynamicClassifierForwardInto(o, embed)
+}
+
+func primeDynamicClassifierForwardInto(o *offload, embed []float32) error {
+	if o == nil || len(o.clsFwdDyn) == 0 {
+		return nil
+	}
 	maxTile := 0
-	for _, tile := range tiles {
+	for _, tile := range o.clsFwdDyn {
 		if tile.size > maxTile {
 			maxTile = tile.size
 		}
 	}
-	scratch := make([]float32, stories.Dim*maxTile)
-	for _, tile := range tiles {
+	need := stories.Dim * maxTile
+	if cap(o.clsFwdIO) < need {
+		o.clsFwdIO = make([]float32, need)
+	}
+	scratch := o.clsFwdIO[:need]
+	for _, tile := range o.clsFwdDyn {
 		wIO := scratch[:stories.Dim*tile.size]
 		transposeClassifierForwardTile(wIO, embed, tile.start, tile.size)
 		if err := tile.exec.PrimeWeightsIO(wIO); err != nil {

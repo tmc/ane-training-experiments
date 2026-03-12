@@ -25,17 +25,27 @@ type WeightFile struct {
 	Blob []byte
 }
 
+type CompileStats struct {
+	CompileNS int64
+	LoadNS    int64
+	TotalNS   int64
+}
+
 type EvalStats struct {
 	HWExecutionNS uint64
+	Metrics       map[string]float64
 }
 
 type Kernel struct{}
 
 func Compile(CompileOptions) (*Kernel, error) { return nil, fmt.Errorf("ane model requires darwin") }
-func (k *Kernel) InputBytes(int) int          { return 0 }
-func (k *Kernel) NumInputs() int              { return 0 }
-func (k *Kernel) OutputBytes(int) int         { return 0 }
-func (k *Kernel) NumOutputs() int             { return 0 }
+func CompileWithStats(CompileOptions) (*Kernel, CompileStats, error) {
+	return nil, CompileStats{}, fmt.Errorf("ane model requires darwin")
+}
+func (k *Kernel) InputBytes(int) int  { return 0 }
+func (k *Kernel) NumInputs() int      { return 0 }
+func (k *Kernel) OutputBytes(int) int { return 0 }
+func (k *Kernel) NumOutputs() int     { return 0 }
 func (k *Kernel) InputSurface(int) coregraphics.IOSurfaceRef {
 	return 0
 }
@@ -68,6 +78,9 @@ func (k *Kernel) Eval() error { return fmt.Errorf("ane model requires darwin") }
 func (k *Kernel) EvalWithStats() (EvalStats, error) {
 	return EvalStats{}, fmt.Errorf("ane model requires darwin")
 }
+func (k *Kernel) EvalHWExecutionNS() (uint64, error) {
+	return 0, fmt.Errorf("ane model requires darwin")
+}
 func (k *Kernel) Diagnostics() xane.Diagnostics { return xane.Diagnostics{} }
 func (k *Kernel) EvalWithSignalEvent(uint32, uint64, xane.SharedEventEvalOptions) error {
 	return fmt.Errorf("ane model requires darwin")
@@ -78,5 +91,8 @@ func (k *Kernel) EvalBidirectional(uint32, uint64, uint32, uint64, xane.SharedEv
 func (k *Kernel) Close() {}
 
 func CopyOutputChannelsToInput(*Kernel, int, int, *Kernel, int, int, int) error {
+	return fmt.Errorf("ane model requires darwin")
+}
+func CopyOutputRangeToInput(*Kernel, int, int, int, *Kernel, int, int, int, int, int) error {
 	return fmt.Errorf("ane model requires darwin")
 }

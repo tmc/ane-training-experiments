@@ -32,6 +32,8 @@ type layerForward struct {
 	att *model.Kernel
 	ffn *model.Kernel
 
+	metrics  *aneStepMetrics
+	dynamic  bool
 	attSplit bool
 	attTaps  bool
 	ffnTaps  bool
@@ -48,6 +50,9 @@ type layerForward struct {
 var compileStoriesLayerForwardFunc = compileStoriesLayerForward
 
 func compileStoriesLayerForward(layer stories.LayerWeights, seq int) (*layerForward, error) {
+	if lf, err := compileStoriesLayerForwardDynamic(layer, seq); err == nil {
+		return lf, nil
+	}
 	return compileLayerForward(stories.Dim, stories.Hidden, stories.Heads, seq, layerForwardWeights{
 		RMSAtt: layer.RMSAtt,
 		Wq:     layer.Wq,
@@ -202,6 +207,9 @@ func (lf *layerForward) run(out, x []float32) error {
 }
 
 func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
+	if lf != nil && lf.dynamic {
+		return lf.runDynamicWithTaps(out, x, cache)
+	}
 	if lf == nil || lf.att == nil || lf.ffn == nil {
 		return fmt.Errorf("run layer forward: layer is closed")
 	}
@@ -217,7 +225,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 		if err := lf.qkv.WriteInputFP16(0, x); err != nil {
 			return fmt.Errorf("run layer forward: write qkv input: %w", err)
 		}
-		if err := lf.qkv.Eval(); err != nil {
+		if err := evalKernelTracked(lf.metrics, lf.qkv); err != nil {
 			return fmt.Errorf("run layer forward: eval qkv: %w", err)
 		}
 		if cache != nil {
@@ -238,7 +246,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 				return fmt.Errorf("run layer forward: write attention qkv input: %w", err)
 			}
 		}
-		if err := lf.att.Eval(); err != nil {
+		if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 			return fmt.Errorf("run layer forward: eval attention apply: %w", err)
 		}
 		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
@@ -249,7 +257,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 		if err := lf.att.WriteInputFP16(0, x); err != nil {
 			return fmt.Errorf("run layer forward: write attention input: %w", err)
 		}
-		if err := lf.att.Eval(); err != nil {
+		if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 			return fmt.Errorf("run layer forward: eval attention: %w", err)
 		}
 		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
@@ -267,7 +275,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 			return fmt.Errorf("run layer forward: write ffn input: %w", err)
 		}
 	}
-	if err := lf.ffn.Eval(); err != nil {
+	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
 		return fmt.Errorf("run layer forward: eval ffn: %w", err)
 	}
 	if err := lf.ffn.ReadOutputFP16(0, lf.ffnOut); err != nil {
@@ -311,6 +319,16 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 		}
 	}
 	return nil
+}
+
+func (lf *layerForward) refreshWeights(w layerForwardWeights) error {
+	if lf == nil {
+		return fmt.Errorf("refresh layer forward: layer is nil")
+	}
+	if !lf.dynamic {
+		return fmt.Errorf("refresh layer forward: baked weights require recompile")
+	}
+	return lf.stageDynamicWeights(w)
 }
 
 func compileLayerForwardAttentionSplit(dim, heads, seq int, weights []model.WeightFile) (*model.Kernel, *model.Kernel, int, int, error) {

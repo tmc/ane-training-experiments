@@ -18,6 +18,7 @@ type Options struct {
 	AccumSteps     int
 	LR             float32
 	Seed           int64
+	GradTaskLimit  int
 	UseANE         bool // best-effort ANE layer forward plus final-head offload on Darwin
 	HybridBackward bool // best-effort ANE backward dx propagation on Darwin
 }
@@ -36,9 +37,19 @@ type State struct {
 
 // StepResult reports one training step.
 type StepResult struct {
-	Loss            float32
-	StepDuration    time.Duration
-	CompileDuration time.Duration
+	Loss                   float32
+	StepDuration           time.Duration
+	CompileDuration        time.Duration
+	StartupCompileDuration time.Duration
+	ANEEvalDuration        time.Duration
+	CPUWorkDuration        time.Duration
+	WeightRefreshDuration  time.Duration
+	FinalHeadDuration      time.Duration
+	EmbedGradDuration      time.Duration
+	RMSDWDuration          time.Duration
+	DWGEMMDuration         time.Duration
+	DWWaitDuration         time.Duration
+	AdamDuration           time.Duration
 }
 
 // Engine runs the current Stories training loop.
@@ -74,12 +85,12 @@ type Engine struct {
 	tmpHidden               []float32
 	caches                  []layerCache
 	accum                   *modelGrad
-	layerGrad               stories.LayerWeights
+	applyGrads              []stories.LayerWeights
+	gradTasks               *gradTasks
 
 	x             []float32
 	xNorm         []float32
 	logits        []float32
-	dLogits       []float32
 	dy            []float32
 	dx            []float32
 	gRMS          []float32
@@ -97,6 +108,7 @@ type Engine struct {
 	gradV         []float32
 	gradPrev      []float32
 	embedGradDone chan struct{}
+	stepMetrics   aneStepMetrics
 }
 
 const (
@@ -126,6 +138,9 @@ func Open(opts Options) (*Engine, error) {
 	if opts.Seed == 0 {
 		opts.Seed = 42
 	}
+	if opts.GradTaskLimit > 0 {
+		SetGradTaskConcurrency(opts.GradTaskLimit)
+	}
 
 	var opt *stories.OptimState
 	var accum *modelGrad
@@ -154,6 +169,10 @@ func Open(opts Options) (*Engine, error) {
 	for i := range caches {
 		caches[i] = newLayerCache(seq)
 	}
+	applyGrads := make([]stories.LayerWeights, stories.NLayers)
+	for i := range applyGrads {
+		applyGrads[i] = newLayerGrad()
+	}
 
 	return &Engine{
 		mw:                      mw,
@@ -171,11 +190,11 @@ func Open(opts Options) (*Engine, error) {
 		tmpHidden:               make([]float32, stories.Dim*seq),
 		caches:                  caches,
 		accum:                   accum,
-		layerGrad:               newLayerGrad(),
+		applyGrads:              applyGrads,
+		gradTasks:               newGradTasks(),
 		x:                       make([]float32, stories.Dim*seq),
 		xNorm:                   make([]float32, stories.Dim*seq),
 		logits:                  make([]float32, stories.Vocab*seq),
-		dLogits:                 make([]float32, stories.Vocab*seq),
 		dy:                      make([]float32, stories.Dim*seq),
 		dx:                      make([]float32, stories.Dim*seq),
 		gRMS:                    make([]float32, stories.Dim),
@@ -205,6 +224,11 @@ func (e *Engine) Step() (StepResult, error) {
 	}
 
 	t0 := time.Now()
+	e.stepMetrics.reset()
+	prepareStart := time.Now()
+	e.Prepare()
+	startupCompile := time.Since(prepareStart)
+	e.attachStepMetrics()
 	limit := uint64(len(e.tokens) - e.seq - 1)
 	pos := uint64(0)
 	if limit > 0 {
@@ -231,8 +255,27 @@ func (e *Engine) Step() (StepResult, error) {
 	e.state.CumSteps++
 	e.state.CumTrainMS += float64(dur) / float64(time.Millisecond)
 	e.state.CumWallMS = float64(time.Since(e.start)) / float64(time.Millisecond)
+	aneDur := e.stepMetrics.aneEval()
+	cpuDur := dur - startupCompile - compileDur - aneDur
+	if cpuDur < 0 {
+		cpuDur = 0
+	}
 
-	return StepResult{Loss: loss, StepDuration: dur, CompileDuration: compileDur}, nil
+	return StepResult{
+		Loss:                   loss,
+		StepDuration:           dur,
+		CompileDuration:        startupCompile + compileDur,
+		StartupCompileDuration: startupCompile,
+		ANEEvalDuration:        aneDur,
+		CPUWorkDuration:        cpuDur,
+		WeightRefreshDuration:  compileDur,
+		FinalHeadDuration:      e.stepMetrics.finalHead(),
+		EmbedGradDuration:      e.stepMetrics.embedGrad(),
+		RMSDWDuration:          e.stepMetrics.rmsDW(),
+		DWGEMMDuration:         e.stepMetrics.dwGEMM(),
+		DWWaitDuration:         e.stepMetrics.dwWait(),
+		AdamDuration:           e.stepMetrics.adam(),
+	}, nil
 }
 
 // EvalLogits evaluates one full sequence and returns per-position logits.
@@ -253,6 +296,25 @@ func (e *Engine) EvalLogits(tokens []uint16) ([]float32, error) {
 	out := make([]float32, len(e.logits))
 	copy(out, e.logits)
 	return out, nil
+}
+
+func (e *Engine) attachStepMetrics() {
+	if e == nil {
+		return
+	}
+	if e.off != nil {
+		e.off.metrics = &e.stepMetrics
+	}
+	for i := range e.layers {
+		if e.layers[i] != nil {
+			e.layers[i].metrics = &e.stepMetrics
+		}
+	}
+	for i := range e.backward {
+		if e.backward[i] != nil {
+			e.backward[i].metrics = &e.stepMetrics
+		}
+	}
 }
 
 // Flush applies any pending accumulated gradients.
@@ -362,11 +424,10 @@ func (e *Engine) Close() {
 	e.tmpHidden = nil
 	e.caches = nil
 	e.accum = nil
-	e.layerGrad = stories.LayerWeights{}
+	e.applyGrads = nil
 	e.x = nil
 	e.xNorm = nil
 	e.logits = nil
-	e.dLogits = nil
 	e.dy = nil
 	e.dx = nil
 	e.gRMS = nil
@@ -383,6 +444,10 @@ func (e *Engine) Close() {
 	e.gradK = nil
 	e.gradV = nil
 	e.gradPrev = nil
+	if e.gradTasks != nil {
+		e.gradTasks.Close()
+		e.gradTasks = nil
+	}
 }
 
 func (e *Engine) flushPending() time.Duration {
@@ -392,11 +457,13 @@ func (e *Engine) flushPending() time.Duration {
 	scale := float32(1.0 / float64(e.state.PendingSteps))
 	scaleModelGrad(e.accum, scale)
 	e.state.AdamT++
+	adamStart := time.Now()
 	for i := range e.mw.Layers {
 		applyLayerAdam(&e.mw.Layers[i], &e.accum.Layers[i], &e.opt.Layers[i], int(e.state.AdamT), e.lr)
 	}
-	stories.AdamUpdate(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
-	stories.AdamUpdate(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	adamUpdateCF(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	adamUpdateCF(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, 0.9, 0.999, 1e-8)
+	e.stepMetrics.addAdam(time.Since(adamStart))
 	compileDur := e.refreshANERuntimeForWeights()
 	clearModelGrad(e.accum)
 	e.state.PendingSteps = 0

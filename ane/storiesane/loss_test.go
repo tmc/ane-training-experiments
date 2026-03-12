@@ -2,6 +2,7 @@ package storiesane
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/maderix/ANE/ane/stories"
@@ -49,6 +50,59 @@ func BenchmarkCrossEntropyLossCPU(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = stories.CrossEntropyLoss(dLogits, logits, targets, vocab, seq)
+	}
+}
+
+func TestCrossEntropyLossFromProbsInPlaceMatchesCopy(t *testing.T) {
+	const (
+		vocab = 257
+		seq   = 23
+	)
+	probs := makeBenchmarkProbs(vocab, seq)
+	targets := makeBenchmarkTargets(vocab, seq)
+	wantGrad := make([]float32, len(probs))
+	wantLoss := crossEntropyLossFromProbsSerial(wantGrad, probs, targets, vocab, seq)
+
+	gotGrad := slices.Clone(probs)
+	gotLoss := crossEntropyLossFromProbs(gotGrad, gotGrad, targets, vocab, seq)
+
+	if math.Abs(float64(gotLoss-wantLoss)) > 1e-6 {
+		t.Fatalf("loss mismatch: got %.8f want %.8f", gotLoss, wantLoss)
+	}
+	for i := range gotGrad {
+		if math.Abs(float64(gotGrad[i]-wantGrad[i])) > 1e-5 {
+			t.Fatalf("grad[%d]=%.8f want %.8f", i, gotGrad[i], wantGrad[i])
+		}
+	}
+}
+
+func TestCrossEntropyLossFromProbsUnscaledMatchesScaledAfterMean(t *testing.T) {
+	const (
+		vocab = 257
+		seq   = 23
+	)
+	probs := makeBenchmarkProbs(vocab, seq)
+	targets := makeBenchmarkTargets(vocab, seq)
+	wantGrad := make([]float32, len(probs))
+	wantLoss := crossEntropyLossFromProbsSerial(wantGrad, probs, targets, vocab, seq)
+
+	gotGrad := slices.Clone(probs)
+	gotLoss, valid := crossEntropyLossFromProbsUnscaled(gotGrad, gotGrad, targets, vocab, seq)
+	if valid != seq {
+		t.Fatalf("valid=%d want %d", valid, seq)
+	}
+	scale := float32(1.0 / float64(valid))
+	for i := range gotGrad {
+		gotGrad[i] *= scale
+	}
+
+	if math.Abs(float64(gotLoss-wantLoss)) > 1e-6 {
+		t.Fatalf("loss mismatch: got %.8f want %.8f", gotLoss, wantLoss)
+	}
+	for i := range gotGrad {
+		if math.Abs(float64(gotGrad[i]-wantGrad[i])) > 1e-5 {
+			t.Fatalf("grad[%d]=%.8f want %.8f", i, gotGrad[i], wantGrad[i])
+		}
 	}
 }
 

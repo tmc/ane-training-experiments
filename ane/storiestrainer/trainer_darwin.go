@@ -61,21 +61,22 @@ type Trainer struct {
 	recompileEach bool
 
 	// Common training state.
-	tokens        []uint16
-	tokenPos      uint64
-	step          uint32
-	totalSteps    uint32
-	compileBudget uint32
-	aneExtras     bool
-	lr            float32
-	lastLoss      float32
-	compiles      uint32
-	cumTrainMS    float64
-	cumWallMS     float64
-	cumSteps      uint32
-	cumBatches    uint32
-	adamT         uint32
-	started       time.Time
+	tokens         []uint16
+	tokenPos       uint64
+	step           uint32
+	totalSteps     uint32
+	compileBudget  uint32
+	aneExtras      bool
+	lr             float32
+	lastLoss       float32
+	compiles       uint32
+	cumTrainMS     float64
+	cumWallMS      float64
+	cumSteps       uint32
+	cumBatches     uint32
+	adamT          uint32
+	started        time.Time
+	startupCompile time.Duration
 
 	// Pure-Go .bin mode.
 	cpuMode bool
@@ -107,12 +108,14 @@ func Open(opts Options) (*Trainer, error) {
 }
 
 func openModelCTrainer(norm Options, tokens []uint16) (*Trainer, error) {
+	compileStart := time.Now()
 	compileOpts := model.CompileOptions{
 		PackagePath: norm.ModelPath,
 		ModelKey:    norm.ModelKey,
 		QoS:         norm.QoS,
 	}
 	k, err := model.Compile(compileOpts)
+	startupCompile := time.Since(compileStart)
 	if err != nil {
 		return nil, fmt.Errorf("stories trainer open: compile kernel: %w", err)
 	}
@@ -129,19 +132,20 @@ func openModelCTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 		return nil, fmt.Errorf("stories trainer open: compiled model reported %d inputs and %d outputs; want 1 input and 1 output", k.NumInputs(), k.NumOutputs())
 	}
 	return &Trainer{
-		backend:       BackendDirect,
-		k:             k,
-		compileOpts:   compileOpts,
-		tokens:        tokens,
-		totalSteps:    norm.Steps,
-		compileBudget: norm.CompileBudget,
-		aneExtras:     !norm.DisableANEExtras,
-		lr:            norm.LearningRate,
-		compiles:      1,
-		recompileEach: norm.RecompileEachStep,
-		inputBuf:      make([]float32, k.InputBytes(0)/4),
-		outputBuf:     make([]float32, k.OutputBytes(0)/4),
-		started:       time.Now(),
+		backend:        BackendDirect,
+		k:              k,
+		compileOpts:    compileOpts,
+		tokens:         tokens,
+		totalSteps:     norm.Steps,
+		compileBudget:  norm.CompileBudget,
+		aneExtras:      !norm.DisableANEExtras,
+		lr:             norm.LearningRate,
+		compiles:       1,
+		recompileEach:  norm.RecompileEachStep,
+		inputBuf:       make([]float32, k.InputBytes(0)/4),
+		outputBuf:      make([]float32, k.OutputBytes(0)/4),
+		started:        time.Now(),
+		startupCompile: startupCompile,
 	}, nil
 }
 
@@ -167,23 +171,27 @@ func openBinTrainer(norm Options, tokens []uint16) (*Trainer, error) {
 		AccumSteps:     int(norm.AccumSteps),
 		LR:             norm.LearningRate,
 		Seed:           42,
+		GradTaskLimit:  norm.GradTaskConcurrency,
 		UseANE:         !norm.DisableANEExtras,
 		HybridBackward: norm.HybridBackward,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("stories trainer open: init storiesane engine: %w", err)
 	}
+	prepareStart := time.Now()
 	engine.Prepare()
+	startupCompile := time.Since(prepareStart)
 	return &Trainer{
-		backend:       BackendDirect,
-		tokens:        tokens,
-		totalSteps:    norm.Steps,
-		compileBudget: norm.CompileBudget,
-		aneExtras:     !norm.DisableANEExtras,
-		lr:            norm.LearningRate,
-		started:       time.Now(),
-		cpuMode:       true,
-		engine:        engine,
+		backend:        BackendDirect,
+		tokens:         tokens,
+		totalSteps:     norm.Steps,
+		compileBudget:  norm.CompileBudget,
+		aneExtras:      !norm.DisableANEExtras,
+		lr:             norm.LearningRate,
+		started:        time.Now(),
+		startupCompile: startupCompile,
+		cpuMode:        true,
+		engine:         engine,
 	}, nil
 }
 
@@ -213,6 +221,9 @@ func normalizeOptions(opts Options) (Options, error) {
 	}
 	if opts.InputBytes%4 != 0 || opts.OutputBytes%4 != 0 {
 		return opts, fmt.Errorf("stories trainer open: input and output bytes must be multiples of 4")
+	}
+	if opts.GradTaskConcurrency < 0 {
+		return opts, fmt.Errorf("stories trainer open: grad task concurrency must be >= 0")
 	}
 	if opts.LearningRate <= 0 {
 		opts.LearningRate = 3e-4
@@ -304,16 +315,29 @@ func (t *Trainer) stepModelC() (StepStats, error) {
 
 	totalDur := time.Since(start)
 	restart := t.compileBudget > 0 && t.compiles >= t.compileBudget
+	cpuDur := totalDur - compileDur - evalDur
+	if cpuDur < 0 {
+		cpuDur = 0
+	}
 	return StepStats{
-		Step:            t.step,
-		Loss:            t.lastLoss,
-		StepDuration:    totalDur,
-		CompileDuration: compileDur,
-		WriteDuration:   writeDur,
-		EvalDuration:    evalDur,
-		ReadDuration:    readDur,
-		Compiles:        t.compiles,
-		RestartRequired: restart,
+		Step:                   t.step,
+		Loss:                   t.lastLoss,
+		StepDuration:           totalDur,
+		CompileDuration:        compileDur,
+		StartupCompileDuration: compileDur,
+		WeightRefreshDuration:  0,
+		WriteDuration:          writeDur,
+		EvalDuration:           evalDur,
+		CPUWorkDuration:        cpuDur,
+		ReadDuration:           readDur,
+		FinalHeadDuration:      0,
+		EmbedGradDuration:      0,
+		RMSDWDuration:          0,
+		DWGEMMDuration:         0,
+		DWWaitDuration:         0,
+		AdamDuration:           0,
+		Compiles:               t.compiles,
+		RestartRequired:        restart,
 	}, nil
 }
 
@@ -338,6 +362,7 @@ func (t *Trainer) stepCPU() (StepStats, error) {
 		}
 		res.StepDuration += compileDur
 		res.CompileDuration += compileDur
+		res.WeightRefreshDuration += compileDur
 	}
 	st := t.engine.State()
 	t.tokenPos = st.TokenPos
@@ -348,15 +373,24 @@ func (t *Trainer) stepCPU() (StepStats, error) {
 	t.adamT = st.AdamT
 
 	return StepStats{
-		Step:            t.step,
-		Loss:            t.lastLoss,
-		StepDuration:    res.StepDuration,
-		CompileDuration: res.CompileDuration,
-		WriteDuration:   0,
-		EvalDuration:    res.StepDuration - res.CompileDuration,
-		ReadDuration:    0,
-		Compiles:        0,
-		RestartRequired: false,
+		Step:                   t.step,
+		Loss:                   t.lastLoss,
+		StepDuration:           res.StepDuration,
+		CompileDuration:        res.CompileDuration,
+		StartupCompileDuration: res.StartupCompileDuration,
+		WeightRefreshDuration:  res.WeightRefreshDuration,
+		WriteDuration:          0,
+		EvalDuration:           res.ANEEvalDuration,
+		CPUWorkDuration:        res.CPUWorkDuration,
+		ReadDuration:           0,
+		FinalHeadDuration:      res.FinalHeadDuration,
+		EmbedGradDuration:      res.EmbedGradDuration,
+		RMSDWDuration:          res.RMSDWDuration,
+		DWGEMMDuration:         res.DWGEMMDuration,
+		DWWaitDuration:         res.DWWaitDuration,
+		AdamDuration:           res.AdamDuration,
+		Compiles:               0,
+		RestartRequired:        false,
 	}, nil
 }
 
@@ -555,6 +589,13 @@ func (t *Trainer) Backend() string {
 		return ""
 	}
 	return BackendDirect
+}
+
+func (t *Trainer) StartupCompileDuration() time.Duration {
+	if t == nil {
+		return 0
+	}
+	return t.startupCompile
 }
 
 func loadTokens(path string) ([]uint16, error) {

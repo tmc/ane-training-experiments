@@ -1,6 +1,9 @@
 package stories
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestCrossEntropyLossShape(t *testing.T) {
 	v, s := 4, 3
@@ -97,5 +100,72 @@ func TestCrossEntropyLossOutOfRangeTargetSkipsColumn(t *testing.T) {
 	}
 	if sum < -1e-5 || sum > 1e-5 {
 		t.Fatalf("valid col sum=%g want ~0", sum)
+	}
+}
+
+func TestMatMulEmbedTScaleMatchesPostScale(t *testing.T) {
+	const (
+		vocab = 5
+		dim   = 3
+		seq   = 2
+	)
+	embed := []float32{
+		1, 2, 3,
+		4, 5, 6,
+		7, 8, 9,
+		10, 11, 12,
+		13, 14, 15,
+	}
+	dLogits := []float32{
+		0.2, -0.1,
+		0.3, 0.4,
+		-0.5, 0.6,
+		0.7, -0.8,
+		0.9, 1.0,
+	}
+	const scale = float32(0.25)
+	got := make([]float32, dim*seq)
+	want := make([]float32, dim*seq)
+	MatMulEmbedTScale(got, embed, dLogits, vocab, dim, seq, scale)
+	MatMulEmbedT(want, embed, dLogits, vocab, dim, seq)
+	for i := range want {
+		want[i] *= scale
+	}
+	for i := range got {
+		if math.Abs(float64(got[i]-want[i])) > 1e-5 {
+			t.Fatalf("dx[%d]=%g want %g", i, got[i], want[i])
+		}
+	}
+}
+
+func TestMatMulGradEmbedScaleMatchesPostScale(t *testing.T) {
+	const (
+		vocab = 4
+		dim   = 3
+		seq   = 2
+	)
+	dLogits := []float32{
+		0.2, -0.1,
+		0.3, 0.4,
+		-0.5, 0.6,
+		0.7, -0.8,
+	}
+	x := []float32{
+		1, 2,
+		3, 4,
+		5, 6,
+	}
+	const scale = float32(0.125)
+	got := make([]float32, vocab*dim)
+	want := make([]float32, vocab*dim)
+	MatMulGradEmbedScale(got, dLogits, x, vocab, dim, seq, scale)
+	MatMulGradEmbed(want, dLogits, x, vocab, dim, seq)
+	for i := range want {
+		want[i] *= scale
+	}
+	for i := range got {
+		if math.Abs(float64(got[i]-want[i])) > 1e-5 {
+			t.Fatalf("dEmbed[%d]=%g want %g", i, got[i], want[i])
+		}
 	}
 }

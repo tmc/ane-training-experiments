@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
 	esac
 done
 
-args=(--steps "$STEPS" --repeats "$REPEATS" --warmup-steps "$WARMUP" --profile "$PROFILE" --trainer-backend "$TRAINER_BACKEND")
+args=(--steps "$STEPS" --repeats "$REPEATS" --warmup-steps "$WARMUP" --profile "$PROFILE" --go-backend ane --trainer-backend "$TRAINER_BACKEND")
 if [[ "$SKIP_BUILD" -eq 1 ]]; then
 	args+=(--skip-build)
 fi

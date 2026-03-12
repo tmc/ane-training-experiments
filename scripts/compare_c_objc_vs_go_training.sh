@@ -29,7 +29,7 @@ ANE_CLS_BWD=0
 ALLOW_MISMATCH=0
 WARMUP_STEPS=0
 RUN_ORDER="c-go"
-DIRECT_GO_SEQ_LIMIT=256
+DIRECT_GO_SEQ_LIMIT=384
 
 usage() {
 	cat <<'EOF'
@@ -343,12 +343,12 @@ if [[ "$C_MODE" == "ane" && "$GO_BACKEND" == "full" ]]; then
 fi
 if [[ "$C_MODE" == "ane" && "$GO_BACKEND" == "ane" ]]; then
 	backend_pair=1
-	# .bin on go-backend=ane currently uses direct pure-Go trainer mode,
-	# which is not yet strict workload-equivalent to C train_large_ane.
 	if [[ "$GO_MODEL_LOWER" != *.bin ]]; then
 		strict_pair=1
-	elif [[ -n "$SEQ_OVERRIDE" && "$TRAINER_BACKEND" == "auto" && "$SEQ_OVERRIDE" -gt "$DIRECT_GO_SEQ_LIMIT" ]]; then
-		strict_pair=1
+	elif [[ "$TRAINER_BACKEND" != "bridge" ]]; then
+		if [[ -z "$SEQ_OVERRIDE" || "$SEQ_OVERRIDE" -le "$DIRECT_GO_SEQ_LIMIT" ]]; then
+			strict_pair=1
+		fi
 	fi
 fi
 if [[ "$C_MODE" == "ane-dynamic" && "$GO_BACKEND" == "ane-dynamic" ]]; then
@@ -840,7 +840,7 @@ detect_go_mode() {
 		echo "cpu_reference"
 		return
 		;;
-	direct_modelc|direct)
+	direct_modelc|direct|direct_hybrid_bwd)
 		echo "ane_direct"
 		return
 		;;
@@ -928,6 +928,17 @@ extract_ane_util() {
 	echo "$line" | sed -E 's/.*ANE utilization:[[:space:]]*([0-9.]+)%.*/\1/'
 }
 
+extract_ane_occupancy() {
+	local log="$1"
+	local line
+	line="$(grep -E "ANE occupancy:" "$log" | tail -n1 || true)"
+	if [[ -z "$line" ]]; then
+		echo "n/a"
+		return
+	fi
+	echo "$line" | sed -E 's/.*ANE occupancy:[[:space:]]*([0-9.]+)%.*/\1/'
+}
+
 extract_compile_pct() {
 	local log="$1"
 	local line
@@ -942,13 +953,71 @@ extract_compile_pct() {
 	echo "$line" | sed -E 's/.*\(([^)]*,[[:space:]]*)?([0-9]+(\.[0-9]+)?)%\).*/\2/'
 }
 
+extract_train_step_ms_summary() {
+	local log="$1"
+	local line
+	line="$(grep -E "^Train time:" "$log" | tail -n1 || true)"
+	if [[ -z "$line" ]]; then
+		echo "n/a"
+		return
+	fi
+	echo "$line" | sed -E 's/.*,[[:space:]]*([0-9]+(\.[0-9]+)?) ms\/step.*/\1/'
+}
+
+calc_mean_col() {
+	local csv="$1"
+	local col="$2"
+	if [[ ! -s "$csv" ]]; then
+		echo "n/a"
+		return
+	fi
+	awk -F, -v col="$col" '
+	BEGIN {
+		n = 0
+		sum = 0
+	}
+	{
+		n++
+		sum += $col
+	}
+	END {
+		if (n == 0) {
+			print "n/a"
+		} else {
+			printf "%.6f\n", sum / n
+		}
+	}
+	' "$csv"
+}
+
 GO_MODE="$(detect_go_mode "$GO_LOG")"
 C_RUNTIME_MODE="$(detect_c_mode "$C_LOG")"
 GO_IMPL_BACKEND="$(detect_go_impl_backend "$GO_LOG")"
 GO_ANE_UTIL="$(extract_ane_util "$GO_LOG")"
 C_ANE_UTIL="$(extract_ane_util "$C_LOG")"
+GO_ANE_OCCUPANCY="$(extract_ane_occupancy "$GO_LOG")"
+C_ANE_OCCUPANCY="$(extract_ane_occupancy "$C_LOG")"
 GO_COMPILE_PCT="$(extract_compile_pct "$GO_LOG")"
 C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
+
+TRAIN_SOURCE="$tmp_rows"
+if [[ -s "$tmp_batch_rows" ]]; then
+	TRAIN_SOURCE="$tmp_batch_rows"
+fi
+
+C_AVG_TRAIN_STEP_MS="$(calc_mean_col "$TRAIN_SOURCE" 5)"
+GO_AVG_TRAIN_STEP_MS="$(calc_mean_col "$TRAIN_SOURCE" 6)"
+GO_TRAIN_STEP_SOURCE="overlap_csv"
+GO_DIRECT_TRAIN_STEP_MS="$(extract_train_step_ms_summary "$GO_LOG")"
+if [[ "$GO_IMPL_BACKEND" == direct* && "$GO_DIRECT_TRAIN_STEP_MS" != "n/a" ]]; then
+	GO_AVG_TRAIN_STEP_MS="$GO_DIRECT_TRAIN_STEP_MS"
+	GO_TRAIN_STEP_SOURCE="direct_summary"
+fi
+
+GO_VS_C_TRAIN_RATIO="n/a"
+if [[ "$C_AVG_TRAIN_STEP_MS" != "n/a" && "$GO_AVG_TRAIN_STEP_MS" != "n/a" ]]; then
+	GO_VS_C_TRAIN_RATIO="$(awk -v c="$C_AVG_TRAIN_STEP_MS" -v g="$GO_AVG_TRAIN_STEP_MS" 'BEGIN { if (c > 0) printf "%.6f\n", g / c; else print "n/a" }')"
+fi
 
 {
 	echo "c_exit_code=$C_RC"
@@ -979,6 +1048,8 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	echo "go_impl_backend=$GO_IMPL_BACKEND"
 	echo "c_ane_util_pct=$C_ANE_UTIL"
 	echo "go_ane_util_pct=$GO_ANE_UTIL"
+	echo "c_ane_occupancy_pct=$C_ANE_OCCUPANCY"
+	echo "go_ane_occupancy_pct=$GO_ANE_OCCUPANCY"
 	echo "c_compile_pct=$C_COMPILE_PCT"
 	echo "go_compile_pct=$GO_COMPILE_PCT"
 		awk -F, '
@@ -1064,35 +1135,10 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 		}
 	}
 	' "$tmp_batch_rows"
-	awk -F, '
-	BEGIN {
-		n = 0
-		sum_c_step = 0
-		sum_go_step = 0
-	}
-	{
-		n++
-		sum_c_step += $5
-		sum_go_step += $6
-	}
-	END {
-		if (n == 0) {
-			print "avg_c_train_step_ms=n/a"
-			print "avg_go_train_step_ms=n/a"
-			print "go_vs_c_train_step_ratio=n/a"
-		} else {
-			c = sum_c_step / n
-			g = sum_go_step / n
-			printf "avg_c_train_step_ms=%.6f\n", c
-			printf "avg_go_train_step_ms=%.6f\n", g
-			if (c > 0) {
-				printf "go_vs_c_train_step_ratio=%.6f\n", g / c
-			} else {
-				print "go_vs_c_train_step_ratio=n/a"
-			}
-		}
-	}
-	' "$([[ -s "$tmp_batch_rows" ]] && printf "%s" "$tmp_batch_rows" || printf "%s" "$tmp_rows")"
+	echo "avg_c_train_step_ms=$C_AVG_TRAIN_STEP_MS"
+	echo "avg_go_train_step_ms=$GO_AVG_TRAIN_STEP_MS"
+	echo "go_train_step_source=$GO_TRAIN_STEP_SOURCE"
+	echo "go_vs_c_train_step_ratio=$GO_VS_C_TRAIN_RATIO"
 	echo "c_log=$C_LOG"
 	echo "go_log=$GO_LOG"
 	echo "c_csv=$C_CSV"
@@ -1109,7 +1155,7 @@ C_COMPILE_PCT="$(extract_compile_pct "$C_LOG")"
 	fi
 	if [[ "$GO_BACKEND" == "ane" ]]; then
 		if [[ "$GO_MODEL_LOWER" == *.bin ]]; then
-			if [[ "$GO_MODE" != "cpu_reference" && "$GO_IMPL_BACKEND" != full_c_exec*auto_seq_bridge* ]]; then
+			if [[ "$GO_MODE" != "ane_direct" && "$GO_MODE" != "cpu_reference" && "$GO_IMPL_BACKEND" != full_c_exec*auto_seq_bridge* ]]; then
 				echo "warning=go backend flag was ane(.bin direct mode) but runtime mode was $GO_MODE"
 			fi
 		elif [[ "$GO_MODE" != "ane_direct" ]]; then
