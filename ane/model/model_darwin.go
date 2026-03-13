@@ -31,6 +31,7 @@ type CompileOptions struct {
 	WeightFiles   []WeightFile
 	PackagePath   string
 	ModelKey      string
+	SharedModel   bool
 	QoS           uint32
 	PerfStatsMask uint32
 }
@@ -53,8 +54,9 @@ type EvalStats struct {
 
 // Kernel adapts github.com/tmc/apple/x/ane for the local model API.
 type Kernel struct {
-	rt *xane.Runtime
-	k  *xane.Kernel
+	rt     *xane.Runtime
+	k      *xane.Kernel
+	shared *sharedMILHandle
 
 	inputBytes   []int
 	outputBytes  []int
@@ -79,10 +81,10 @@ func CopyOutputChannelsToInput(dst *Kernel, dstInput, dstChannel int, src *Kerne
 // Offsets and width are expressed in elements along the width axis. A width of
 // -1 copies the full logical row width.
 func CopyOutputRangeToInput(dst *Kernel, dstInput, dstChannel, dstOffset int, src *Kernel, srcOutput, srcChannel, srcOffset, channels, width int) error {
-	if dst == nil || dst.k == nil {
+	if dst == nil || dst.closed() {
 		return fmt.Errorf("copy output to input: destination kernel is closed")
 	}
-	if src == nil || src.k == nil {
+	if src == nil || src.closed() {
 		return fmt.Errorf("copy output to input: source kernel is closed")
 	}
 	if channels < 0 {
@@ -127,8 +129,8 @@ func CopyOutputRangeToInput(dst *Kernel, dstInput, dstChannel, dstOffset int, sr
 		return fmt.Errorf("copy output to input: destination channels [%d,%d) out of range [0,%d)", dstChannel, dstChannel+channels, dstLayout.Channels)
 	}
 	return copySurfaceRange(
-		dst.k.InputSurface(dstInput), dstLayout, dstChannel, dstOffset,
-		src.k.OutputSurface(srcOutput), srcLayout, srcChannel, srcOffset,
+		dst.InputSurface(dstInput), dstLayout, dstChannel, dstOffset,
+		src.OutputSurface(srcOutput), srcLayout, srcChannel, srcOffset,
 		channels, width,
 	)
 }
@@ -142,6 +144,9 @@ func CompileWithStats(opts CompileOptions) (*Kernel, CompileStats, error) {
 	opts = compileOptionsWithDefaults(opts)
 	if opts.PackagePath == "" && opts.MILText == "" {
 		return nil, CompileStats{}, fmt.Errorf("compile: MILText or PackagePath is required")
+	}
+	if opts.SharedModel && opts.PackagePath == "" {
+		return compileSharedMILWithStats(opts)
 	}
 
 	rt, err := acquireCompileRuntime()
@@ -173,10 +178,10 @@ func (k *Kernel) InputBytes(i int) int {
 }
 
 func (k *Kernel) NumInputs() int {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return 0
 	}
-	return k.k.NumInputs()
+	return len(k.inputLayout)
 }
 
 func (k *Kernel) OutputBytes(i int) int {
@@ -187,15 +192,18 @@ func (k *Kernel) OutputBytes(i int) int {
 }
 
 func (k *Kernel) NumOutputs() int {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return 0
 	}
-	return k.k.NumOutputs()
+	return len(k.outputLayout)
 }
 
 func (k *Kernel) InputSurface(i int) coregraphics.IOSurfaceRef {
-	if k == nil || k.k == nil || i < 0 || i >= k.k.NumInputs() {
+	if k == nil || k.closed() || i < 0 || i >= len(k.inputLayout) {
 		return 0
+	}
+	if k.shared != nil {
+		return k.shared.inputSurface(i)
 	}
 	return k.k.InputSurface(i)
 }
@@ -208,8 +216,11 @@ func (k *Kernel) InputLayout(i int) xane.TensorLayout {
 }
 
 func (k *Kernel) OutputSurface(i int) coregraphics.IOSurfaceRef {
-	if k == nil || k.k == nil || i < 0 || i >= k.k.NumOutputs() {
+	if k == nil || k.closed() || i < 0 || i >= len(k.outputLayout) {
 		return 0
+	}
+	if k.shared != nil {
+		return k.shared.outputSurface(i)
 	}
 	return k.k.OutputSurface(i)
 }
@@ -222,94 +233,175 @@ func (k *Kernel) OutputLayout(i int) xane.TensorLayout {
 }
 
 func (k *Kernel) WriteInput(i int, b []byte) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("write input: kernel is closed")
 	}
-	if i < 0 || i >= k.k.NumInputs() {
+	if i < 0 || i >= len(k.inputLayout) {
 		return fmt.Errorf("write input: index %d out of range", i)
 	}
 	if len(b) != k.InputBytes(i) {
 		return fmt.Errorf("write input: got %d bytes, want %d", len(b), k.InputBytes(i))
 	}
+	ref := k.InputSurface(i)
+	if ref == 0 {
+		return fmt.Errorf("write input: input surface %d is nil", i)
+	}
 	if buf := k.inputAlloc[i]; buf != nil {
 		copy(buf, b)
+		if k.shared != nil {
+			return writeSurface(ref, buf)
+		}
 		return k.k.WriteInput(i, buf)
+	}
+	if k.shared != nil {
+		return writeSurface(ref, b)
 	}
 	return k.k.WriteInput(i, b)
 }
 
 func (k *Kernel) ReadOutput(i int, b []byte) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("read output: kernel is closed")
 	}
-	if i < 0 || i >= k.k.NumOutputs() {
+	if i < 0 || i >= len(k.outputLayout) {
 		return fmt.Errorf("read output: index %d out of range", i)
 	}
 	if len(b) != k.OutputBytes(i) {
 		return fmt.Errorf("read output: got %d bytes, want %d", len(b), k.OutputBytes(i))
 	}
+	ref := k.OutputSurface(i)
+	if ref == 0 {
+		return fmt.Errorf("read output: output surface %d is nil", i)
+	}
 	if buf := k.outputAlloc[i]; buf != nil {
-		if err := k.k.ReadOutput(i, buf); err != nil {
-			return err
+		if k.shared != nil {
+			if err := readSurface(ref, buf); err != nil {
+				return err
+			}
+		} else {
+			if err := k.k.ReadOutput(i, buf); err != nil {
+				return err
+			}
 		}
 		copy(b, buf[:len(b)])
 		return nil
+	}
+	if k.shared != nil {
+		return readSurface(ref, b)
 	}
 	return k.k.ReadOutput(i, b)
 }
 
 func (k *Kernel) WriteInputF32(i int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("write input f32: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.inputLayout) {
+			return fmt.Errorf("write input f32: index %d out of range", i)
+		}
+		layout := k.inputLayout[i]
+		if len(data) != layout.LogicalElements() {
+			return fmt.Errorf("write input f32: got %d elements, want %d", len(data), layout.LogicalElements())
+		}
+		return writeStridedF32WithLayout(k.InputSurface(i), data, layout)
 	}
 	return k.k.WriteInputF32(i, data)
 }
 
 func (k *Kernel) ReadOutputF32(i int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("read output f32: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.outputLayout) {
+			return fmt.Errorf("read output f32: index %d out of range", i)
+		}
+		layout := k.outputLayout[i]
+		if len(data) != layout.LogicalElements() {
+			return fmt.Errorf("read output f32: got %d elements, want %d", len(data), layout.LogicalElements())
+		}
+		return readStridedF32WithLayout(k.OutputSurface(i), data, layout)
 	}
 	return k.k.ReadOutputF32(i, data)
 }
 
 func (k *Kernel) WriteInputFP16(i int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("write input fp16: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.inputLayout) {
+			return fmt.Errorf("write input fp16: index %d out of range", i)
+		}
+		layout := k.inputLayout[i]
+		if len(data) != layout.LogicalElements() {
+			return fmt.Errorf("write input fp16: got %d elements, want %d", len(data), layout.LogicalElements())
+		}
+		return writeStridedFP16WithLayout(k.InputSurface(i), data, layout)
 	}
 	return k.k.WriteInputFP16(i, data)
 }
 
 func (k *Kernel) WriteInputFP16Channels(i, channel int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("write input fp16 channels: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.inputLayout) {
+			return fmt.Errorf("write input fp16 channels: index %d out of range", i)
+		}
+		return writeStridedFP16ChannelsWithLayout(k.InputSurface(i), data, k.inputLayout[i], channel)
 	}
 	return k.k.WriteInputFP16Channels(i, channel, data)
 }
 
 func (k *Kernel) ReadOutputFP16(i int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("read output fp16: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.outputLayout) {
+			return fmt.Errorf("read output fp16: index %d out of range", i)
+		}
+		layout := k.outputLayout[i]
+		if len(data) != layout.LogicalElements() {
+			return fmt.Errorf("read output fp16: got %d elements, want %d", len(data), layout.LogicalElements())
+		}
+		return readStridedFP16WithLayout(k.OutputSurface(i), data, layout)
 	}
 	return k.k.ReadOutputFP16(i, data)
 }
 
 func (k *Kernel) ReadOutputFP16Channels(i, channel int, data []float32) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("read output fp16 channels: kernel is closed")
+	}
+	if k.shared != nil {
+		if i < 0 || i >= len(k.outputLayout) {
+			return fmt.Errorf("read output fp16 channels: index %d out of range", i)
+		}
+		return readStridedFP16ChannelsWithLayout(k.OutputSurface(i), data, k.outputLayout[i], channel)
 	}
 	return k.k.ReadOutputFP16Channels(i, channel, data)
 }
 
 func (k *Kernel) Eval() error {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return fmt.Errorf("eval: kernel is closed")
+	}
+	if k.shared != nil {
+		return k.sharedEval()
 	}
 	return k.k.Eval()
 }
 
 func (k *Kernel) EvalWithStats() (EvalStats, error) {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return EvalStats{}, fmt.Errorf("eval with stats: kernel is closed")
+	}
+	if k.shared != nil {
+		return k.sharedEvalWithStats()
 	}
 	st, err := xanetelemetry.EvalWithStats(k.k)
 	if err != nil {
@@ -324,8 +416,15 @@ func (k *Kernel) EvalWithStats() (EvalStats, error) {
 // EvalHWExecutionNS executes the kernel and returns only hardware execution
 // time. It skips metric-map materialization for the fast training path.
 func (k *Kernel) EvalHWExecutionNS() (uint64, error) {
-	if k == nil || k.k == nil {
+	if k == nil || k.closed() {
 		return 0, fmt.Errorf("eval hw execution ns: kernel is closed")
+	}
+	if k.shared != nil {
+		st, err := k.sharedEvalWithStats()
+		if err != nil {
+			return 0, err
+		}
+		return st.HWExecutionNS, nil
 	}
 	st, err := xanetelemetry.EvalWithStats(k.k)
 	if err != nil {
@@ -420,21 +519,21 @@ func adaptCompileStats(st xane.CompileStats) CompileStats {
 }
 
 func (k *Kernel) Diagnostics() xanetelemetry.Diagnostics {
-	if k == nil || k.k == nil {
+	if k == nil || k.k == nil || k.shared != nil || k.closed() {
 		return xanetelemetry.Diagnostics{}
 	}
 	return xanetelemetry.ProbeDiagnostics(k.k)
 }
 
 func (k *Kernel) EvalWithSignalEvent(signalPort uint32, signalValue uint64, cfg xane.SharedEventEvalOptions) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.k == nil || k.shared != nil || k.closed() {
 		return fmt.Errorf("eval with signal event: kernel is closed")
 	}
 	return k.k.EvalWithSignalEvent(signalPort, signalValue, cfg)
 }
 
 func (k *Kernel) EvalBidirectional(waitPort uint32, waitValue uint64, signalPort uint32, signalValue uint64, cfg xane.SharedEventEvalOptions) error {
-	if k == nil || k.k == nil {
+	if k == nil || k.k == nil || k.shared != nil || k.closed() {
 		return fmt.Errorf("eval bidirectional: kernel is closed")
 	}
 	return k.k.EvalBidirectional(waitPort, waitValue, signalPort, signalValue, cfg)
@@ -445,11 +544,19 @@ func (k *Kernel) Close() {
 		return
 	}
 	runtime.SetFinalizer(k, nil)
+	if k.shared != nil {
+		k.shared.close()
+		k.shared = nil
+	}
 	if k.k != nil {
 		_ = k.k.Close()
 		k.k = nil
 	}
 	k.rt = nil
+}
+
+func (k *Kernel) closed() bool {
+	return k == nil || (k.k == nil && k.shared == nil)
 }
 
 func acquireCompileRuntime() (*xane.Runtime, error) {
@@ -513,8 +620,12 @@ func defaultPerfStatsMask() uint32 {
 }
 
 func (k *Kernel) initIO() error {
-	nIn := k.k.NumInputs()
-	nOut := k.k.NumOutputs()
+	nIn := len(k.inputLayout)
+	nOut := len(k.outputLayout)
+	if k.k != nil {
+		nIn = k.k.NumInputs()
+		nOut = k.k.NumOutputs()
+	}
 	if nIn == 0 || nOut == 0 {
 		return fmt.Errorf("compile: compiled model reported %d inputs and %d outputs", nIn, nOut)
 	}
@@ -523,28 +634,46 @@ func (k *Kernel) initIO() error {
 	k.outputBytes = make([]int, nOut)
 	k.inputAlloc = make([][]byte, nIn)
 	k.outputAlloc = make([][]byte, nOut)
-	k.inputLayout = make([]xane.TensorLayout, nIn)
-	k.outputLayout = make([]xane.TensorLayout, nOut)
+	if len(k.inputLayout) != nIn {
+		k.inputLayout = make([]xane.TensorLayout, nIn)
+	}
+	if len(k.outputLayout) != nOut {
+		k.outputLayout = make([]xane.TensorLayout, nOut)
+	}
 
 	for i := range nIn {
-		layout := k.k.InputLayout(i)
+		layout := k.inputLayout[i]
+		if k.k != nil {
+			layout = k.k.InputLayout(i)
+		}
 		if layout.LogicalBytes() <= 0 {
 			return fmt.Errorf("compile: input[%d] has invalid logical size %d", i, layout.LogicalBytes())
 		}
 		k.inputLayout[i] = layout
 		k.inputBytes[i] = layout.LogicalBytes()
-		if alloc := k.k.InputAllocSize(i); alloc > layout.LogicalBytes() {
+		alloc := layout.AllocSize()
+		if k.k != nil {
+			alloc = k.k.InputAllocSize(i)
+		}
+		if alloc > layout.LogicalBytes() {
 			k.inputAlloc[i] = make([]byte, alloc)
 		}
 	}
 	for i := range nOut {
-		layout := k.k.OutputLayout(i)
+		layout := k.outputLayout[i]
+		if k.k != nil {
+			layout = k.k.OutputLayout(i)
+		}
 		if layout.LogicalBytes() <= 0 {
 			return fmt.Errorf("compile: output[%d] has invalid logical size %d", i, layout.LogicalBytes())
 		}
 		k.outputLayout[i] = layout
 		k.outputBytes[i] = layout.LogicalBytes()
-		if alloc := k.k.OutputAllocSize(i); alloc > layout.LogicalBytes() {
+		alloc := layout.AllocSize()
+		if k.k != nil {
+			alloc = k.k.OutputAllocSize(i)
+		}
+		if alloc > layout.LogicalBytes() {
 			k.outputAlloc[i] = make([]byte, alloc)
 		}
 	}

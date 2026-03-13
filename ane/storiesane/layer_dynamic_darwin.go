@@ -42,7 +42,8 @@ func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *
 		return nil, fmt.Errorf("compile layer forward dynamic: rope blobs: %w", err)
 	}
 	att, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
+		MILText:     mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
+		SharedModel: true,
 		WeightFiles: []model.WeightFile{
 			{
 				Path: "@model_path/weights/mask.bin",
@@ -67,7 +68,8 @@ func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *
 		}
 	}()
 	ffn, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
+		MILText:     mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer forward dynamic: ffn: %w", err)
@@ -129,7 +131,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		return nil, fmt.Errorf("compile layer backward dynamic: mask blob: %w", err)
 	}
 	ffnW2, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenDynamicMatmulFP16(dim, hidden, seq),
+		MILText:     mil.GenDynamicMatmulFP16(dim, hidden, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: ffn w2: %w", err)
@@ -140,7 +143,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	ffnTail, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
+		MILText:     mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: ffn tail: %w", err)
@@ -151,7 +155,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	wot, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenDynamicMatmulFP16(dim, dim, seq),
+		MILText:     mil.GenDynamicMatmulFP16(dim, dim, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: wot: %w", err)
@@ -162,7 +167,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	sdpa1, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		MILText:     mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		SharedModel: true,
 		WeightFiles: []model.WeightFile{{
 			Path: "@model_path/weights/mask.bin",
 			Blob: maskBlob,
@@ -177,7 +183,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	sdpa2, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenSDPABackward2(dim, heads, seq),
+		MILText:     mil.GenSDPABackward2(dim, heads, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: sdpa2: %w", err)
@@ -188,7 +195,8 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	qkv, err := model.Compile(model.CompileOptions{
-		MILText: mil.GenStoriesQKVBackwardDynamic(dim, heads, seq),
+		MILText:     mil.GenStoriesQKVBackwardDynamic(dim, heads, seq),
+		SharedModel: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: qkv: %w", err)
@@ -266,7 +274,7 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 	if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval attention: %w", err)
 	}
-	if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
+	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
 	}
 	copy(lf.x2, lf.attOut[:want])
@@ -277,7 +285,7 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval ffn: %w", err)
 	}
-	if err := lf.ffn.ReadOutputFP16(0, lf.ffnOut); err != nil {
+	if err := readOutputFP16ChannelsFast(lf.ffn, 0, 0, lf.seq, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read ffn output: %w", err)
 	}
 	copy(out, lf.ffnOut[:want])
@@ -344,7 +352,7 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	if err := evalKernelTracked(lb.metrics, lb.ffn); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: eval tail: %w", err)
 	}
-	if err := lb.ffn.ReadOutputFP16(0, lb.ffnOut); err != nil {
+	if err := readOutputFP16ChannelsFast(lb.ffn, 0, 0, lb.seq, lb.ffnOut); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: read tail output: %w", err)
 	}
 	copy(dxNorm, lb.ffnOut[:dimN])
@@ -388,13 +396,13 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := evalKernelTracked(lb.metrics, lb.wot); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval wot: %w", err)
 	}
-	if err := lb.sdpa1.WriteInputFP16Channels(0, 0, q); err != nil {
+	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, q); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write q: %w", err)
 	}
-	if err := lb.sdpa1.WriteInputFP16Channels(0, lb.dim, k); err != nil {
+	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, lb.dim, lb.seq, k); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write k: %w", err)
 	}
-	if err := lb.sdpa1.WriteInputFP16Channels(0, 2*lb.dim, v); err != nil {
+	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, 2*lb.dim, lb.seq, v); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write v: %w", err)
 	}
 	if err := model.CopyOutputChannelsToInput(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
@@ -406,10 +414,10 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := model.CopyOutputChannelsToInput(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy sdpa1 output: %w", err)
 	}
-	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh, q); err != nil {
+	if err := writeInputFP16ChannelsFast(lb.sdpa2, 0, 2*lb.scoreCh, lb.seq, q); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write q into sdpa2: %w", err)
 	}
-	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh+lb.dim, k); err != nil {
+	if err := writeInputFP16ChannelsFast(lb.sdpa2, 0, 2*lb.scoreCh+lb.dim, lb.seq, k); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write k into sdpa2: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
@@ -424,19 +432,19 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := model.CopyOutputRangeToInput(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
-	if err := lb.sdpa2.ReadOutputFP16Channels(0, 0, dq); err != nil {
+	if err := readOutputFP16ChannelsFast(lb.sdpa2, 0, 0, lb.seq, dq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dq: %w", err)
 	}
-	if err := lb.sdpa2.ReadOutputFP16Channels(0, lb.dim, dk); err != nil {
+	if err := readOutputFP16ChannelsFast(lb.sdpa2, 0, lb.dim, lb.seq, dk); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dk: %w", err)
 	}
-	if err := lb.sdpa1.ReadOutputFP16Channels(0, 0, dv); err != nil {
+	if err := readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, dv); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dv: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval qkv: %w", err)
 	}
-	if err := lb.qkv.ReadOutputFP16(0, dxNorm); err != nil {
+	if err := readOutputFP16ChannelsFast(lb.qkv, 0, 0, lb.seq, dxNorm); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read qkv output: %w", err)
 	}
 	return nil
@@ -583,6 +591,72 @@ func withLockedFP16Input(k *model.Kernel, input int, fn func(layout xane.TensorL
 	}
 	data := unsafe.Slice((*uint16)(base), layout.AllocSize()/2)
 	return fn(layout, data)
+}
+
+func withLockedFP16Output(k *model.Kernel, output int, fn func(layout xane.TensorLayout, data []uint16) error) error {
+	if k == nil {
+		return fmt.Errorf("kernel is nil")
+	}
+	layout := k.OutputLayout(output)
+	ref := k.OutputSurface(output)
+	if ref == 0 {
+		return fmt.Errorf("output surface %d is nil", output)
+	}
+	surf := appleiosurface.IOSurfaceRef(ref)
+	appleiosurface.IOSurfaceLock(surf, appleiosurface.KIOSurfaceLockReadOnly, nil)
+	defer appleiosurface.IOSurfaceUnlock(surf, appleiosurface.KIOSurfaceLockReadOnly, nil)
+	base := appleiosurface.IOSurfaceGetBaseAddress(surf)
+	if base == nil {
+		return fmt.Errorf("nil IOSurface base address")
+	}
+	data := unsafe.Slice((*uint16)(base), layout.AllocSize()/2)
+	return fn(layout, data)
+}
+
+func writeInputFP16ChannelsFast(k *model.Kernel, input, channelOffset, width int, x []float32) error {
+	return withLockedFP16Input(k, input, func(layout xane.TensorLayout, data []uint16) error {
+		if err := requireFP16InputLayout("write input fp16 channels", layout, 0, 0); err != nil {
+			return err
+		}
+		if width <= 0 {
+			return fmt.Errorf("write input fp16 channels: invalid width=%d", width)
+		}
+		if len(x)%width != 0 {
+			return fmt.Errorf("write input fp16 channels: len=%d width=%d", len(x), width)
+		}
+		channels := len(x) / width
+		if channelOffset < 0 || channelOffset+channels > layout.Channels {
+			return fmt.Errorf("write input fp16 channels: channel range [%d,%d) out of [0,%d)", channelOffset, channelOffset+channels, layout.Channels)
+		}
+		if width > layout.Width {
+			return fmt.Errorf("write input fp16 channels: width=%d > layout width=%d", width, layout.Width)
+		}
+		writeChannelFirstActsOffsetFP16(data, layout, channelOffset, 0, width, x)
+		return nil
+	})
+}
+
+func readOutputFP16ChannelsFast(k *model.Kernel, output, channelOffset, width int, dst []float32) error {
+	return withLockedFP16Output(k, output, func(layout xane.TensorLayout, data []uint16) error {
+		if layout.Height != 1 || layout.ElemSize != 2 {
+			return fmt.Errorf("read output fp16 channels: unsupported layout height=%d elem=%d", layout.Height, layout.ElemSize)
+		}
+		if width <= 0 {
+			return fmt.Errorf("read output fp16 channels: invalid width=%d", width)
+		}
+		if len(dst)%width != 0 {
+			return fmt.Errorf("read output fp16 channels: len=%d width=%d", len(dst), width)
+		}
+		channels := len(dst) / width
+		if channelOffset < 0 || channelOffset+channels > layout.Channels {
+			return fmt.Errorf("read output fp16 channels: channel range [%d,%d) out of [0,%d)", channelOffset, channelOffset+channels, layout.Channels)
+		}
+		if width > layout.Width {
+			return fmt.Errorf("read output fp16 channels: width=%d > layout width=%d", width, layout.Width)
+		}
+		readChannelFirstActsOffsetFP16(dst, data, layout, channelOffset, 0, width)
+		return nil
+	})
 }
 
 func requireFP16InputLayout(op string, layout xane.TensorLayout, channels, width int) error {

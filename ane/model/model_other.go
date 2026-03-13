@@ -16,6 +16,7 @@ type CompileOptions struct {
 	WeightFiles   []WeightFile
 	PackagePath   string
 	ModelKey      string
+	SharedModel   bool
 	QoS           uint32
 	PerfStatsMask uint32
 }
