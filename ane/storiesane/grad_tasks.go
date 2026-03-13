@@ -28,7 +28,7 @@ type gradTasks struct {
 
 func newGradTasks() *gradTasks {
 	n := gradTaskConcurrency()
-	if n <= 1 {
+	if n <= 0 {
 		return nil
 	}
 	g := &gradTasks{
@@ -49,8 +49,8 @@ func newGradTasks() *gradTasks {
 
 func gradTaskConcurrency() int {
 	n := runtime.GOMAXPROCS(0)
-	if n < 2 {
-		return 1
+	if n < 1 {
+		n = 1
 	}
 	if n > gradTaskLimit {
 		n = gradTaskLimit
