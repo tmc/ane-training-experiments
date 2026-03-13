@@ -36,7 +36,7 @@ func main() {
 		gradClip    = flag.Float64("grad-clip", 1.0, "global grad clip (0 disables)")
 		lossScale   = flag.Float64("loss-scale", 256.0, "gradient loss scale for fp16-hybrid parity")
 		cpuClsHead  = flag.Bool("cpu-classifier-head", true, "disable ANE classifier/softmax offload")
-		gradTasks   = flag.Int("dw-concurrency", 3, "max concurrent CPU dW tasks")
+		gradTasks   = flag.Int("dw-concurrency", 0, "max concurrent CPU dW tasks (0=auto)")
 		hybridBwd   = flag.Bool("hybrid-bwd", true, "enable ANE hybrid backward path")
 		printEvery  = flag.Int("print-every", 10, "print every N steps")
 	)
@@ -97,7 +97,11 @@ func main() {
 	}
 
 	fmt.Printf("=== Go Dynamic Training (minimal) ===\n")
-	fmt.Printf("seq=%d accum=%d lr=%g steps=%d\n", *seq, *accumSteps, *lr, *steps)
+	selectedGradTasks := *gradTasks
+	if selectedGradTasks == 0 {
+		selectedGradTasks = autoGradTaskLimit(*seq)
+	}
+	fmt.Printf("seq=%d accum=%d lr=%g steps=%d dw_concurrency=%d\n", *seq, *accumSteps, *lr, *steps, selectedGradTasks)
 
 	wallStart := time.Now()
 	openStart := time.Now()
@@ -115,7 +119,7 @@ func main() {
 		GradClip:          float32(*gradClip),
 		LossScale:         float32(*lossScale),
 		CPUClassifierHead: *cpuClsHead,
-		GradTaskLimit:     *gradTasks,
+		GradTaskLimit:     selectedGradTasks,
 		UseANE:            true,
 		HybridBackward:    *hybridBwd,
 	})
@@ -216,4 +220,11 @@ func scheduledLR(step, totalSteps, warmupSteps int, maxLR, minLRFrac float64) fl
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+func autoGradTaskLimit(seq int) int {
+	if seq >= stories.SeqDefault {
+		return 1
+	}
+	return 3
 }
