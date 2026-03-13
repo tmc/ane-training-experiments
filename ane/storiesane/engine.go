@@ -212,7 +212,7 @@ func Open(opts Options) (*Engine, error) {
 	return &Engine{
 		mw:                      mw,
 		opt:                     opt,
-		off:                     newOffload(mw, seq, opts.UseANE),
+		off:                     newOffload(mw, seq, opts.UseANE, opts.CPUClassifierHead),
 		tokens:                  opts.Tokens,
 		seq:                     seq,
 		accumSteps:              opts.AccumSteps,

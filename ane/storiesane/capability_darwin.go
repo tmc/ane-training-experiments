@@ -74,7 +74,7 @@ func compileDirectSequenceProbe(seq int) error {
 	off := newOffload(&stories.ModelWeights{
 		RMSFinal: make([]float32, stories.Dim),
 		Embed:    make([]float32, stories.Vocab*stories.Dim),
-	}, seq, true)
+	}, seq, true, true)
 	if off != nil {
 		defer off.close()
 	}

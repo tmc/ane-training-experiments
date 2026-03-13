@@ -115,7 +115,7 @@ func TestSmokeOffloadKernelsAvailable(t *testing.T) {
 		mw.Embed[i] = 1
 	}
 
-	off := newOffload(mw, 8, true)
+	off := newOffload(mw, 8, true, false)
 	if off == nil {
 		t.Skip("ANE offload unavailable")
 	}

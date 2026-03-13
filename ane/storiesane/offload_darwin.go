@@ -51,11 +51,11 @@ type offload struct {
 	diag       []string
 }
 
-func newOffload(mw *stories.ModelWeights, seq int, useANE bool) *offload {
-	return newOffloadWithState(mw, seq, useANE, nil, nil, nil, nil, nil)
+func newOffload(mw *stories.ModelWeights, seq int, useANE bool, cpuClassifierHead bool) *offload {
+	return newOffloadWithState(mw, seq, useANE, cpuClassifierHead, nil, nil, nil, nil, nil)
 }
 
-func refreshOffload(prev *offload, mw *stories.ModelWeights, seq int, useANE bool) *offload {
+func refreshOffload(prev *offload, mw *stories.ModelWeights, seq int, useANE bool, cpuClassifierHead bool) *offload {
 	var rmsFwd *model.Kernel
 	var rmsBwd *model.Kernel
 	var softmax *model.Kernel
@@ -74,10 +74,10 @@ func refreshOffload(prev *offload, mw *stories.ModelWeights, seq int, useANE boo
 		prev.clsBwdDyn = nil
 		prev.close()
 	}
-	return newOffloadWithState(mw, seq, useANE, rmsFwd, rmsBwd, softmax, clsFwdDyn, clsBwdDyn)
+	return newOffloadWithState(mw, seq, useANE, cpuClassifierHead, rmsFwd, rmsBwd, softmax, clsFwdDyn, clsBwdDyn)
 }
 
-func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, rmsFwd, rmsBwd, softmax *model.Kernel, clsFwdDyn, clsBwdDyn []classifierDynamicTile) *offload {
+func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, cpuClassifierHead bool, rmsFwd, rmsBwd, softmax *model.Kernel, clsFwdDyn, clsBwdDyn []classifierDynamicTile) *offload {
 	if !useANE || mw == nil || seq <= 0 {
 		closeKernel(rmsFwd)
 		closeKernel(rmsBwd)
@@ -111,78 +111,87 @@ func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, rmsFwd,
 			o.notef("rms backward compile failed: %v", err)
 		}
 	}
-	o.clsFwdDyn, o.clsFwdTile, err = prepareDynamicClassifierForward(clsFwdDyn, mw.Embed, seq)
-	if err != nil {
-		o.notef("classifier forward dynamic compile failed: %v", err)
-	}
-	if len(o.clsFwdDyn) > 0 && o.clsFwdTile > 0 {
-		o.notef("classifier forward using dynamic tile size %d", o.clsFwdTile)
-	}
-	if len(o.clsFwdDyn) == 0 {
-		if blob, err := mil.BuildWeightBlob(mw.Embed, stories.Vocab, stories.Dim); err == nil {
-			o.clsFwd, err = compileFP16Kernel(
-				mil.GenClassifierForward(stories.Dim, stories.Vocab, seq),
-				"@model_path/weights/embed.bin",
-				blob,
-				stories.Dim,
-				stories.Vocab,
-				seq,
-			)
-			if err != nil {
-				o.notef("classifier forward full compile failed: %v", err)
-			}
-		} else {
-			o.notef("classifier forward weight blob failed: %v", err)
-		}
-		if o.clsFwd == nil {
-			o.clsFwdTil, o.clsFwdTile, err = compileClassifierForwardTiles(mw.Embed, seq)
-			if err != nil {
-				o.notef("classifier forward tiled compile failed: %v", err)
-			} else if o.clsFwdTile > 0 {
-				o.notef("classifier forward using tile size %d", o.clsFwdTile)
-			}
-		}
-	}
-	if o.softmax == nil {
-		o.softmax, err = compileSoftmaxKernel(stories.Vocab, seq)
+	if cpuClassifierHead {
+		closeDynamicClassifierTiles(clsFwdDyn)
+		closeDynamicClassifierTiles(clsBwdDyn)
+		closeKernel(softmax)
+		o.clsFwdDyn = nil
+		o.clsBwdDyn = nil
+		o.softmax = nil
+	} else {
+		o.clsFwdDyn, o.clsFwdTile, err = prepareDynamicClassifierForward(clsFwdDyn, mw.Embed, seq)
 		if err != nil {
-			o.notef("softmax compile failed: %v", err)
+			o.notef("classifier forward dynamic compile failed: %v", err)
 		}
-	}
-	o.clsBwdDyn, o.clsBwdTile, err = prepareDynamicClassifierBackward(clsBwdDyn, mw.Embed, seq)
-	if err != nil {
-		o.notef("classifier backward dynamic compile failed: %v", err)
-	}
-	if len(o.clsBwdDyn) > 0 && o.clsBwdTile > 0 {
-		o.notef("classifier backward using dynamic vocab tile size %d", o.clsBwdTile)
-	}
-	if len(o.clsBwdDyn) == 0 {
-		if blob, err := mil.BuildTransposedWeightBlob(mw.Embed, stories.Vocab, stories.Dim); err == nil {
-			o.clsBwd, err = compileFP16Kernel(
-				mil.GenClassifierBackward(stories.Dim, stories.Vocab, seq),
-				"@model_path/weights/embed_t.bin",
-				blob,
-				stories.Vocab,
-				stories.Dim,
-				seq,
-			)
-			if err != nil {
-				o.notef("classifier backward full compile failed: %v", err)
+		if len(o.clsFwdDyn) > 0 && o.clsFwdTile > 0 {
+			o.notef("classifier forward using dynamic tile size %d", o.clsFwdTile)
+		}
+		if len(o.clsFwdDyn) == 0 {
+			if blob, err := mil.BuildWeightBlob(mw.Embed, stories.Vocab, stories.Dim); err == nil {
+				o.clsFwd, err = compileFP16Kernel(
+					mil.GenClassifierForward(stories.Dim, stories.Vocab, seq),
+					"@model_path/weights/embed.bin",
+					blob,
+					stories.Dim,
+					stories.Vocab,
+					seq,
+				)
+				if err != nil {
+					o.notef("classifier forward full compile failed: %v", err)
+				}
+			} else {
+				o.notef("classifier forward weight blob failed: %v", err)
 			}
-		} else {
-			o.notef("classifier backward weight blob failed: %v", err)
-		}
-		if o.clsBwd == nil {
-			o.clsBwdTil, o.clsBwdTile, err = compileClassifierBackwardTiles(mw.Embed, seq)
-			if err != nil {
-				o.notef("classifier backward tiled compile failed: %v", err)
-			} else if o.clsBwdTile > 0 {
-				o.notef("classifier backward using tile size %d", o.clsBwdTile)
+			if o.clsFwd == nil {
+				o.clsFwdTil, o.clsFwdTile, err = compileClassifierForwardTiles(mw.Embed, seq)
+				if err != nil {
+					o.notef("classifier forward tiled compile failed: %v", err)
+				} else if o.clsFwdTile > 0 {
+					o.notef("classifier forward using tile size %d", o.clsFwdTile)
+				}
 			}
 		}
-	}
-	if len(o.clsBwdDyn) > 0 || len(o.clsBwdTil) > 0 {
-		o.clsBwdTmp = make([]float32, stories.Dim*seq)
+		if o.softmax == nil {
+			o.softmax, err = compileSoftmaxKernel(stories.Vocab, seq)
+			if err != nil {
+				o.notef("softmax compile failed: %v", err)
+			}
+		}
+		o.clsBwdDyn, o.clsBwdTile, err = prepareDynamicClassifierBackward(clsBwdDyn, mw.Embed, seq)
+		if err != nil {
+			o.notef("classifier backward dynamic compile failed: %v", err)
+		}
+		if len(o.clsBwdDyn) > 0 && o.clsBwdTile > 0 {
+			o.notef("classifier backward using dynamic vocab tile size %d", o.clsBwdTile)
+		}
+		if len(o.clsBwdDyn) == 0 {
+			if blob, err := mil.BuildTransposedWeightBlob(mw.Embed, stories.Vocab, stories.Dim); err == nil {
+				o.clsBwd, err = compileFP16Kernel(
+					mil.GenClassifierBackward(stories.Dim, stories.Vocab, seq),
+					"@model_path/weights/embed_t.bin",
+					blob,
+					stories.Vocab,
+					stories.Dim,
+					seq,
+				)
+				if err != nil {
+					o.notef("classifier backward full compile failed: %v", err)
+				}
+			} else {
+				o.notef("classifier backward weight blob failed: %v", err)
+			}
+			if o.clsBwd == nil {
+				o.clsBwdTil, o.clsBwdTile, err = compileClassifierBackwardTiles(mw.Embed, seq)
+				if err != nil {
+					o.notef("classifier backward tiled compile failed: %v", err)
+				} else if o.clsBwdTile > 0 {
+					o.notef("classifier backward using tile size %d", o.clsBwdTile)
+				}
+			}
+		}
+		if len(o.clsBwdDyn) > 0 || len(o.clsBwdTil) > 0 {
+			o.clsBwdTmp = make([]float32, stories.Dim*seq)
+		}
 	}
 
 	if !o.hasRMSForward() && !o.hasClassifierForward() && !o.hasSoftmax() && !o.hasClassifierBackward() && !o.hasRMSBackward() {
