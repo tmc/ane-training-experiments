@@ -249,6 +249,7 @@ int main(int argc, char *argv[]) {
         float loss_scale = 256.0f;
         float res_alpha = 1.0f / sqrtf(2.0f * NLAYERS);
         float min_lr_frac = 0.1f;
+        bool no_compact = false;
 
         bool do_resume = false, from_scratch = false;
         const char *model_path = MODEL_PATH_DEFAULT;
@@ -265,6 +266,7 @@ int main(int argc, char *argv[]) {
             else if (strcmp(argv[i], "--model") == 0 && i+1<argc) model_path = argv[++i];
             else if (strcmp(argv[i], "--data") == 0 && i+1<argc) data_path = argv[++i];
             else if (strcmp(argv[i], "--ckpt") == 0 && i+1<argc) ckpt_path = argv[++i];
+            else if (strcmp(argv[i], "--no-compact") == 0) no_compact = true;
         }
         float lr = max_lr;
 
@@ -363,10 +365,22 @@ int main(int argc, char *argv[]) {
         size_t n_tokens = data_len / 2;
         printf("Token data: %zu tokens (%.1f MB)\n", n_tokens, data_len/1e6);
 
-        // Vocab compaction
-        VocabMap vm = vocab_map_build(token_data, n_tokens, VOCAB);
+        // Vocab compaction (or identity map when disabled for parity runs)
+        VocabMap vm;
+        if (no_compact) {
+            vm.compact_vocab = VOCAB;
+            vm.full_to_compact = (int*)malloc(VOCAB * sizeof(int));
+            vm.compact_to_full = (int*)malloc(VOCAB * sizeof(int));
+            for (int v = 0; v < VOCAB; v++) {
+                vm.full_to_compact[v] = v;
+                vm.compact_to_full[v] = v;
+            }
+            printf("Vocab compaction: disabled (using full vocab %d)\n", VOCAB);
+        } else {
+            vm = vocab_map_build(token_data, n_tokens, VOCAB);
+            printf("Vocab compaction: %d → %d active tokens (%.1fx reduction)\n", VOCAB, vm.compact_vocab, (float)VOCAB/vm.compact_vocab);
+        }
         int CV = vm.compact_vocab;
-        printf("Vocab compaction: %d → %d active tokens (%.1fx reduction)\n", VOCAB, CV, (float)VOCAB/CV);
 
         float *cembed = vocab_compact_embed(embed, &vm, DIM);
         float *cembed_t = (float*)malloc((size_t)DIM*CV*4);
@@ -586,24 +600,14 @@ int main(int argc, char *argv[]) {
             t_rms += tb_ms(mach_absolute_time() - t0);
 
             t0 = mach_absolute_time();
-            io_write_dyn(clsFwdKern->ioIn, x_final, DIM, SEQ, cembed_t, CV);
-            t_io_fwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            ane_eval(clsFwdKern);
-            t_ane_fwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            io_copy(softmaxKern->ioIn, 0, clsFwdKern->ioOut, 0, CV, SEQ);
-            t_io_fwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            ane_eval(softmaxKern);
-            t_ane_fwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            io_read_dyn(softmaxKern->ioOut, logits_cf, CV, SEQ);
-            t_io_fwd += tb_ms(mach_absolute_time() - t0);
+            // Classifier forward on CPU (compact vocab): logits_cf[CV,SEQ] = cembed[CV,DIM] @ x_final[DIM,SEQ].
+            cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                        CV, SEQ, DIM, 1.0f, cembed, DIM, x_final, SEQ, 0.0f, logits_cf, SEQ);
+            t_cls += tb_ms(mach_absolute_time() - t0);
 
             t0 = mach_absolute_time();
             transpose_vs(logits_sv, logits_cf, CV, SEQ);
-            float loss = cross_entropy_probs_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
+            float loss = cross_entropy_loss_rowmajor(dlogits_sv, logits_sv, ctargets, CV, SEQ);
             t_cls += tb_ms(mach_absolute_time() - t0);
             last_loss = loss;
 
@@ -611,16 +615,11 @@ int main(int argc, char *argv[]) {
             vDSP_vsmul(dlogits_sv, 1, &loss_scale, dlogits_sv, 1, (vDSP_Length)(SEQ*CV));
             transpose_vs(dlogits_cf, dlogits_sv, SEQ, CV);
 
-            // Classifier backward on ANE.
+            // Classifier backward on CPU: dy[DIM,SEQ] = cembed^T[DIM,CV] @ dlogits_cf[CV,SEQ].
             t0 = mach_absolute_time();
-            io_write_dyn(clsBwdKern->ioIn, dlogits_cf, CV, SEQ, cembed, DIM);
-            t_io_bwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            ane_eval(clsBwdKern);
-            t_ane_bwd += tb_ms(mach_absolute_time() - t0);
-            t0 = mach_absolute_time();
-            io_read_dyn(clsBwdKern->ioOut, dy, DIM, SEQ);
-            t_io_bwd += tb_ms(mach_absolute_time() - t0);
+            cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                        DIM, SEQ, CV, 1.0f, cembed, DIM, dlogits_cf, SEQ, 0.0f, dy, SEQ);
+            t_cls += tb_ms(mach_absolute_time() - t0);
 
             // dEmbed async: gcembed[CV,DIM] += dlogits_sv^T @ x_final^T
             dispatch_group_async(dw_grp, dw_q, ^{
@@ -870,8 +869,8 @@ int main(int argc, char *argv[]) {
                 float dmx, dmn;
                 vDSP_maxv(dy,1,&dmx,(vDSP_Length)(SEQ*DIM));
                 vDSP_minv(dy,1,&dmn,(vDSP_Length)(SEQ*DIM));
-                printf("step %-4d loss=%.4f  lr=%.2e  %.1fms/step  x[%.2f,%.2f] dy[%.3e,%.3e]\n",
-                       step, loss, lr, step_ms, xmn, xmx, dmn, dmx);
+                printf("step %-4d pos=%zu loss=%.4f  lr=%.2e  %.1fms/step  x[%.2f,%.2f] dy[%.3e,%.3e]\n",
+                       step, pos, loss, lr, step_ms, xmn, xmx, dmn, dmx);
             }
 
             // Adam update every accum_steps
@@ -1050,6 +1049,7 @@ int main(int argc, char *argv[]) {
         free(dh1); free(dh3); free(dx_kv);
         free(cembed); free(gcembed); adam_free(&acembed);
         free(cembed_t);
+        free(vm.full_to_compact); free(vm.compact_to_full);
         munmap(token_data, data_len); close(data_fd);
     }
     return 0;

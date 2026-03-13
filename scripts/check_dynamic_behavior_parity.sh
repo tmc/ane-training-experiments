@@ -19,6 +19,7 @@ Flags:
   --data PATH         token data path (default: training/tinystories_data00.bin)
   --tolerance X       max allowed abs loss delta (default: 0.50)
   --timeout-sec N     timeout per C/Go run in seconds (default: 1200)
+  --c-compact         use C vocab compaction mode (default uses --no-compact)
   --skip-build        skip C rebuild
   --keep-logs         keep output directory under /tmp
   -h, --help          show this help
@@ -37,6 +38,7 @@ model="${root}/../assets/models/stories110M.bin"
 data="${root}/training/tinystories_data00.bin"
 tolerance="0.50"
 timeout_sec=1200
+c_no_compact=1
 skip_build=0
 keep_logs=0
 
@@ -77,6 +79,10 @@ while [[ $# -gt 0 ]]; do
 	--timeout-sec)
 		timeout_sec="$2"
 		shift 2
+		;;
+	--c-compact)
+		c_no_compact=0
+		shift
 		;;
 	--skip-build)
 		skip_build=1
@@ -149,7 +155,7 @@ extract_losses() {
 	local in="$1"
 	local out="$2"
 	awk '
-		/^step[[:space:]]+[0-9]+[[:space:]]+loss=/ {
+		/^step[[:space:]]+[0-9]+/ {
 			step = $2
 			loss = ""
 			for (i = 1; i <= NF; i++) {
@@ -176,8 +182,12 @@ if [[ "$skip_build" -eq 0 ]]; then
 fi
 
 echo "running C dynamic trainer"
+extra_c_flags=""
+if [[ "$c_no_compact" -eq 1 ]]; then
+	extra_c_flags="--no-compact"
+fi
 run_and_capture "$c_log" bash -lc \
-	"cd '$root/training/training_dynamic' && ./train --steps '$steps' --accum '$accum' --lr '$lr' --model '$model' --data '$data'"
+	"cd '$root/training/training_dynamic' && ./train --steps '$steps' --accum '$accum' --lr '$lr' --model '$model' --data '$data' $extra_c_flags"
 
 echo "running Go dynamic trainer"
 run_and_capture "$go_log" bash -lc \
