@@ -101,7 +101,7 @@ func (e *Executor) Close() {
 // Eval computes y = x*w and returns a new output slice.
 func (e *Executor) Eval(x, w []float32) ([]float32, error) {
 	dst := make([]float32, e.outputLen())
-	_, err := e.EvalInto(dst, x, w)
+	_, err := e.evalInto(dst, x, w, false)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,7 @@ func (e *Executor) Eval(x, w []float32) ([]float32, error) {
 // EvalWithStats computes y = x*w and returns a new output slice plus timing.
 func (e *Executor) EvalWithStats(x, w []float32) ([]float32, EvalStats, error) {
 	dst := make([]float32, e.outputLen())
-	st, err := e.EvalInto(dst, x, w)
+	st, err := e.evalInto(dst, x, w, true)
 	if err != nil {
 		return nil, st, err
 	}
@@ -120,6 +120,10 @@ func (e *Executor) EvalWithStats(x, w []float32) ([]float32, EvalStats, error) {
 
 // EvalInto computes y = x*w into dst.
 func (e *Executor) EvalInto(dst, x, w []float32) (EvalStats, error) {
+	return e.evalInto(dst, x, w, true)
+}
+
+func (e *Executor) evalInto(dst, x, w []float32, collectMetrics bool) (EvalStats, error) {
 	if e == nil {
 		return EvalStats{}, fmt.Errorf("dynamic matmul: executor is nil")
 	}
@@ -142,20 +146,28 @@ func (e *Executor) EvalInto(dst, x, w []float32) (EvalStats, error) {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write input tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
-		st, err := tile.k.EvalWithStats()
-		if err != nil {
-			return EvalStats{}, fmt.Errorf("dynamic matmul: eval tile %d: %w", i, err)
+		tileHW := uint64(0)
+		if collectMetrics {
+			st, err := tile.k.EvalWithStats()
+			if err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval tile %d: %w", i, err)
+			}
+			tileHW = st.HWExecutionNS
+			metrics = addEvalMetrics(metrics, st.Metrics)
+		} else {
+			if err := tile.k.Eval(); err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval tile %d: %w", i, err)
+			}
 		}
 		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read output tile %d: %w", i, err)
 		}
 		unpackOutputTile(dst, tile.outputPacked, e.batch, e.outDim, tile.outOffset, tile.outDim)
-		if st.HWExecutionNS != 0 {
-			hwNS += st.HWExecutionNS
+		if tileHW != 0 {
+			hwNS += tileHW
 		} else {
 			hwNS += uint64(time.Since(evalStart).Nanoseconds())
 		}
-		metrics = addEvalMetrics(metrics, st.Metrics)
 	}
 	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
 }
@@ -227,9 +239,7 @@ func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, 
 			tileHW = st.HWExecutionNS
 			metrics = addEvalMetrics(metrics, st.Metrics)
 		} else {
-			var err error
-			tileHW, err = tile.k.EvalHWExecutionNS()
-			if err != nil {
+			if err := tile.k.Eval(); err != nil {
 				return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
 			}
 		}

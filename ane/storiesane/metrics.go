@@ -220,25 +220,13 @@ func (m *aneStepMetrics) wantsCustomMetrics() bool {
 func evalKernelTracked(metrics *aneStepMetrics, k *model.Kernel) error {
 	start := time.Now()
 	if metrics == nil {
-		hwNS, err := k.EvalHWExecutionNS()
-		if err != nil {
-			return err
-		}
-		if hwNS == 0 {
-			return nil
-		}
-		return nil
+		return k.Eval()
 	}
 	if !metrics.wantsCustomMetrics() {
-		hwNS, err := k.EvalHWExecutionNS()
-		if err != nil {
+		if err := k.Eval(); err != nil {
 			return err
 		}
-		if hwNS != 0 {
-			metrics.addHW(hwNS)
-		} else {
-			metrics.addHW(uint64(time.Since(start)))
-		}
+		metrics.addHW(uint64(time.Since(start)))
 		return nil
 	}
 	st, err := k.EvalWithStats()
