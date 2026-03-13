@@ -19,6 +19,7 @@ Flags:
   --data PATH         token data path (default: training/tinystories_data00.bin)
   --tolerance X       max allowed abs loss delta (default: 0.50)
   --timeout-sec N     timeout per C/Go run in seconds (default: 1200)
+  --go-maxprocs N     set GOMAXPROCS for Go run (default: unset)
   --c-compact         use C vocab compaction mode (default uses --no-compact)
   --skip-build        skip C rebuild
   --keep-logs         keep output directory under /tmp
@@ -38,6 +39,7 @@ model="${root}/../assets/models/stories110M.bin"
 data="${root}/training/tinystories_data00.bin"
 tolerance="0.50"
 timeout_sec=1200
+go_maxprocs=""
 c_no_compact=1
 skip_build=0
 keep_logs=0
@@ -80,6 +82,10 @@ while [[ $# -gt 0 ]]; do
 		timeout_sec="$2"
 		shift 2
 		;;
+	--go-maxprocs)
+		go_maxprocs="$2"
+		shift 2
+		;;
 	--c-compact)
 		c_no_compact=0
 		shift
@@ -102,6 +108,11 @@ while [[ $# -gt 0 ]]; do
 		;;
 	esac
 done
+
+if [[ -n "$go_maxprocs" ]] && ! [[ "$go_maxprocs" =~ ^[1-9][0-9]*$ ]]; then
+	echo "error: --go-maxprocs must be a positive integer" >&2
+	exit 1
+fi
 
 if [[ ! -f "$model" ]]; then
 	echo "error: model not found: $model" >&2
@@ -173,7 +184,7 @@ extract_losses() {
 }
 
 echo "out_dir=$out_dir"
-echo "config: model=$model data=$data steps=$steps accum=$accum lr=$lr seq=$seq"
+echo "config: model=$model data=$data steps=$steps accum=$accum lr=$lr seq=$seq go_maxprocs=${go_maxprocs:-unset}"
 
 if [[ "$skip_build" -eq 0 ]]; then
 	echo "building C dynamic trainer (MODEL=stories110m, SEQ_OVERRIDE=$seq, ACCUM_STEPS_OVERRIDE=$accum)"
@@ -190,8 +201,11 @@ run_and_capture "$c_log" bash -lc \
 	"cd '$root/training/training_dynamic' && ./train --steps '$steps' --accum '$accum' --lr '$lr' --model '$model' --data '$data' $extra_c_flags"
 
 echo "running Go dynamic trainer"
-run_and_capture "$go_log" bash -lc \
-	"cd '$root' && go run ./cmd/train-stories-dynamic-go --steps '$steps' --accum '$accum' --lr '$lr' --seq '$seq' --print-every '$print_every' --model '$model' --data '$data'"
+go_cmd="cd '$root' && go run ./cmd/train-stories-dynamic-go --steps '$steps' --accum '$accum' --lr '$lr' --seq '$seq' --print-every '$print_every' --model '$model' --data '$data'"
+if [[ -n "$go_maxprocs" ]]; then
+	go_cmd="cd '$root' && GOMAXPROCS='$go_maxprocs' go run ./cmd/train-stories-dynamic-go --steps '$steps' --accum '$accum' --lr '$lr' --seq '$seq' --print-every '$print_every' --model '$model' --data '$data'"
+fi
+run_and_capture "$go_log" bash -lc "$go_cmd"
 
 extract_losses "$c_log" "$c_loss"
 extract_losses "$go_log" "$go_loss"
