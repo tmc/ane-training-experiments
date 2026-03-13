@@ -1,11 +1,27 @@
 package storiesane
 
 import (
+	"os"
 	"runtime"
+	"strconv"
 	"sync"
 )
 
-const maxCompileConcurrency = 6
+const defaultMaxCompileConcurrency = 8
+
+var maxCompileConcurrency = configuredMaxCompileConcurrency()
+
+func configuredMaxCompileConcurrency() int {
+	s := os.Getenv("ANE_COMPILE_CONCURRENCY")
+	if s == "" {
+		return defaultMaxCompileConcurrency
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 {
+		return defaultMaxCompileConcurrency
+	}
+	return n
+}
 
 type compileResult[T any] struct {
 	index int
