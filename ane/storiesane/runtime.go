@@ -27,6 +27,7 @@ func (e *Engine) refreshANERuntimeForWeights() time.Duration {
 		return 0
 	}
 	start := time.Now()
+	offloadStart := time.Now()
 	if e.off == nil {
 		e.offDirty = true
 		e.ensureOffload()
@@ -34,21 +35,35 @@ func (e *Engine) refreshANERuntimeForWeights() time.Duration {
 		e.offDirty = true
 		e.ensureOffload()
 	}
+	e.stepMetrics.addCustomDuration("RefreshOffloadNS", time.Since(offloadStart))
+	layerStart := time.Now()
 	if err := e.refreshLayerWeights(); err != nil {
+		e.stepMetrics.addCustomDuration("RefreshLayerNS", time.Since(layerStart))
+		reinitStart := time.Now()
 		e.invalidateLayerForward()
 		if ensureErr := e.ensureLayers(); ensureErr != nil {
 			e.disableLayerForward(ensureErr)
 		}
+		e.stepMetrics.addCustomDuration("RefreshLayerReinitNS", time.Since(reinitStart))
+	} else {
+		e.stepMetrics.addCustomDuration("RefreshLayerNS", time.Since(layerStart))
 	}
 	if e.hybridBackwardRequested {
+		backwardStart := time.Now()
 		if err := e.refreshBackwardWeights(); err != nil {
+			e.stepMetrics.addCustomDuration("RefreshBackwardNS", time.Since(backwardStart))
+			reinitStart := time.Now()
 			e.invalidateHybridBackward()
 			if ensureErr := e.ensureBackward(); ensureErr != nil {
 				e.disableHybridBackward(ensureErr)
 			}
+			e.stepMetrics.addCustomDuration("RefreshBackwardReinitNS", time.Since(reinitStart))
+		} else {
+			e.stepMetrics.addCustomDuration("RefreshBackwardNS", time.Since(backwardStart))
 		}
 	}
 	dur := time.Since(start)
+	e.stepMetrics.addCustomDuration("RefreshTotalNS", dur)
 	e.stepMetrics.addRefresh(dur)
 	return dur
 }

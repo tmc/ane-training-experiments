@@ -206,6 +206,25 @@ func (m *aneStepMetrics) customMetrics() map[string]float64 {
 	return maps.Clone(m.metrics)
 }
 
+func (m *aneStepMetrics) addCustomMetric(name string, value float64) {
+	if m == nil || !m.collectCustom || name == "" || value == 0 {
+		return
+	}
+	m.mu.Lock()
+	if m.metrics == nil {
+		m.metrics = make(map[string]float64, 8)
+	}
+	m.metrics[name] += value
+	m.mu.Unlock()
+}
+
+func (m *aneStepMetrics) addCustomDuration(name string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	m.addCustomMetric(name, float64(d))
+}
+
 func (m *aneStepMetrics) enableCustomMetrics() {
 	if m == nil {
 		return

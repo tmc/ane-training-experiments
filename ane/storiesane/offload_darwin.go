@@ -5,6 +5,7 @@ package storiesane
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/maderix/ANE/ane/dynamicmatmul"
 	"github.com/maderix/ANE/ane/mil"
@@ -559,11 +560,19 @@ func (o *offload) refreshWeights(mw *stories.ModelWeights) error {
 		return fmt.Errorf("refresh offload weights: model weights are nil")
 	}
 	o.rmsW = mw.RMSFinal
+	forwardStart := time.Now()
 	if err := o.refreshClassifierForwardWeights(mw.Embed); err != nil {
 		return err
 	}
+	if o.metrics != nil {
+		o.metrics.addCustomDuration("RefreshClassifierForwardNS", time.Since(forwardStart))
+	}
+	backwardStart := time.Now()
 	if err := o.refreshClassifierBackwardWeights(mw.Embed); err != nil {
 		return err
+	}
+	if o.metrics != nil {
+		o.metrics.addCustomDuration("RefreshClassifierBackwardNS", time.Since(backwardStart))
 	}
 	return nil
 }
