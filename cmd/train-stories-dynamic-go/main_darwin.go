@@ -100,7 +100,7 @@ func main() {
 	fmt.Printf("seq=%d accum=%d lr=%g steps=%d\n", *seq, *accumSteps, *lr, *steps)
 
 	wallStart := time.Now()
-	compileStart := time.Now()
+	openStart := time.Now()
 	engine, err := storiesane.Open(storiesane.Options{
 		ModelPath:         *modelPath,
 		Tokens:            tokens,
@@ -123,17 +123,22 @@ func main() {
 		fatalf("open engine: %v", err)
 	}
 	defer engine.Close()
+	openDur := time.Since(openStart)
+	compileStart := time.Now()
 	engine.Prepare()
 	compileDur := time.Since(compileStart)
 	status := engine.DynamicStatus()
-	if *cpuClsHead {
-		if !status.CoreDynamic() {
-			fatalf("dynamic runtime validation failed: %s", status.String())
-		}
-	} else if !status.FullyDynamic() {
+	if !status.LayerForwardDynamic {
 		fatalf("dynamic runtime validation failed: %s", status.String())
 	}
+	if *hybridBwd && !status.LayerBackwardDynamic {
+		fmt.Fprintf(os.Stderr, "warning: hybrid dynamic backward unavailable, runtime will use CPU fallback (%s)\n", status.String())
+	}
+	if !*cpuClsHead && (!status.ClassifierForwardDynamic || !status.ClassifierBackwardDynamic) {
+		fatalf("dynamic classifier validation failed: %s", status.String())
+	}
 	fmt.Printf("Compiled dynamic kernels in %.0fms\n", ms(compileDur))
+	fmt.Printf("Opened model/runtime in %.0fms\n", ms(openDur))
 
 	var totalTrainMS float64
 	currLR := *lr
