@@ -4,6 +4,7 @@ package storiesane
 
 import (
 	"fmt"
+	"sync"
 	"unsafe"
 
 	"github.com/maderix/ANE/ane/mil"
@@ -13,6 +14,74 @@ import (
 	appleiosurface "github.com/tmc/apple/iosurface"
 	xane "github.com/tmc/apple/x/ane"
 )
+
+var dynamicLayerSpecs struct {
+	mu sync.Mutex
+	m  map[int]*dynamicLayerCompileSpec
+}
+
+type dynamicLayerCompileSpec struct {
+	maskBlob    []byte
+	ropeCosBlob []byte
+	ropeSinBlob []byte
+
+	attMIL     string
+	ffnMIL     string
+	ffnW2MIL   string
+	ffnTailMIL string
+	wotMIL     string
+	sdpa1MIL   string
+	sdpa2MIL   string
+	qkvMIL     string
+}
+
+func dynamicLayerSpec(seq int) (*dynamicLayerCompileSpec, error) {
+	dynamicLayerSpecs.mu.Lock()
+	if dynamicLayerSpecs.m == nil {
+		dynamicLayerSpecs.m = make(map[int]*dynamicLayerCompileSpec)
+	}
+	if spec := dynamicLayerSpecs.m[seq]; spec != nil {
+		dynamicLayerSpecs.mu.Unlock()
+		return spec, nil
+	}
+	dynamicLayerSpecs.mu.Unlock()
+
+	const (
+		dim    = stories.Dim
+		hidden = stories.Hidden
+		heads  = stories.Heads
+	)
+	maskBlob, err := mil.BuildCausalMaskBlob(seq)
+	if err != nil {
+		return nil, fmt.Errorf("build mask blob: %w", err)
+	}
+	ropeCosBlob, ropeSinBlob, err := mil.BuildRoPECosSinBlobs(seq, dim/heads)
+	if err != nil {
+		return nil, fmt.Errorf("build rope blobs: %w", err)
+	}
+	spec := &dynamicLayerCompileSpec{
+		maskBlob:    maskBlob,
+		ropeCosBlob: ropeCosBlob,
+		ropeSinBlob: ropeSinBlob,
+		attMIL:      mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
+		ffnMIL:      mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
+		ffnW2MIL:    mil.GenDynamicMatmulFP16(dim, hidden, seq),
+		ffnTailMIL:  mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
+		wotMIL:      mil.GenDynamicMatmulFP16(dim, dim, seq),
+		sdpa1MIL:    mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		sdpa2MIL:    mil.GenSDPABackward2(dim, heads, seq),
+		qkvMIL:      mil.GenStoriesQKVBackwardDynamic(dim, heads, seq),
+	}
+
+	dynamicLayerSpecs.mu.Lock()
+	if existing := dynamicLayerSpecs.m[seq]; existing != nil {
+		dynamicLayerSpecs.mu.Unlock()
+		return existing, nil
+	}
+	dynamicLayerSpecs.m[seq] = spec
+	dynamicLayerSpecs.mu.Unlock()
+	return spec, nil
+}
 
 func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *layerForward, err error) {
 	const (
@@ -33,29 +102,25 @@ func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *
 	}); err != nil {
 		return nil, err
 	}
-	maskBlob, err := mil.BuildCausalMaskBlob(seq)
+	spec, err := dynamicLayerSpec(seq)
 	if err != nil {
-		return nil, fmt.Errorf("compile layer forward dynamic: mask blob: %w", err)
-	}
-	ropeCosBlob, ropeSinBlob, err := mil.BuildRoPECosSinBlobs(seq, dim/heads)
-	if err != nil {
-		return nil, fmt.Errorf("compile layer forward dynamic: rope blobs: %w", err)
+		return nil, fmt.Errorf("compile layer forward dynamic: %w", err)
 	}
 	att, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
+		MILText:     spec.attMIL,
 		SharedModel: true,
 		WeightFiles: []model.WeightFile{
 			{
 				Path: "@model_path/weights/mask.bin",
-				Blob: maskBlob,
+				Blob: spec.maskBlob,
 			},
 			{
 				Path: "@model_path/weights/rope_cos.bin",
-				Blob: ropeCosBlob,
+				Blob: spec.ropeCosBlob,
 			},
 			{
 				Path: "@model_path/weights/rope_sin.bin",
-				Blob: ropeSinBlob,
+				Blob: spec.ropeSinBlob,
 			},
 		},
 	})
@@ -68,7 +133,7 @@ func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *
 		}
 	}()
 	ffn, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
+		MILText:     spec.ffnMIL,
 		SharedModel: true,
 	})
 	if err != nil {
@@ -126,12 +191,12 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 	}); err != nil {
 		return nil, err
 	}
-	maskBlob, err := mil.BuildCausalMaskBlob(seq)
+	spec, err := dynamicLayerSpec(seq)
 	if err != nil {
-		return nil, fmt.Errorf("compile layer backward dynamic: mask blob: %w", err)
+		return nil, fmt.Errorf("compile layer backward dynamic: %w", err)
 	}
 	ffnW2, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenDynamicMatmulFP16(dim, hidden, seq),
+		MILText:     spec.ffnW2MIL,
 		SharedModel: true,
 	})
 	if err != nil {
@@ -143,7 +208,7 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	ffnTail, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
+		MILText:     spec.ffnTailMIL,
 		SharedModel: true,
 	})
 	if err != nil {
@@ -155,7 +220,7 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	wot, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenDynamicMatmulFP16(dim, dim, seq),
+		MILText:     spec.wotMIL,
 		SharedModel: true,
 	})
 	if err != nil {
@@ -167,11 +232,11 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	sdpa1, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		MILText:     spec.sdpa1MIL,
 		SharedModel: true,
 		WeightFiles: []model.WeightFile{{
 			Path: "@model_path/weights/mask.bin",
-			Blob: maskBlob,
+			Blob: spec.maskBlob,
 		}},
 	})
 	if err != nil {
@@ -183,7 +248,7 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	sdpa2, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenSDPABackward2(dim, heads, seq),
+		MILText:     spec.sdpa2MIL,
 		SharedModel: true,
 	})
 	if err != nil {
@@ -195,7 +260,7 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		}
 	}()
 	qkv, err := model.Compile(model.CompileOptions{
-		MILText:     mil.GenStoriesQKVBackwardDynamic(dim, heads, seq),
+		MILText:     spec.qkvMIL,
 		SharedModel: true,
 	})
 	if err != nil {
