@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const maxCompileConcurrency = 4
+const maxCompileConcurrency = 6
 
 type compileResult[T any] struct {
 	index int
