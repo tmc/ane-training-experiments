@@ -524,11 +524,11 @@ func stageStoriesAttentionForwardWeights(k *model.Kernel, seq int, w layerForwar
 		for d := 0; d < stories.Dim; d++ {
 			row := inputRowFP16(data, layout, d)
 			row[seq] = mil.Float32ToFP16(w.RMSAtt[d])
-			writeMatrixColumnFP16(row[seq+1:seq+1+stories.Dim], w.Wq, stories.Dim, stories.Dim, d)
-			writeMatrixColumnFP16(row[seq+1+stories.Dim:seq+1+2*stories.Dim], w.Wk, stories.Dim, stories.Dim, d)
-			writeMatrixColumnFP16(row[seq+1+2*stories.Dim:seq+1+3*stories.Dim], w.Wv, stories.Dim, stories.Dim, d)
-			writeMatrixColumnFP16(row[seq+1+3*stories.Dim:seq+1+4*stories.Dim], w.Wo, stories.Dim, stories.Dim, d)
 		}
+		writeTransposedMatrixFP16(data, layout, 0, seq+1, stories.Dim, stories.Dim, w.Wq)
+		writeTransposedMatrixFP16(data, layout, 0, seq+1+stories.Dim, stories.Dim, stories.Dim, w.Wk)
+		writeTransposedMatrixFP16(data, layout, 0, seq+1+2*stories.Dim, stories.Dim, stories.Dim, w.Wv)
+		writeTransposedMatrixFP16(data, layout, 0, seq+1+3*stories.Dim, stories.Dim, stories.Dim, w.Wo)
 		return nil
 	})
 }
@@ -552,10 +552,10 @@ func stageStoriesFFNForwardWeights(k *model.Kernel, seq, hidden int, w layerForw
 		for d := 0; d < stories.Dim; d++ {
 			row := inputRowFP16(data, layout, d)
 			row[seq] = mil.Float32ToFP16(w.RMSFFN[d])
-			writeMatrixColumnFP16(row[seq+1:seq+1+hidden], w.W1, hidden, stories.Dim, d)
-			writeMatrixColumnFP16(row[seq+1+hidden:seq+1+2*hidden], w.W3, hidden, stories.Dim, d)
-			writeContiguousFP16(row[seq+1+2*hidden:seq+1+3*hidden], w.W2[d*hidden:(d+1)*hidden])
 		}
+		writeTransposedMatrixFP16(data, layout, 0, seq+1, hidden, stories.Dim, w.W1)
+		writeTransposedMatrixFP16(data, layout, 0, seq+1+hidden, hidden, stories.Dim, w.W3)
+		writeMatrixRowsFP16(data, layout, 0, seq+1+2*hidden, stories.Dim, hidden, w.W2)
 		return nil
 	})
 }
@@ -576,11 +576,8 @@ func stageStoriesFFNTailWeights(k *model.Kernel, seq, hidden int, w1, w3 []float
 		if err := requireFP16InputLayout("stage stories ffn tail weights", layout, hidden, width); err != nil {
 			return err
 		}
-		for h := 0; h < hidden; h++ {
-			row := inputRowFP16(data, layout, h)
-			writeContiguousFP16(row[3*seq:3*seq+stories.Dim], w1[h*stories.Dim:(h+1)*stories.Dim])
-			writeContiguousFP16(row[3*seq+stories.Dim:3*seq+2*stories.Dim], w3[h*stories.Dim:(h+1)*stories.Dim])
-		}
+		writeMatrixRowsFP16(data, layout, 0, 3*seq, hidden, stories.Dim, w1)
+		writeMatrixRowsFP16(data, layout, 0, 3*seq+stories.Dim, hidden, stories.Dim, w3)
 		return nil
 	})
 }
@@ -603,10 +600,7 @@ func stageDynamicMatmulWeights(k *model.Kernel, seq, outDim int, w []float32) er
 		if err := requireFP16InputLayout("stage dynamic matmul weights", layout, inDim, width); err != nil {
 			return err
 		}
-		for row := 0; row < inDim; row++ {
-			dst := inputRowFP16(data, layout, row)
-			writeContiguousFP16(dst[seq:seq+outDim], w[row*outDim:(row+1)*outDim])
-		}
+		writeMatrixRowsFP16(data, layout, 0, seq, inDim, outDim, w)
 		return nil
 	})
 }
@@ -628,12 +622,9 @@ func stageStoriesQKVBackwardWeights(k *model.Kernel, seq int, wq, wk, wv []float
 		if err := requireFP16InputLayout("stage stories qkv backward weights", layout, stories.Dim, width); err != nil {
 			return err
 		}
-		for d := 0; d < stories.Dim; d++ {
-			row := inputRowFP16(data, layout, d)
-			writeContiguousFP16(row[3*seq:3*seq+stories.Dim], wq[d*stories.Dim:(d+1)*stories.Dim])
-			writeContiguousFP16(row[3*seq+stories.Dim:3*seq+2*stories.Dim], wk[d*stories.Dim:(d+1)*stories.Dim])
-			writeContiguousFP16(row[3*seq+2*stories.Dim:3*seq+3*stories.Dim], wv[d*stories.Dim:(d+1)*stories.Dim])
-		}
+		writeMatrixRowsFP16(data, layout, 0, 3*seq, stories.Dim, stories.Dim, wq)
+		writeMatrixRowsFP16(data, layout, 0, 3*seq+stories.Dim, stories.Dim, stories.Dim, wk)
+		writeMatrixRowsFP16(data, layout, 0, 3*seq+2*stories.Dim, stories.Dim, stories.Dim, wv)
 		return nil
 	})
 }
@@ -747,6 +738,9 @@ func writeChannelFirstActsFP16(data []uint16, layout xane.TensorLayout, seq int,
 }
 
 func writeContiguousFP16(dst []uint16, src []float32) {
+	if writeMatrixRowsOffsetFP16Fast(dst, xane.TensorLayout{PlaneStride: 2 * len(dst)}, 0, 0, 1, len(src), src) {
+		return
+	}
 	for i, v := range src {
 		dst[i] = mil.Float32ToFP16(v)
 	}
@@ -755,6 +749,26 @@ func writeContiguousFP16(dst []uint16, src []float32) {
 func writeMatrixColumnFP16(dst []uint16, mat []float32, rows, cols, col int) {
 	for r := 0; r < rows; r++ {
 		dst[r] = mil.Float32ToFP16(mat[r*cols+col])
+	}
+}
+
+func writeMatrixRowsFP16(data []uint16, layout xane.TensorLayout, channelOffset, widthOffset, rows, cols int, src []float32) {
+	if writeMatrixRowsOffsetFP16Fast(data, layout, channelOffset, widthOffset, rows, cols, src) {
+		return
+	}
+	for r := 0; r < rows; r++ {
+		row := inputRowFP16(data, layout, channelOffset+r)
+		writeContiguousFP16(row[widthOffset:widthOffset+cols], src[r*cols:(r+1)*cols])
+	}
+}
+
+func writeTransposedMatrixFP16(data []uint16, layout xane.TensorLayout, channelOffset, widthOffset, srcRows, srcCols int, src []float32) {
+	if writeTransposedMatrixOffsetFP16Fast(data, layout, channelOffset, widthOffset, srcRows, srcCols, src) {
+		return
+	}
+	for c := 0; c < srcCols; c++ {
+		row := inputRowFP16(data, layout, channelOffset+c)
+		writeMatrixColumnFP16(row[widthOffset:widthOffset+srcRows], src, srcRows, srcCols, c)
 	}
 }
 

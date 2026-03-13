@@ -25,3 +25,11 @@ func readChannelFirstActsOffsetFP16(dst []float32, data []uint16, layout xane.Te
 		}
 	}
 }
+
+func writeMatrixRowsOffsetFP16Fast(data []uint16, layout xane.TensorLayout, channelOffset, widthOffset, rows, cols int, src []float32) bool {
+	return false
+}
+
+func writeTransposedMatrixOffsetFP16Fast(data []uint16, layout xane.TensorLayout, channelOffset, widthOffset, srcRows, srcCols int, src []float32) bool {
+	return false
+}
