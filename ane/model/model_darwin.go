@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"strconv"
+	"sync"
 	"unsafe"
 
 	"github.com/tmc/apple/coregraphics"
@@ -17,6 +18,11 @@ import (
 )
 
 const defaultQoS = uint32(21)
+
+var compileRuntime struct {
+	mu sync.Mutex
+	rt *xane.Runtime
+}
 
 type CompileOptions struct {
 	MILText       string
@@ -138,13 +144,12 @@ func CompileWithStats(opts CompileOptions) (*Kernel, CompileStats, error) {
 		return nil, CompileStats{}, fmt.Errorf("compile: MILText or PackagePath is required")
 	}
 
-	rt, err := xane.Open()
+	rt, err := acquireCompileRuntime()
 	if err != nil {
-		return nil, CompileStats{}, fmt.Errorf("compile: open runtime: %w", err)
+		return nil, CompileStats{}, err
 	}
 	k, st, err := rt.CompileWithStats(xaneCompileOptions(opts))
 	if err != nil {
-		_ = rt.Close()
 		return nil, CompileStats{}, fmt.Errorf("compile: %w", err)
 	}
 
@@ -444,10 +449,21 @@ func (k *Kernel) Close() {
 		_ = k.k.Close()
 		k.k = nil
 	}
-	if k.rt != nil {
-		_ = k.rt.Close()
-		k.rt = nil
+	k.rt = nil
+}
+
+func acquireCompileRuntime() (*xane.Runtime, error) {
+	compileRuntime.mu.Lock()
+	defer compileRuntime.mu.Unlock()
+	if compileRuntime.rt != nil {
+		return compileRuntime.rt, nil
 	}
+	rt, err := xane.Open()
+	if err != nil {
+		return nil, fmt.Errorf("compile: open runtime: %w", err)
+	}
+	compileRuntime.rt = rt
+	return rt, nil
 }
 
 func xaneCompileOptions(opts CompileOptions) xane.CompileOptions {
