@@ -61,6 +61,11 @@ func (e *Engine) ensureOffload() {
 		return
 	}
 	e.off = refreshOffload(e.off, e.mw, e.seq, true)
+	if e.cpuClassifierHead && e.off != nil {
+		e.off.disableClassifierForward()
+		e.off.disableSoftmax()
+		e.off.disableClassifierBackward()
+	}
 	e.offDirty = false
 }
 

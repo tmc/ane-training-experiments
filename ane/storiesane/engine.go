@@ -12,20 +12,22 @@ import (
 
 // Options configures a pure-Go Stories training engine over .bin weights.
 type Options struct {
-	ModelPath      string
-	Tokens         []uint16
-	Seq            int
-	AccumSteps     int
-	LR             float32
-	Seed           int64
-	AdamBeta1      float32
-	AdamBeta2      float32
-	AdamEps        float32
-	WeightDecay    float32
-	GradClip       float32
-	GradTaskLimit  int
-	UseANE         bool // best-effort ANE layer forward plus final-head offload on Darwin
-	HybridBackward bool // best-effort ANE backward dx propagation on Darwin
+	ModelPath         string
+	Tokens            []uint16
+	Seq               int
+	AccumSteps        int
+	LR                float32
+	Seed              int64
+	AdamBeta1         float32
+	AdamBeta2         float32
+	AdamEps           float32
+	WeightDecay       float32
+	GradClip          float32
+	LossScale         float32
+	CPUClassifierHead bool
+	GradTaskLimit     int
+	UseANE            bool // best-effort ANE layer forward plus final-head offload on Darwin
+	HybridBackward    bool // best-effort ANE backward dx propagation on Darwin
 }
 
 // State captures resumable engine state.
@@ -67,21 +69,23 @@ type Engine struct {
 	opt *stories.OptimState
 	off *offload
 
-	tokens      []uint16
-	seq         int
-	accumSteps  int
-	lr          float32
-	seed        int64
-	adamBeta1   float32
-	adamBeta2   float32
-	adamEps     float32
-	weightDecay float32
-	gradClip    float32
-	useANE      bool
-	offDirty    bool
-	rng         uint64
-	state       State
-	start       time.Time
+	tokens            []uint16
+	seq               int
+	accumSteps        int
+	lr                float32
+	seed              int64
+	adamBeta1         float32
+	adamBeta2         float32
+	adamEps           float32
+	weightDecay       float32
+	gradClip          float32
+	lossScale         float32
+	cpuClassifierHead bool
+	useANE            bool
+	offDirty          bool
+	rng               uint64
+	state             State
+	start             time.Time
 
 	layers                  []*layerForward
 	layersInit              bool
@@ -117,6 +121,8 @@ type Engine struct {
 	gradK         []float32
 	gradV         []float32
 	gradPrev      []float32
+	ropeCos       []float32
+	ropeSin       []float32
 	embedGradDone chan struct{}
 	stepMetrics   aneStepMetrics
 }
@@ -160,6 +166,12 @@ func Open(opts Options) (*Engine, error) {
 	if opts.GradClip < 0 {
 		opts.GradClip = 0
 	}
+	if opts.LossScale < 0 {
+		opts.LossScale = 0
+	}
+	if opts.LossScale == 0 {
+		opts.LossScale = 256
+	}
 	if opts.GradTaskLimit > 0 {
 		SetGradTaskConcurrency(opts.GradTaskLimit)
 	}
@@ -191,6 +203,7 @@ func Open(opts Options) (*Engine, error) {
 	for i := range caches {
 		caches[i] = newLayerCache(seq)
 	}
+	ropeCos, ropeSin := buildRoPETables(seq, stories.Dim/stories.Heads)
 	applyGrads := make([]stories.LayerWeights, stories.NLayers)
 	for i := range applyGrads {
 		applyGrads[i] = newLayerGrad()
@@ -210,6 +223,8 @@ func Open(opts Options) (*Engine, error) {
 		adamEps:                 opts.AdamEps,
 		weightDecay:             opts.WeightDecay,
 		gradClip:                opts.GradClip,
+		lossScale:               opts.LossScale,
+		cpuClassifierHead:       opts.CPUClassifierHead,
 		useANE:                  opts.UseANE,
 		hybridBackwardRequested: opts.HybridBackward,
 		rng:                     drand48Seed(opts.Seed),
@@ -238,6 +253,8 @@ func Open(opts Options) (*Engine, error) {
 		gradK:                   make([]float32, stories.Dim*seq),
 		gradV:                   make([]float32, stories.Dim*seq),
 		gradPrev:                make([]float32, stories.Dim*seq),
+		ropeCos:                 ropeCos,
+		ropeSin:                 ropeSin,
 	}, nil
 }
 
@@ -491,6 +508,8 @@ func (e *Engine) Close() {
 	e.gradK = nil
 	e.gradV = nil
 	e.gradPrev = nil
+	e.ropeCos = nil
+	e.ropeSin = nil
 	if e.gradTasks != nil {
 		e.gradTasks.Close()
 		e.gradTasks = nil
@@ -502,6 +521,9 @@ func (e *Engine) flushPending() time.Duration {
 		return 0
 	}
 	scale := float32(1.0 / float64(e.state.PendingSteps))
+	if e.lossScale > 0 {
+		scale /= e.lossScale
+	}
 	scaleModelGrad(e.accum, scale)
 	e.clipLayerGradients(e.accum.Layers, e.accum.RMSFinal, e.accum.Embed)
 	e.state.AdamT++
@@ -787,12 +809,12 @@ func (e *Engine) evalLogitsCPUInto(tokens []uint16, logits []float32) error {
 		rmsNormCF(xNorm, cur, layer.RMSAtt, stories.Dim, e.seq)
 		linearCF(qf, layer.Wq, xNorm, stories.Dim, stories.Dim, e.seq)
 		linearCF(kf, layer.Wk, xNorm, stories.Dim, stories.Dim, e.seq)
+		applyRoPECFInPlace(qf, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
+		applyRoPECFInPlace(kf, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
 		linearCF(vf, layer.Wv, xNorm, stories.Dim, stories.Dim, e.seq)
 		causalAttentionCF(attOut, qf, kf, vf, stories.Heads, stories.Dim/stories.Heads, e.seq)
 		linearCF(x2, layer.Wo, attOut, stories.Dim, stories.Dim, e.seq)
-		for j := range x2 {
-			x2[j] += cur[j]
-		}
+		addScaledResidual(x2, cur, x2)
 		rmsNormCF(xNorm, x2, layer.RMSFFN, stories.Dim, e.seq)
 		linearCF(h1, layer.W1, xNorm, stories.Hidden, stories.Dim, e.seq)
 		linearCF(h3, layer.W3, xNorm, stories.Hidden, stories.Dim, e.seq)
@@ -800,9 +822,7 @@ func (e *Engine) evalLogitsCPUInto(tokens []uint16, logits []float32) error {
 			gate[j] = silu32(h1[j]) * h3[j]
 		}
 		linearCF(ffOut, layer.W2, gate, stories.Dim, stories.Hidden, e.seq)
-		for j := range next {
-			next[j] = x2[j] + ffOut[j]
-		}
+		addScaledResidual(next, x2, ffOut)
 		cur, next = next, cur
 	}
 	stories.RMSNorm(e.xNorm, cur, e.mw.RMSFinal, stories.Dim, e.seq)

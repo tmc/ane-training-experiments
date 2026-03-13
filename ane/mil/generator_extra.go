@@ -515,6 +515,42 @@ func BuildCausalMaskBlob(seq int) ([]byte, error) {
 	return BuildFP16Blob(mask)
 }
 
+// BuildRoPECosSinBlobs builds fp16 cosine/sine tables for RoPE.
+// Each output has shape [1,1,seq,headDim], flattened row-major.
+func BuildRoPECosSinBlobs(seq, headDim int) ([]byte, []byte, error) {
+	if seq <= 0 {
+		return nil, nil, fmt.Errorf("seq=%d must be > 0", seq)
+	}
+	if headDim <= 0 || headDim%2 != 0 {
+		return nil, nil, fmt.Errorf("headDim=%d must be even and > 0", headDim)
+	}
+	half := headDim / 2
+	cosTbl := make([]float32, seq*headDim)
+	sinTbl := make([]float32, seq*headDim)
+	for pos := 0; pos < seq; pos++ {
+		row := pos * headDim
+		for i := 0; i < half; i++ {
+			freq := float64(pos) / math.Pow(10000, float64(2*i)/float64(headDim))
+			c := float32(math.Cos(freq))
+			s := float32(math.Sin(freq))
+			even := row + 2*i
+			cosTbl[even] = c
+			cosTbl[even+1] = c
+			sinTbl[even] = s
+			sinTbl[even+1] = s
+		}
+	}
+	cosBlob, err := BuildFP16Blob(cosTbl)
+	if err != nil {
+		return nil, nil, err
+	}
+	sinBlob, err := BuildFP16Blob(sinTbl)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cosBlob, sinBlob, nil
+}
+
 // BuildTransposedWeightBlob builds a baked-weight blob for the transpose of a row-major matrix.
 // The input matrix is [rows, cols] row-major; the baked tensor is [cols, rows].
 func BuildTransposedWeightBlob(weights []float32, rows, cols int) ([]byte, error) {

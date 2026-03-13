@@ -269,6 +269,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 			copy(lf.x2, lf.attOut)
 		}
 	}
+	blendResidualInPlace(lf.x2, x)
 
 	if err := model.CopyOutputChannelsToInput(lf.ffn, 0, 0, lf.att, 0, 0, lf.dim); err != nil {
 		if err := lf.ffn.WriteInputFP16(0, lf.x2); err != nil {
@@ -285,9 +286,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 	if lf.ffnTaps {
 		ffnMain = lf.ffnOut[:want]
 	}
-	for i := range out {
-		out[i] = lf.x2[i] + ffnMain[i]
-	}
+	addScaledResidual(out, lf.x2, ffnMain)
 	if cache != nil {
 		copy(cache.x2, lf.x2)
 		cache.attTapsReady = false

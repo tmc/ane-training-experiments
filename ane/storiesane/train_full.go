@@ -10,26 +10,27 @@ import (
 )
 
 type layerCache struct {
-	x       []float32
-	xNorm   []float32
-	attRRMS []float32
-	q       []float32
-	k       []float32
-	v       []float32
-	attOut  []float32
-	x2      []float32
-	x2Norm  []float32
-	ffnRRMS []float32
-	h1      []float32
-	h3      []float32
-	gate    []float32
-	dOut    []float32
-	dh1     []float32
-	dh3     []float32
-	dx2     []float32
-	dq      []float32
-	dk      []float32
-	dv      []float32
+	x         []float32
+	xNorm     []float32
+	attRRMS   []float32
+	q         []float32
+	k         []float32
+	v         []float32
+	attOut    []float32
+	x2        []float32
+	x2Norm    []float32
+	ffnRRMS   []float32
+	h1        []float32
+	h3        []float32
+	gate      []float32
+	dOut      []float32
+	dh1       []float32
+	dh3       []float32
+	dx2       []float32
+	dx2Scaled []float32
+	dq        []float32
+	dk        []float32
+	dv        []float32
 
 	attTapsReady bool
 	ffnTapsReady bool
@@ -43,26 +44,27 @@ type modelGrad struct {
 
 func newLayerCache(seq int) layerCache {
 	return layerCache{
-		x:       make([]float32, stories.Dim*seq),
-		xNorm:   make([]float32, stories.Dim*seq),
-		attRRMS: make([]float32, seq),
-		q:       make([]float32, stories.Dim*seq),
-		k:       make([]float32, stories.Dim*seq),
-		v:       make([]float32, stories.Dim*seq),
-		attOut:  make([]float32, stories.Dim*seq),
-		x2:      make([]float32, stories.Dim*seq),
-		x2Norm:  make([]float32, stories.Dim*seq),
-		ffnRRMS: make([]float32, seq),
-		h1:      make([]float32, stories.Hidden*seq),
-		h3:      make([]float32, stories.Hidden*seq),
-		gate:    make([]float32, stories.Hidden*seq),
-		dOut:    make([]float32, stories.Dim*seq),
-		dh1:     make([]float32, stories.Hidden*seq),
-		dh3:     make([]float32, stories.Hidden*seq),
-		dx2:     make([]float32, stories.Dim*seq),
-		dq:      make([]float32, stories.Dim*seq),
-		dk:      make([]float32, stories.Dim*seq),
-		dv:      make([]float32, stories.Dim*seq),
+		x:         make([]float32, stories.Dim*seq),
+		xNorm:     make([]float32, stories.Dim*seq),
+		attRRMS:   make([]float32, seq),
+		q:         make([]float32, stories.Dim*seq),
+		k:         make([]float32, stories.Dim*seq),
+		v:         make([]float32, stories.Dim*seq),
+		attOut:    make([]float32, stories.Dim*seq),
+		x2:        make([]float32, stories.Dim*seq),
+		x2Norm:    make([]float32, stories.Dim*seq),
+		ffnRRMS:   make([]float32, seq),
+		h1:        make([]float32, stories.Hidden*seq),
+		h3:        make([]float32, stories.Hidden*seq),
+		gate:      make([]float32, stories.Hidden*seq),
+		dOut:      make([]float32, stories.Dim*seq),
+		dh1:       make([]float32, stories.Hidden*seq),
+		dh3:       make([]float32, stories.Hidden*seq),
+		dx2:       make([]float32, stories.Dim*seq),
+		dx2Scaled: make([]float32, stories.Dim*seq),
+		dq:        make([]float32, stories.Dim*seq),
+		dk:        make([]float32, stories.Dim*seq),
+		dv:        make([]float32, stories.Dim*seq),
 	}
 }
 
@@ -369,12 +371,12 @@ func (e *Engine) forwardTrainingCPU(input []uint16) []float32 {
 		rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, cache.x, layer.RMSAtt, stories.Dim, e.seq)
 		linearCF(cache.q, layer.Wq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 		linearCF(cache.k, layer.Wk, cache.xNorm, stories.Dim, stories.Dim, e.seq)
+		applyRoPECFInPlace(cache.q, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
+		applyRoPECFInPlace(cache.k, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
 		linearCF(cache.v, layer.Wv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 		causalAttentionCF(cache.attOut, cache.q, cache.k, cache.v, stories.Heads, stories.Dim/stories.Heads, e.seq)
 		linearCF(next, layer.Wo, cache.attOut, stories.Dim, stories.Dim, e.seq)
-		for j := range cache.x2 {
-			cache.x2[j] = cache.x[j] + next[j]
-		}
+		addScaledResidual(cache.x2, cache.x, next)
 		rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
 		linearCF(cache.h1, layer.W1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 		linearCF(cache.h3, layer.W3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
@@ -384,9 +386,7 @@ func (e *Engine) forwardTrainingCPU(input []uint16) []float32 {
 		cache.attTapsReady = true
 		cache.ffnTapsReady = true
 		linearCF(next, layer.W2, cache.gate, stories.Dim, stories.Hidden, e.seq)
-		for j := range next {
-			next[j] += cache.x2[j]
-		}
+		addScaledResidual(next, cache.x2, next)
 		cur, next = next, cur
 	}
 	return cur
@@ -457,6 +457,7 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	if !logitsScaled && validTargets > 0 {
 		scale = float32(1.0 / float64(validTargets))
 	}
+	gradScale := scale * e.lossScale
 
 	embedAsync := e.off != nil && e.off.hasClassifierBackward()
 	e.embedGradDone = nil
@@ -464,7 +465,7 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	if embedAsync {
 		e.embedGradDone = make(chan struct{})
 		done := e.embedGradDone
-		embedScale := scale
+		embedScale := gradScale
 		go func() {
 			begin := time.Now()
 			stories.MatMulGradEmbedScale(e.gEmbed, gradLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, embedScale)
@@ -472,19 +473,19 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 			close(done)
 		}()
 	}
-	if scale == 0 {
+	if gradScale == 0 {
 		clear(e.dy)
 	} else if e.off == nil || !e.off.hasClassifierBackward() {
-		stories.MatMulEmbedTScale(e.dy, e.mw.Embed, gradLogits, stories.Vocab, stories.Dim, e.seq, scale)
+		stories.MatMulEmbedTScale(e.dy, e.mw.Embed, gradLogits, stories.Vocab, stories.Dim, e.seq, gradScale)
 	} else if err := e.off.runClassifierBackward(e.dy, gradLogits); err != nil {
 		e.off.disableClassifierBackward()
-		stories.MatMulEmbedTScale(e.dy, e.mw.Embed, gradLogits, stories.Vocab, stories.Dim, e.seq, scale)
-	} else if scale != 1 {
-		scaleSlice(e.dy, scale)
+		stories.MatMulEmbedTScale(e.dy, e.mw.Embed, gradLogits, stories.Vocab, stories.Dim, e.seq, gradScale)
+	} else if gradScale != 1 {
+		scaleSlice(e.dy, gradScale)
 	}
 	if !embedAsync {
 		begin := time.Now()
-		stories.MatMulGradEmbedScale(e.gEmbed, gradLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, scale)
+		stories.MatMulGradEmbedScale(e.gEmbed, gradLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, gradScale)
 		e.stepMetrics.addEmbedGrad(time.Since(begin))
 	}
 	if e.off == nil || !e.off.hasRMSBackward() {
@@ -523,6 +524,8 @@ func (e *Engine) ensureAttentionCache(layer *stories.LayerWeights, cache *layerC
 	rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, cache.x, layer.RMSAtt, stories.Dim, e.seq)
 	linearCF(cache.q, layer.Wq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	linearCF(cache.k, layer.Wk, cache.xNorm, stories.Dim, stories.Dim, e.seq)
+	applyRoPECFInPlace(cache.q, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
+	applyRoPECFInPlace(cache.k, stories.Heads, stories.Dim/stories.Heads, e.seq, e.ropeCos, e.ropeSin)
 	linearCF(cache.v, layer.Wv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	causalAttentionCF(cache.attOut, cache.q, cache.k, cache.v, stories.Heads, stories.Dim/stories.Heads, e.seq)
 	cache.attTapsReady = true
@@ -541,9 +544,9 @@ func (e *Engine) ensureFFNCache(layer *stories.LayerWeights, cache *layerCache) 
 	cache.ffnTapsReady = true
 }
 
-func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dCur, dPrev []float32) {
+func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) {
 	e.ensureFFNCache(layer, cache)
-	linearBackwardDXCF(e.gradGate, layer.W2, dCur, stories.Dim, stories.Hidden, e.seq)
+	linearBackwardDXCF(e.gradGate, layer.W2, dFFN, stories.Dim, stories.Hidden, e.seq)
 	for i := range e.gradGate {
 		sig := float32(1.0 / (1.0 + math.Exp(float64(-cache.h1[i]))))
 		siluGrad := sig * (1 + cache.h1[i]*(1-sig))
@@ -561,9 +564,9 @@ func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, 
 	}
 }
 
-func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dCur, dPrev []float32) error {
+func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) error {
 	e.ensureFFNCache(layer, cache)
-	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dCur, cache.h1, cache.h3); err != nil {
+	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dFFN, cache.h1, cache.h3); err != nil {
 		return err
 	}
 	e.runRMSBackwardLayer(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
@@ -573,9 +576,9 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 	return nil
 }
 
-func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dPrev []float32) {
+func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dx2, dx2Scaled, dPrev []float32) {
 	e.ensureAttentionCache(layer, cache)
-	linearBackwardDXCF(e.gradAtt, layer.Wo, e.gradX2, stories.Dim, stories.Dim, e.seq)
+	linearBackwardDXCF(e.gradAtt, layer.Wo, dx2Scaled, stories.Dim, stories.Dim, e.seq)
 	causalAttentionBackwardCF(e.gradQ, e.gradK, e.gradV, e.gradAtt, cache.q, cache.k, cache.v, stories.Heads, stories.Dim/stories.Heads, e.seq)
 	linearBackwardDXCF(e.gradXNorm, layer.Wq, e.gradQ, stories.Dim, stories.Dim, e.seq)
 	linearBackwardDXCF(dPrev, layer.Wk, e.gradK, stories.Dim, stories.Dim, e.seq)
@@ -588,18 +591,18 @@ func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerC
 	}
 	stories.RMSNormBackward(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, stories.Dim, e.seq)
 	for i := range dPrev {
-		dPrev[i] += e.gradX2[i]
+		dPrev[i] += dx2[i]
 	}
 }
 
-func (e *Engine) backwardAttentionHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dPrev []float32) error {
+func (e *Engine) backwardAttentionHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dx2, dx2Scaled, dPrev []float32) error {
 	e.ensureAttentionCache(layer, cache)
-	if err := lb.runAttention(e.gradXNorm, cache.dq, cache.dk, cache.dv, cache.q, cache.k, cache.v, cache.dx2); err != nil {
+	if err := lb.runAttention(e.gradXNorm, cache.dq, cache.dk, cache.dv, cache.q, cache.k, cache.v, dx2Scaled); err != nil {
 		return err
 	}
 	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
 	for i := range dPrev {
-		dPrev[i] += cache.dx2[i]
+		dPrev[i] += dx2[i]
 	}
 	return nil
 }
@@ -627,16 +630,17 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 		grad := &e.accum.Layers[l]
 
 		copy(cache.dOut, dCur)
+		scaleSlice(cache.dOut, layerResidualScale)
 		if useHybrid {
 			copy(cache.dx2, dCur)
-			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, dCur, dPrev); err != nil {
+			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
 			}
 		}
 		if !useHybrid {
 			copy(e.gradX2, dCur)
-			e.backwardFFNCPU(layer, cache, grad, dCur, dPrev)
+			e.backwardFFNCPU(layer, cache, grad, cache.dOut, dPrev)
 			copy(cache.dh1, e.gradH1)
 			copy(cache.dh3, e.gradH3)
 			copy(cache.dx2, e.gradX2)
@@ -647,21 +651,21 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 			accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 		})
 
+		scaleInto(cache.dx2Scaled, cache.dx2, layerResidualScale)
 		if useHybrid {
-			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, dPrev); err != nil {
+			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid attention backward: %w", l, err))
 				useHybrid = false
 			}
 		}
 		if !useHybrid {
-			copy(e.gradX2, cache.dx2)
-			e.backwardAttentionCPU(layer, cache, grad, dPrev)
+			e.backwardAttentionCPU(layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev)
 			copy(cache.dq, e.gradQ)
 			copy(cache.dk, e.gradK)
 			copy(cache.dv, e.gradV)
 		}
 		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wo, cache.dx2, cache.attOut, stories.Dim, stories.Dim, e.seq)
+			accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
 		})
 		e.submitDWJob(func() {
 			accumLinearGradCF(grad.Wq, cache.dq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
@@ -698,16 +702,17 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 		clearLayerGrad(grad)
 
 		copy(cache.dOut, dCur)
+		scaleSlice(cache.dOut, layerResidualScale)
 		if useHybrid {
 			copy(cache.dx2, dCur)
-			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, dCur, dPrev); err != nil {
+			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
 			}
 		}
 		if !useHybrid {
 			copy(e.gradX2, dCur)
-			e.backwardFFNCPU(layer, cache, grad, dCur, dPrev)
+			e.backwardFFNCPU(layer, cache, grad, cache.dOut, dPrev)
 			copy(cache.dh1, e.gradH1)
 			copy(cache.dh3, e.gradH3)
 			copy(cache.dx2, e.gradX2)
@@ -717,21 +722,21 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 			accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 			accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 		})
+		scaleInto(cache.dx2Scaled, cache.dx2, layerResidualScale)
 		if useHybrid {
-			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, dPrev); err != nil {
+			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid attention backward: %w", l, err))
 				useHybrid = false
 			}
 		}
 		if !useHybrid {
-			copy(e.gradX2, cache.dx2)
-			e.backwardAttentionCPU(layer, cache, grad, dPrev)
+			e.backwardAttentionCPU(layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev)
 			copy(cache.dq, e.gradQ)
 			copy(cache.dk, e.gradK)
 			copy(cache.dv, e.gradV)
 		}
 		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wo, cache.dx2, cache.attOut, stories.Dim, stories.Dim, e.seq)
+			accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
 		})
 		e.submitDWJob(func() {
 			accumLinearGradCF(grad.Wq, cache.dq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
@@ -749,6 +754,14 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 	begin := time.Now()
 	stories.EmbedBackward(e.gEmbed, dCur, input, stories.Dim, e.seq)
 	e.stepMetrics.addEmbedGrad(time.Since(begin))
+	if e.lossScale != 0 && e.lossScale != 1 {
+		invLossScale := float32(1.0 / float64(e.lossScale))
+		for l := range e.applyGrads {
+			scaleLayerGrad(&e.applyGrads[l], invLossScale)
+		}
+		scaleSlice(e.gRMS, invLossScale)
+		scaleSlice(e.gEmbed, invLossScale)
+	}
 	e.clipLayerGradients(e.applyGrads, e.gRMS, e.gEmbed)
 	adamStart := time.Now()
 	for l := range e.mw.Layers {

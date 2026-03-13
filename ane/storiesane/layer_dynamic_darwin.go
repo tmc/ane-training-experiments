@@ -37,12 +37,26 @@ func compileStoriesLayerForwardDynamic(layer stories.LayerWeights, seq int) (_ *
 	if err != nil {
 		return nil, fmt.Errorf("compile layer forward dynamic: mask blob: %w", err)
 	}
+	ropeCosBlob, ropeSinBlob, err := mil.BuildRoPECosSinBlobs(seq, dim/heads)
+	if err != nil {
+		return nil, fmt.Errorf("compile layer forward dynamic: rope blobs: %w", err)
+	}
 	att, err := model.Compile(model.CompileOptions{
 		MILText: mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
-		WeightFiles: []model.WeightFile{{
-			Path: "@model_path/weights/mask.bin",
-			Blob: maskBlob,
-		}},
+		WeightFiles: []model.WeightFile{
+			{
+				Path: "@model_path/weights/mask.bin",
+				Blob: maskBlob,
+			},
+			{
+				Path: "@model_path/weights/rope_cos.bin",
+				Blob: ropeCosBlob,
+			},
+			{
+				Path: "@model_path/weights/rope_sin.bin",
+				Blob: ropeSinBlob,
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile layer forward dynamic: attention: %w", err)
@@ -256,6 +270,7 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
 	}
 	copy(lf.x2, lf.attOut[:want])
+	blendResidualInPlace(lf.x2, x)
 	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.x2); err != nil {
 		return fmt.Errorf("run layer forward dynamic: write ffn input: %w", err)
 	}
@@ -266,6 +281,7 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 		return fmt.Errorf("run layer forward dynamic: read ffn output: %w", err)
 	}
 	copy(out, lf.ffnOut[:want])
+	blendResidualInPlace(out, lf.x2)
 	if cache == nil {
 		return nil
 	}

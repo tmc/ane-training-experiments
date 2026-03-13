@@ -34,6 +34,8 @@ func main() {
 		adamEps     = flag.Float64("adam-eps", 1e-8, "Adam epsilon")
 		weightDecay = flag.Float64("weight-decay", 0.1, "Adam weight decay")
 		gradClip    = flag.Float64("grad-clip", 1.0, "global grad clip (0 disables)")
+		lossScale   = flag.Float64("loss-scale", 256.0, "gradient loss scale for fp16-hybrid parity")
+		cpuClsHead  = flag.Bool("cpu-classifier-head", true, "disable ANE classifier/softmax offload")
 		gradTasks   = flag.Int("dw-concurrency", 3, "max concurrent CPU dW tasks")
 		hybridBwd   = flag.Bool("hybrid-bwd", true, "enable ANE hybrid backward path")
 		printEvery  = flag.Int("print-every", 10, "print every N steps")
@@ -76,6 +78,9 @@ func main() {
 	if *gradClip < 0 {
 		fatalf("grad-clip must be >= 0")
 	}
+	if *lossScale < 0 {
+		fatalf("loss-scale must be >= 0")
+	}
 	if *printEvery < 1 {
 		fatalf("print-every must be >= 1")
 	}
@@ -97,20 +102,22 @@ func main() {
 	wallStart := time.Now()
 	compileStart := time.Now()
 	engine, err := storiesane.Open(storiesane.Options{
-		ModelPath:      *modelPath,
-		Tokens:         tokens,
-		Seq:            *seq,
-		AccumSteps:     *accumSteps,
-		LR:             float32(*lr),
-		Seed:           42,
-		AdamBeta1:      float32(*adamB1),
-		AdamBeta2:      float32(*adamB2),
-		AdamEps:        float32(*adamEps),
-		WeightDecay:    float32(*weightDecay),
-		GradClip:       float32(*gradClip),
-		GradTaskLimit:  *gradTasks,
-		UseANE:         true,
-		HybridBackward: *hybridBwd,
+		ModelPath:         *modelPath,
+		Tokens:            tokens,
+		Seq:               *seq,
+		AccumSteps:        *accumSteps,
+		LR:                float32(*lr),
+		Seed:              42,
+		AdamBeta1:         float32(*adamB1),
+		AdamBeta2:         float32(*adamB2),
+		AdamEps:           float32(*adamEps),
+		WeightDecay:       float32(*weightDecay),
+		GradClip:          float32(*gradClip),
+		LossScale:         float32(*lossScale),
+		CPUClassifierHead: *cpuClsHead,
+		GradTaskLimit:     *gradTasks,
+		UseANE:            true,
+		HybridBackward:    *hybridBwd,
 	})
 	if err != nil {
 		fatalf("open engine: %v", err)
@@ -119,7 +126,11 @@ func main() {
 	engine.Prepare()
 	compileDur := time.Since(compileStart)
 	status := engine.DynamicStatus()
-	if !status.FullyDynamic() {
+	if *cpuClsHead {
+		if !status.CoreDynamic() {
+			fatalf("dynamic runtime validation failed: %s", status.String())
+		}
+	} else if !status.FullyDynamic() {
 		fatalf("dynamic runtime validation failed: %s", status.String())
 	}
 	fmt.Printf("Compiled dynamic kernels in %.0fms\n", ms(compileDur))
@@ -140,7 +151,12 @@ func main() {
 		stepMS := ms(res.StepDuration)
 		totalTrainMS += stepMS
 		if step == 0 || step%*printEvery == 0 {
-			fmt.Printf("step %-4d loss=%.4f  lr=%.2e  %.1fms/step\n", step, res.Loss, currLR, stepMS)
+			st := engine.State()
+			pos := int64(st.TokenPos) - int64(*seq)
+			if pos < 0 {
+				pos = 0
+			}
+			fmt.Printf("step %-4d pos=%d loss=%.4f  lr=%.2e  %.1fms/step\n", step, pos, res.Loss, currLR, stepMS)
 		}
 	}
 
