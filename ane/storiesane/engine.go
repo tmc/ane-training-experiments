@@ -528,21 +528,11 @@ func (e *Engine) flushPending() time.Duration {
 	e.clipLayerGradients(e.accum.Layers, e.accum.RMSFinal, e.accum.Embed)
 	e.state.AdamT++
 	adamStart := time.Now()
-	for i := range e.mw.Layers {
-		applyLayerAdam(
-			&e.mw.Layers[i],
-			&e.accum.Layers[i],
-			&e.opt.Layers[i],
-			int(e.state.AdamT),
-			e.lr,
-			e.adamBeta1,
-			e.adamBeta2,
-			e.adamEps,
-			e.weightDecay,
-		)
-	}
-	adamUpdateCF(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, int(e.state.AdamT), e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0)
-	adamUpdateCF(e.mw.Embed, e.accum.Embed, &e.opt.Embed, int(e.state.AdamT), e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay)
+	t := int(e.state.AdamT)
+	invBC1, invBC2 := adamBiasCorrectionInv(t, e.adamBeta1, e.adamBeta2)
+	e.applyLayerAdamAll(e.accum.Layers, t, invBC1, invBC2)
+	adamUpdateCFWithInv(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0, invBC1, invBC2, false)
+	adamUpdateCFWithInv(e.mw.Embed, e.accum.Embed, &e.opt.Embed, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay, invBC1, invBC2, true)
 	e.stepMetrics.addAdam(time.Since(adamStart))
 	compileDur := e.refreshANERuntimeForWeights()
 	clearModelGrad(e.accum)

@@ -759,21 +759,10 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 	}
 	e.clipLayerGradients(e.applyGrads, e.gRMS, e.gEmbed)
 	adamStart := time.Now()
-	for l := range e.mw.Layers {
-		applyLayerAdam(
-			&e.mw.Layers[l],
-			&e.applyGrads[l],
-			&e.opt.Layers[l],
-			stepT,
-			e.lr,
-			e.adamBeta1,
-			e.adamBeta2,
-			e.adamEps,
-			e.weightDecay,
-		)
-	}
-	adamUpdateCF(e.mw.RMSFinal, e.gRMS, &e.opt.RMSFinal, stepT, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0)
-	adamUpdateCF(e.mw.Embed, e.gEmbed, &e.opt.Embed, stepT, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay)
+	invBC1, invBC2 := adamBiasCorrectionInv(stepT, e.adamBeta1, e.adamBeta2)
+	e.applyLayerAdamAll(e.applyGrads, stepT, invBC1, invBC2)
+	adamUpdateCFWithInv(e.mw.RMSFinal, e.gRMS, &e.opt.RMSFinal, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0, invBC1, invBC2, false)
+	adamUpdateCFWithInv(e.mw.Embed, e.gEmbed, &e.opt.Embed, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay, invBC1, invBC2, true)
 	e.stepMetrics.addAdam(time.Since(adamStart))
 	compileDur := e.refreshANERuntimeForWeights()
 	e.state.AdamT = uint32(stepT)
@@ -806,35 +795,83 @@ func (e *Engine) waitDWJobs() {
 	e.stepMetrics.addDWWait(time.Since(begin))
 }
 
-func applyLayerAdam(dst *stories.LayerWeights, grad *stories.LayerWeights, st *stories.LayerOptimState, t int, lr, b1, b2, eps, wd float32) {
-	adamUpdateCF(dst.Wq, grad.Wq, &st.Wq, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.Wk, grad.Wk, &st.Wk, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.Wv, grad.Wv, &st.Wv, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.Wo, grad.Wo, &st.Wo, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.W1, grad.W1, &st.W1, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.W2, grad.W2, &st.W2, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.W3, grad.W3, &st.W3, t, lr, b1, b2, eps, wd)
-	adamUpdateCF(dst.RMSAtt, grad.RMSAtt, &st.RMSAtt, t, lr, b1, b2, eps, 0)
-	adamUpdateCF(dst.RMSFFN, grad.RMSFFN, &st.RMSFFN, t, lr, b1, b2, eps, 0)
+func (e *Engine) applyLayerAdamAll(grads []stories.LayerWeights, t int, invBC1, invBC2 float32) {
+	_, err := compileParallel(len(e.mw.Layers), func(i int) (struct{}, error) {
+		applyLayerAdam(
+			&e.mw.Layers[i],
+			&grads[i],
+			&e.opt.Layers[i],
+			e.lr,
+			e.adamBeta1,
+			e.adamBeta2,
+			e.adamEps,
+			e.weightDecay,
+			invBC1,
+			invBC2,
+		)
+		return struct{}{}, nil
+	}, func(struct{}) {})
+	if err != nil {
+		for i := range e.mw.Layers {
+			applyLayerAdam(
+				&e.mw.Layers[i],
+				&grads[i],
+				&e.opt.Layers[i],
+				e.lr,
+				e.adamBeta1,
+				e.adamBeta2,
+				e.adamEps,
+				e.weightDecay,
+				invBC1,
+				invBC2,
+			)
+		}
+	}
+}
+
+func applyLayerAdam(dst *stories.LayerWeights, grad *stories.LayerWeights, st *stories.LayerOptimState, lr, b1, b2, eps, wd, invBC1, invBC2 float32) {
+	adamUpdateCFWithInv(dst.Wq, grad.Wq, &st.Wq, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.Wk, grad.Wk, &st.Wk, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.Wv, grad.Wv, &st.Wv, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.Wo, grad.Wo, &st.Wo, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.W1, grad.W1, &st.W1, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.W2, grad.W2, &st.W2, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.W3, grad.W3, &st.W3, lr, b1, b2, eps, wd, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.RMSAtt, grad.RMSAtt, &st.RMSAtt, lr, b1, b2, eps, 0, invBC1, invBC2, false)
+	adamUpdateCFWithInv(dst.RMSFFN, grad.RMSFFN, &st.RMSFFN, lr, b1, b2, eps, 0, invBC1, invBC2, false)
 }
 
 func adamUpdateCF(w, g []float32, st *stories.AdamState, t int, lr, b1, b2, eps, wd float32) {
+	invBC1, invBC2 := adamBiasCorrectionInv(t, b1, b2)
+	adamUpdateCFWithInv(w, g, st, lr, b1, b2, eps, wd, invBC1, invBC2, true)
+}
+
+func adamBiasCorrectionInv(t int, b1, b2 float32) (invBC1, invBC2 float32) {
+	bc1 := float32(1.0 - math.Pow(float64(b1), float64(t)))
+	bc2 := float32(1.0 - math.Pow(float64(b2), float64(t)))
+	return 1 / bc1, 1 / bc2
+}
+
+func adamUpdateCFWithInv(w, g []float32, st *stories.AdamState, lr, b1, b2, eps, wd, invBC1, invBC2 float32, parallel bool) {
 	if len(w) == 0 {
 		return
 	}
-	bc1 := float32(1.0 - math.Pow(float64(b1), float64(t)))
-	bc2 := float32(1.0 - math.Pow(float64(b2), float64(t)))
-	parallelForCF(len(w), func(start, end int) {
+	update := func(start, end int) {
 		for i := start; i < end; i++ {
 			st.M[i] = b1*st.M[i] + (1-b1)*g[i]
 			st.V[i] = b2*st.V[i] + (1-b2)*g[i]*g[i]
-			mh := st.M[i] / bc1
-			vh := st.V[i] / bc2
+			mh := st.M[i] * invBC1
+			vh := st.V[i] * invBC2
 			update := mh / (float32(math.Sqrt(float64(vh))) + eps)
 			if wd != 0 {
 				update += wd * w[i]
 			}
 			w[i] -= lr * update
 		}
-	})
+	}
+	if !parallel || len(w) < 1<<20 {
+		update(0, len(w))
+		return
+	}
+	parallelForCF(len(w), update)
 }
