@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"unsafe"
 )
 
 type LayerWeights struct {
@@ -152,10 +153,26 @@ func RandomInit(mw *ModelWeights, seed int64) {
 }
 
 func readF32s(r io.Reader, dst []float32) error {
+	if len(dst) == 0 {
+		return nil
+	}
+	if nativeLittleEndian {
+		b := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(dst))), len(dst)*4)
+		_, err := io.ReadFull(r, b)
+		return err
+	}
+	buf := make([]byte, len(dst)*4)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
 	for i := range dst {
-		if err := binary.Read(r, binary.LittleEndian, &dst[i]); err != nil {
-			return err
-		}
+		off := i * 4
+		dst[i] = math.Float32frombits(binary.LittleEndian.Uint32(buf[off : off+4]))
 	}
 	return nil
 }
+
+var nativeLittleEndian = func() bool {
+	var v uint16 = 1
+	return *(*byte)(unsafe.Pointer(&v)) == 1
+}()
