@@ -857,6 +857,21 @@ func adamUpdateCFWithInv(w, g []float32, st *stories.AdamState, lr, b1, b2, eps,
 		return
 	}
 	update := func(start, end int) {
+		if adamUpdateCFAccelerateChunk(
+			w[start:end],
+			g[start:end],
+			st.M[start:end],
+			st.V[start:end],
+			b1,
+			b2,
+			invBC1,
+			invBC2,
+			lr,
+			eps,
+			wd,
+		) {
+			return
+		}
 		for i := start; i < end; i++ {
 			st.M[i] = b1*st.M[i] + (1-b1)*g[i]
 			st.V[i] = b2*st.V[i] + (1-b2)*g[i]*g[i]
