@@ -9,6 +9,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -40,6 +41,7 @@ type sharedMILProgram struct {
 	outputLayouts []xane.TensorLayout
 	qos           uint32
 	mapMu         sync.Mutex
+	mapMode       atomic.Uint32
 
 	owner *xane.Kernel
 	refs  int
@@ -160,17 +162,10 @@ func (p *sharedMILProgram) newCloneKernel() (*Kernel, CompileStats, error) {
 		p.release()
 		return nil, CompileStats{}, err
 	}
-	p.mapMu.Lock()
-	ok, err := p.inMemModel.MapIOSurfacesWithRequestCacheInferenceError(request, true)
-	if err != nil || !ok {
-		ok, err = p.inMemModel.MapIOSurfacesWithRequestCacheInferenceError(request, false)
-		if err != nil || !ok {
-			p.mapMu.Unlock()
-			p.release()
-			return nil, CompileStats{}, fmt.Errorf("map IOSurfaces failed: %w", err)
-		}
+	if err := p.mapRequest(request); err != nil {
+		p.release()
+		return nil, CompileStats{}, err
 	}
-	p.mapMu.Unlock()
 	k := &Kernel{
 		shared: &sharedMILHandle{
 			program: p,
@@ -186,6 +181,53 @@ func (p *sharedMILProgram) newCloneKernel() (*Kernel, CompileStats, error) {
 		return nil, CompileStats{}, err
 	}
 	return k, CompileStats{}, nil
+}
+
+func (p *sharedMILProgram) mapRequest(request appleneuralengine.ANERequest) error {
+	switch p.mapMode.Load() {
+	case 1:
+		if ok, err := p.inMemModel.MapIOSurfacesWithRequestCacheInferenceError(request, false); err == nil && ok {
+			return nil
+		}
+	case 2:
+		if ok, err := p.inMemModel.MapIOSurfacesWithRequestCacheInferenceError(request, true); err == nil && ok {
+			return nil
+		}
+	}
+	return p.mapRequestSlow(request)
+}
+
+func (p *sharedMILProgram) mapRequestSlow(request appleneuralengine.ANERequest) error {
+	p.mapMu.Lock()
+	defer p.mapMu.Unlock()
+
+	mode := p.mapMode.Load()
+	try := []bool{true, false}
+	switch mode {
+	case 1:
+		try = []bool{false, true}
+	case 2:
+		try = []bool{true, false}
+	}
+	var lastErr error
+	for _, cacheInference := range try {
+		ok, err := p.inMemModel.MapIOSurfacesWithRequestCacheInferenceError(request, cacheInference)
+		if err == nil && ok {
+			if cacheInference {
+				p.mapMode.Store(2)
+			} else {
+				p.mapMode.Store(1)
+			}
+			return nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+	}
+	if lastErr != nil {
+		return fmt.Errorf("map IOSurfaces failed: %w", lastErr)
+	}
+	return fmt.Errorf("map IOSurfaces failed")
 }
 
 func (h *sharedMILHandle) eval() error {

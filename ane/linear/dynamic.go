@@ -173,12 +173,12 @@ func (e *DynamicExecutor) LinearOneHotIOIntoWithStats(ctx context.Context, dst [
 	}
 
 	ck.mu.Lock()
-	est, err := ck.k.EvalOneHotIOInto(dst, xs)
+	hwNS, err := ck.k.EvalOneHotIOIntoHW(dst, xs)
 	ck.mu.Unlock()
 	if err != nil {
 		return st, fmt.Errorf("linear dynamic one-hot eval: %w", err)
 	}
-	st.HWExecutionNS = est.HWExecutionNS
+	st.HWExecutionNS = hwNS
 	return st, nil
 }
 

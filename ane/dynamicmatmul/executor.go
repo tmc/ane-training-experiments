@@ -369,6 +369,21 @@ func (e *Executor) UpdateWeightsIORows(wIO []float32, rows []int) error {
 // xs holds at most batch token ids in [0, inDim). Position t selects the input
 // row for batch element t. Remaining batch positions are treated as zero input.
 func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) {
+	return e.evalOneHotIOInto(dst, xs, true)
+}
+
+// EvalOneHotIOIntoHW computes y = x*w for one-hot activations encoded by xs
+// and a previously primed IO-layout weight matrix, returning only aggregate
+// hardware execution time.
+func (e *Executor) EvalOneHotIOIntoHW(dst []float32, xs []int) (uint64, error) {
+	st, err := e.evalOneHotIOInto(dst, xs, false)
+	if err != nil {
+		return 0, err
+	}
+	return st.HWExecutionNS, nil
+}
+
+func (e *Executor) evalOneHotIOInto(dst []float32, xs []int, collectMetrics bool) (EvalStats, error) {
 	if e == nil {
 		return EvalStats{}, fmt.Errorf("dynamic matmul: executor is nil")
 	}
@@ -411,20 +426,28 @@ func (e *Executor) EvalOneHotIOInto(dst []float32, xs []int) (EvalStats, error) 
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write one-hot tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
-		st, err := tile.k.EvalWithStats()
-		if err != nil {
-			return EvalStats{}, fmt.Errorf("dynamic matmul: eval one-hot tile %d: %w", i, err)
+		tileHW := uint64(0)
+		if collectMetrics {
+			st, err := tile.k.EvalWithStats()
+			if err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval one-hot tile %d: %w", i, err)
+			}
+			tileHW = st.HWExecutionNS
+			metrics = addEvalMetrics(metrics, st.Metrics)
+		} else {
+			if err := tile.k.Eval(); err != nil {
+				return EvalStats{}, fmt.Errorf("dynamic matmul: eval one-hot tile %d: %w", i, err)
+			}
 		}
 		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read one-hot tile %d: %w", i, err)
 		}
 		unpackOutputTileRows(dst, tile.outputPacked, logicalBatch, e.batch, e.outDim, tile.outOffset, tile.outDim)
-		if st.HWExecutionNS != 0 {
-			hwNS += st.HWExecutionNS
+		if tileHW != 0 {
+			hwNS += tileHW
 		} else {
 			hwNS += uint64(time.Since(evalStart).Nanoseconds())
 		}
-		metrics = addEvalMetrics(metrics, st.Metrics)
 	}
 	updatePrevOneHot(e.prevOneHot, xs)
 	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
@@ -602,8 +625,8 @@ func compileTiled(batch, inDim, outDim int, qos uint32, tileOut int) ([]tile, er
 func compileTile(batch, inDim, outDim int, qos uint32, outOffset int) (tile, error) {
 	k, err := model.Compile(model.CompileOptions{
 		MILText:       mil.GenDynamicMatmul(inDim, outDim, batch),
+		SharedModel:   true,
 		QoS:           qos,
-		PerfStatsMask: 1,
 	})
 	if err != nil {
 		return tile{}, err
