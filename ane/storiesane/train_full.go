@@ -118,15 +118,15 @@ func clearModelGrad(g *modelGrad) {
 }
 
 func scaleLayerGrad(g *stories.LayerWeights, scale float32) {
-	scaleSlice(g.Wq, scale)
-	scaleSlice(g.Wk, scale)
-	scaleSlice(g.Wv, scale)
-	scaleSlice(g.Wo, scale)
-	scaleSlice(g.W1, scale)
-	scaleSlice(g.W2, scale)
-	scaleSlice(g.W3, scale)
-	scaleSlice(g.RMSAtt, scale)
-	scaleSlice(g.RMSFFN, scale)
+	scaleGradSlice(g.Wq, scale)
+	scaleGradSlice(g.Wk, scale)
+	scaleGradSlice(g.Wv, scale)
+	scaleGradSlice(g.Wo, scale)
+	scaleGradSlice(g.W1, scale)
+	scaleGradSlice(g.W2, scale)
+	scaleGradSlice(g.W3, scale)
+	scaleGradSlice(g.RMSAtt, scale)
+	scaleGradSlice(g.RMSFFN, scale)
 }
 
 func scaleModelGrad(g *modelGrad, scale float32) {
@@ -144,12 +144,7 @@ func scaleSlice(v []float32, scale float32) {
 }
 
 func sumSquares(v []float32) float64 {
-	var s float64
-	for _, x := range v {
-		f := float64(x)
-		s += f * f
-	}
-	return s
+	return sumSquaresGrad(v)
 }
 
 func (e *Engine) clipLayerGradients(layers []stories.LayerWeights, gRMS, gEmbed []float32) {

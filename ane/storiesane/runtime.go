@@ -102,11 +102,11 @@ func (e *Engine) refreshLayerWeights() error {
 	if e.layerInitErr != nil {
 		return e.layerInitErr
 	}
-	for i := range e.layers {
+	_, err := compileParallel(len(e.layers), func(i int) (struct{}, error) {
 		if e.layers[i] == nil {
-			return fmt.Errorf("refresh layer weights: layer %d is nil", i)
+			return struct{}{}, fmt.Errorf("refresh layer weights: layer %d is nil", i)
 		}
-		if err := e.layers[i].refreshWeights(layerForwardWeights{
+		err := e.layers[i].refreshWeights(layerForwardWeights{
 			RMSAtt: e.mw.Layers[i].RMSAtt,
 			Wq:     e.mw.Layers[i].Wq,
 			Wk:     e.mw.Layers[i].Wk,
@@ -116,11 +116,10 @@ func (e *Engine) refreshLayerWeights() error {
 			W1:     e.mw.Layers[i].W1,
 			W2:     e.mw.Layers[i].W2,
 			W3:     e.mw.Layers[i].W3,
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
+		})
+		return struct{}{}, err
+	}, func(struct{}) {})
+	return err
 }
 
 func (e *Engine) refreshBackwardWeights() error {
@@ -133,13 +132,11 @@ func (e *Engine) refreshBackwardWeights() error {
 	if e.backwardInitErr != nil {
 		return e.backwardInitErr
 	}
-	for i := range e.backward {
+	_, err := compileParallel(len(e.backward), func(i int) (struct{}, error) {
 		if e.backward[i] == nil {
-			return fmt.Errorf("refresh backward weights: layer %d is nil", i)
+			return struct{}{}, fmt.Errorf("refresh backward weights: layer %d is nil", i)
 		}
-		if err := e.backward[i].refreshWeights(e.mw.Layers[i]); err != nil {
-			return err
-		}
-	}
-	return nil
+		return struct{}{}, e.backward[i].refreshWeights(e.mw.Layers[i])
+	}, func(struct{}) {})
+	return err
 }
