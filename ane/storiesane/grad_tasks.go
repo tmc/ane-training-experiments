@@ -2,7 +2,7 @@ package storiesane
 
 import "runtime"
 
-const defaultGradTaskConcurrency = 3
+const defaultGradTaskConcurrency = 4
 
 var gradTaskLimit = defaultGradTaskConcurrency
 

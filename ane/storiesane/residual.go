@@ -15,13 +15,9 @@ func blendResidualInPlace(sum, base []float32) {
 }
 
 func addScaledResidual(dst, base, branch []float32) {
-	for i := range dst {
-		dst[i] = base[i] + layerResidualScale*branch[i]
-	}
+	addScaledResidualAccel(dst, base, branch, layerResidualScale)
 }
 
 func scaleInto(dst, src []float32, scale float32) {
-	for i := range dst {
-		dst[i] = src[i] * scale
-	}
+	scaleIntoAccel(dst, src, scale)
 }

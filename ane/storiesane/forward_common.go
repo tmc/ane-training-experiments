@@ -89,20 +89,5 @@ func silu32(x float32) float32 {
 }
 
 func softmaxRow(out, in []float32) {
-	maxv := in[0]
-	for i := 1; i < len(in); i++ {
-		if in[i] > maxv {
-			maxv = in[i]
-		}
-	}
-	sum := 0.0
-	for i := range in {
-		e := math.Exp(float64(in[i] - maxv))
-		out[i] = float32(e)
-		sum += e
-	}
-	inv := float32(1.0 / sum)
-	for i := range out {
-		out[i] *= inv
-	}
+	softmaxRowAccel(out, in)
 }

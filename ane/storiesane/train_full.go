@@ -138,9 +138,7 @@ func scaleModelGrad(g *modelGrad, scale float32) {
 }
 
 func scaleSlice(v []float32, scale float32) {
-	for i := range v {
-		v[i] *= scale
-	}
+	scaleSliceAccel(v, scale)
 }
 
 func sumSquares(v []float32) float64 {
@@ -194,9 +192,7 @@ func addLayerGrad(dst, src *stories.LayerWeights) {
 }
 
 func addSlice(dst, src []float32) {
-	for i := range dst {
-		dst[i] += src[i]
-	}
+	addSliceAccel(dst, src)
 }
 
 func accumLinearGradCF(dW, dy, x []float32, outCh, inCh, seq int) {
@@ -215,6 +211,17 @@ func accumLinearGradCF(dW, dy, x []float32, outCh, inCh, seq int) {
 			row[i] += sum
 		}
 	}
+}
+
+// accumLinearGrad3CF fuses three weight gradient accumulations sharing the
+// same input x into a single call, reducing CGo crossings.
+func accumLinearGrad3CF(dW1, dy1, dW2, dy2, dW3, dy3, x []float32, outCh, inCh, seq int) {
+	if accumLinearGrad3CFAccelerate(dW1, dy1, dW2, dy2, dW3, dy3, x, outCh, inCh, seq) {
+		return
+	}
+	accumLinearGradCF(dW1, dy1, x, outCh, inCh, seq)
+	accumLinearGradCF(dW2, dy2, x, outCh, inCh, seq)
+	accumLinearGradCF(dW3, dy3, x, outCh, inCh, seq)
 }
 
 func linearBackwardDXCF(dx, w, dy []float32, outCh, inCh, seq int) {
@@ -345,6 +352,8 @@ func (e *Engine) disableLayerForward(err error) {
 }
 
 func (e *Engine) forwardTraining(input []uint16) ([]float32, error) {
+	// Wait for any pending async weight refresh before reading kernels.
+	e.waitAsyncRefresh()
 	if e.useANE && e.ensureLayers() == nil {
 		if out, err := e.forwardTrainingANE(input); err == nil {
 			return out, nil
@@ -542,12 +551,7 @@ func (e *Engine) ensureFFNCache(layer *stories.LayerWeights, cache *layerCache) 
 func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) {
 	e.ensureFFNCache(layer, cache)
 	linearBackwardDXCF(e.gradGate, layer.W2, dFFN, stories.Dim, stories.Hidden, e.seq)
-	for i := range e.gradGate {
-		sig := float32(1.0 / (1.0 + math.Exp(float64(-cache.h1[i]))))
-		siluGrad := sig * (1 + cache.h1[i]*(1-sig))
-		e.gradH1[i] = e.gradGate[i] * cache.h3[i] * siluGrad
-		e.gradH3[i] = e.gradGate[i] * (cache.h1[i] * sig)
-	}
+	siluBackwardAccel(e.gradH1, e.gradH3, e.gradGate, cache.h1, cache.h3)
 	linearBackwardDXCF(e.gradXNorm, layer.W1, e.gradH1, stories.Hidden, stories.Dim, e.seq)
 	linearBackwardDXCF(dPrev, layer.W3, e.gradH3, stories.Hidden, stories.Dim, e.seq)
 	for i := range e.gradXNorm {
@@ -564,9 +568,36 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dFFN, cache.h1, cache.h3); err != nil {
 		return err
 	}
+	// Submit dW jobs immediately after ANE outputs are ready, before RMS
+	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
+	e.submitDWJob(func() {
+		accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
+		accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+		accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
 	for i := range cache.dx2 {
 		cache.dx2[i] += dPrev[i]
+	}
+	return nil
+}
+
+func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dx2, dx2Scaled, dPrev []float32) error {
+	e.ensureAttentionCache(layer, cache)
+	if err := lb.runAttention(e.gradXNorm, cache.dq, cache.dk, cache.dv, cache.q, cache.k, cache.v, dx2Scaled); err != nil {
+		return err
+	}
+	// Submit dW jobs immediately after ANE outputs are ready, before RMS
+	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
+	e.submitDWJob(func() {
+		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
+	})
+	e.submitDWJob(func() {
+		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
+	})
+	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
+	for i := range dPrev {
+		dPrev[i] += dx2[i]
 	}
 	return nil
 }
@@ -575,14 +606,21 @@ func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerC
 	e.ensureAttentionCache(layer, cache)
 	linearBackwardDXCF(e.gradAtt, layer.Wo, dx2Scaled, stories.Dim, stories.Dim, e.seq)
 	causalAttentionBackwardCF(e.gradQ, e.gradK, e.gradV, e.gradAtt, cache.q, cache.k, cache.v, stories.Heads, stories.Dim/stories.Heads, e.seq)
-	linearBackwardDXCF(e.gradXNorm, layer.Wq, e.gradQ, stories.Dim, stories.Dim, e.seq)
-	linearBackwardDXCF(dPrev, layer.Wk, e.gradK, stories.Dim, stories.Dim, e.seq)
-	for i := range e.gradXNorm {
-		e.gradXNorm[i] += dPrev[i]
-	}
-	linearBackwardDXCF(dPrev, layer.Wv, e.gradV, stories.Dim, stories.Dim, e.seq)
-	for i := range e.gradXNorm {
-		e.gradXNorm[i] += dPrev[i]
+	// Fuse Wq+Wk+Wv backward: dx = Wq^T @ dQ + Wk^T @ dK + Wv^T @ dV
+	if !linearBackwardDX3AccumAccelerate(e.gradXNorm,
+		layer.Wq, e.gradQ,
+		layer.Wk, e.gradK,
+		layer.Wv, e.gradV,
+		stories.Dim, stories.Dim, e.seq) {
+		linearBackwardDXCF(e.gradXNorm, layer.Wq, e.gradQ, stories.Dim, stories.Dim, e.seq)
+		linearBackwardDXCF(dPrev, layer.Wk, e.gradK, stories.Dim, stories.Dim, e.seq)
+		for i := range e.gradXNorm {
+			e.gradXNorm[i] += dPrev[i]
+		}
+		linearBackwardDXCF(dPrev, layer.Wv, e.gradV, stories.Dim, stories.Dim, e.seq)
+		for i := range e.gradXNorm {
+			e.gradXNorm[i] += dPrev[i]
+		}
 	}
 	stories.RMSNormBackward(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, stories.Dim, e.seq)
 	for i := range dPrev {
@@ -590,17 +628,6 @@ func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerC
 	}
 }
 
-func (e *Engine) backwardAttentionHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dx2, dx2Scaled, dPrev []float32) error {
-	e.ensureAttentionCache(layer, cache)
-	if err := lb.runAttention(e.gradXNorm, cache.dq, cache.dk, cache.dv, cache.q, cache.k, cache.v, dx2Scaled); err != nil {
-		return err
-	}
-	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
-	for i := range dPrev {
-		dPrev[i] += dx2[i]
-	}
-	return nil
-}
 
 func (e *Engine) backwardAndUpdate(input []uint16) time.Duration {
 	stepT := int(e.state.AdamT) + 1
@@ -628,6 +655,8 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 		scaleSlice(cache.dOut, layerResidualScale)
 		if useHybrid {
 			copy(cache.dx2, dCur)
+			// backwardFFNHybrid submits dW jobs internally, right after
+			// ANE outputs are ready, overlapping CBLAS with RMS backward.
 			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
@@ -639,16 +668,19 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 			copy(cache.dh1, e.gradH1)
 			copy(cache.dh3, e.gradH3)
 			copy(cache.dx2, e.gradX2)
+			e.submitDWJob(func() {
+				accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
+				accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+				accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+			})
 		}
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
-			accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-			accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-		})
 
 		scaleInto(cache.dx2Scaled, cache.dx2, layerResidualScale)
 		if useHybrid {
-			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
+			// backwardAttentionHybridWithDW submits dW jobs internally,
+			// right after ANE outputs are ready, overlapping CBLAS with
+			// the RMS backward CPU work.
+			if err := e.backwardAttentionHybridWithDW(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid attention backward: %w", l, err))
 				useHybrid = false
 			}
@@ -658,15 +690,13 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 			copy(cache.dq, e.gradQ)
 			copy(cache.dk, e.gradK)
 			copy(cache.dv, e.gradV)
+			e.submitDWJob(func() {
+				accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
+			})
+			e.submitDWJob(func() {
+				accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
+			})
 		}
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-		})
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wq, cache.dq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-			accumLinearGradCF(grad.Wk, cache.dk, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-			accumLinearGradCF(grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-		})
 		dCur, dPrev = dPrev, dCur
 	}
 	e.waitDWJobs()
@@ -711,15 +741,15 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 			copy(cache.dh1, e.gradH1)
 			copy(cache.dh3, e.gradH3)
 			copy(cache.dx2, e.gradX2)
+			e.submitDWJob(func() {
+				accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
+				accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+				accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+			})
 		}
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
-			accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-			accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-		})
 		scaleInto(cache.dx2Scaled, cache.dx2, layerResidualScale)
 		if useHybrid {
-			if err := e.backwardAttentionHybrid(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
+			if err := e.backwardAttentionHybridWithDW(e.backward[l], layer, cache, grad, cache.dx2, cache.dx2Scaled, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid attention backward: %w", l, err))
 				useHybrid = false
 			}
@@ -729,15 +759,13 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 			copy(cache.dq, e.gradQ)
 			copy(cache.dk, e.gradK)
 			copy(cache.dv, e.gradV)
+			e.submitDWJob(func() {
+				accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
+			})
+			e.submitDWJob(func() {
+				accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
+			})
 		}
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-		})
-		e.submitDWJob(func() {
-			accumLinearGradCF(grad.Wq, cache.dq, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-			accumLinearGradCF(grad.Wk, cache.dk, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-			accumLinearGradCF(grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
-		})
 		dCur, dPrev = dPrev, dCur
 	}
 	e.waitDWJobs()
