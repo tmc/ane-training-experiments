@@ -36,6 +36,12 @@ type stepJSON struct {
 	TElem           float64 `json:"t_elem"`
 	TRMS            float64 `json:"t_rms"`
 	TCBLASWait      float64 `json:"t_cblas_wait"`
+	TFinalHead      float64 `json:"t_final_head,omitempty"`
+	TEmbedGrad      float64 `json:"t_embed_grad,omitempty"`
+	TRMSDW          float64 `json:"t_rms_dw,omitempty"`
+	TDWGEMM         float64 `json:"t_dw_gemm,omitempty"`
+	TDWWait         float64 `json:"t_dw_wait,omitempty"`
+	TAdam           float64 `json:"t_adam,omitempty"`
 	Compiles        uint32  `json:"compiles"`
 	RestartRequired bool    `json:"restart_required,omitempty"`
 }
@@ -96,6 +102,7 @@ func main() {
 		outputBytes    = flag.Uint("output-bytes", 4096, "output tensor bytes")
 		recompileEach  = flag.Bool("recompile-every-step", false, "recompile ANE kernel at each step (parity experiment)")
 		diagnostics    = flag.Bool("diagnostics", false, "print model/client diagnostics at startup")
+		verboseMetrics = flag.Bool("verbose-metrics", false, "print per-step CPU sub-breakdowns and include in JSON output")
 		parityMode     = flag.Bool("parity-mode", false, "enforce full train_large_ane parity profile (backend=full, seq=384, full-accum=80, veclib=6, dw=3)")
 	)
 	flag.Parse()
@@ -414,13 +421,13 @@ func main() {
 		stepsDone++
 		fmt.Printf("step %d loss=%.6f step_ms=%.3f compile_ms=%.3f startup_compile_ms=%.3f refresh_ms=%.3f ane_eval_ms=%.3f cpu_ms=%.3f io_ms=%.3f compiles=%d restart_required=%v\n",
 			stepOut, st.Loss, stepMS, compileMS, startupMS, refreshMS, evalMS, cpuMS, ioMS, st.Compiles, st.RestartRequired)
-		if *diagnostics && isStoriesBinModel(model) && selectedBackend == "ane" {
+		if (*diagnostics || *verboseMetrics) && isStoriesBinModel(model) && selectedBackend == "ane" {
 			fmt.Printf("  cpu_diag final_head_ms=%.3f embed_ms=%.3f rms_dw_ms=%.3f dw_gemm_ms=%.3f dw_wait_ms=%.3f adam_ms=%.3f\n",
 				finalMS, embedMS, rmsDWMS, dwGEMMMS, dwWaitMS, adamMS)
 		}
 
 		if *jsonOut {
-			emitJSON(stepJSON{
+			sj := stepJSON{
 				Type:            "step",
 				Step:            stepOut,
 				Loss:            st.Loss,
@@ -436,7 +443,16 @@ func main() {
 				TCBLASWait:      0,
 				Compiles:        st.Compiles,
 				RestartRequired: st.RestartRequired,
-			})
+			}
+			if *verboseMetrics && isStoriesBinModel(model) && selectedBackend == "ane" {
+				sj.TFinalHead = finalMS
+				sj.TEmbedGrad = embedMS
+				sj.TRMSDW = rmsDWMS
+				sj.TDWGEMM = dwGEMMMS
+				sj.TDWWait = dwWaitMS
+				sj.TAdam = adamMS
+			}
+			emitJSON(sj)
 		}
 
 		if *saveEvery > 0 && st.Step%uint32(*saveEvery) == 0 {
@@ -539,7 +555,7 @@ func main() {
 	}
 	startupCompileMS := float64(trainer.StartupCompileDuration()) / float64(time.Millisecond)
 	printDirectSummary(model, effectiveStoriesSequence(*seqOverride), trainer.Diagnostics(), stepsDone, totalStepMS, totalCompileMS, totalStartupMS, startupCompileMS, totalRefreshMS, totalANEEvalMS, totalCPUWorkMS, totalIOMS)
-	if *diagnostics && isStoriesBinModel(model) && selectedBackend == "ane" && stepsDone > 0 {
+	if (*diagnostics || *verboseMetrics) && isStoriesBinModel(model) && selectedBackend == "ane" && stepsDone > 0 {
 		fmt.Printf("Diagnostics CPU avg: final_head=%.1f embed=%.1f rms_dw=%.1f dw_gemm=%.1f dw_wait=%.1f adam=%.1f ms/step\n",
 			totalFinalMS/float64(stepsDone),
 			totalEmbedMS/float64(stepsDone),
