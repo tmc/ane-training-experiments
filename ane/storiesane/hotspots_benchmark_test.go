@@ -26,6 +26,25 @@ func BenchmarkDirectGoCPUHotspots(b *testing.B) {
 				finalHeadLossSink = loss
 			}
 		})
+		b.Run(fmt.Sprintf("final_head_bundle_compact_9205_seq_%d", seq), func(b *testing.B) {
+			fx := newCompactFinalHeadBenchmarkFixture(seq, 9205)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				clear(fx.dLogits)
+				clear(fx.dy)
+				clear(fx.gRMS)
+				clear(fx.gEmbedCompact)
+				clear(fx.gEmbedFull)
+				clear(fx.dx)
+				loss := crossEntropyLossFromProbs(fx.dLogits, fx.probs, fx.targets, fx.compactVocab, seq)
+				stories.MatMulEmbedT(fx.dy, fx.embedCompact, fx.dLogits, fx.compactVocab, stories.Dim, seq)
+				stories.MatMulGradEmbed(fx.gEmbedCompact, fx.dLogits, fx.xNorm, fx.compactVocab, stories.Dim, seq)
+				scatterCompactGrad(fx.gEmbedFull, fx.gEmbedCompact, fx.compactToFull, stories.Dim)
+				stories.RMSNormBackward(fx.dx, fx.gRMS, fx.dy, fx.finalHidden, fx.rmsFinal, stories.Dim, seq)
+				finalHeadLossSink = loss
+			}
+		})
 		b.Run(fmt.Sprintf("dw_job_ffn_seq_%d", seq), func(b *testing.B) {
 			fx := newDWBenchmarkFixture(seq)
 			b.ReportAllocs()
@@ -122,6 +141,23 @@ type finalHeadBenchmarkFixture struct {
 	gEmbed      []float32
 }
 
+type compactFinalHeadBenchmarkFixture struct {
+	compactVocab  int
+	probs         []float32
+	dLogits       []float32
+	targets       []uint16
+	embedCompact  []float32
+	compactToFull []int
+	xNorm         []float32
+	finalHidden   []float32
+	rmsFinal      []float32
+	dy            []float32
+	dx            []float32
+	gRMS          []float32
+	gEmbedCompact []float32
+	gEmbedFull    []float32
+}
+
 func newFinalHeadBenchmarkFixture(seq int) finalHeadBenchmarkFixture {
 	fx := finalHeadBenchmarkFixture{
 		probs:       makeBenchmarkProbs(stories.Vocab, seq),
@@ -142,6 +178,53 @@ func newFinalHeadBenchmarkFixture(seq int) finalHeadBenchmarkFixture {
 	fillBenchmarkFloats(fx.rmsFinal, 0.5)
 	fillBenchmarkFloats(fx.dy, 0.02)
 	return fx
+}
+
+func newCompactFinalHeadBenchmarkFixture(seq, compactVocab int) compactFinalHeadBenchmarkFixture {
+	base := newFinalHeadBenchmarkFixture(seq)
+	if compactVocab < 1 || compactVocab > stories.Vocab {
+		compactVocab = stories.Vocab
+	}
+	compactToFull := make([]int, compactVocab)
+	for i := range compactToFull {
+		compactToFull[i] = i
+	}
+	targets := make([]uint16, seq)
+	for i := range targets {
+		targets[i] = uint16(int(base.targets[i]) % compactVocab)
+	}
+	embedCompact := make([]float32, compactVocab*stories.Dim)
+	for c, full := range compactToFull {
+		copy(
+			embedCompact[c*stories.Dim:(c+1)*stories.Dim],
+			base.embed[full*stories.Dim:(full+1)*stories.Dim],
+		)
+	}
+	return compactFinalHeadBenchmarkFixture{
+		compactVocab:  compactVocab,
+		probs:         makeBenchmarkProbs(compactVocab, seq),
+		dLogits:       make([]float32, compactVocab*seq),
+		targets:       targets,
+		embedCompact:  embedCompact,
+		compactToFull: compactToFull,
+		xNorm:         base.xNorm,
+		finalHidden:   base.finalHidden,
+		rmsFinal:      base.rmsFinal,
+		dy:            make([]float32, stories.Dim*seq),
+		dx:            make([]float32, stories.Dim*seq),
+		gRMS:          make([]float32, stories.Dim),
+		gEmbedCompact: make([]float32, compactVocab*stories.Dim),
+		gEmbedFull:    make([]float32, stories.Vocab*stories.Dim),
+	}
+}
+
+func scatterCompactGrad(full, compact []float32, compactToFull []int, dim int) {
+	for c, fullTok := range compactToFull {
+		copy(
+			full[fullTok*dim:(fullTok+1)*dim],
+			compact[c*dim:(c+1)*dim],
+		)
+	}
 }
 
 type dwBenchmarkFixture struct {
