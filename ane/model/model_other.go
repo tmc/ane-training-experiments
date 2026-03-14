@@ -7,6 +7,7 @@ import (
 
 	"github.com/tmc/apple/coregraphics"
 	xane "github.com/tmc/apple/x/ane"
+	xanetelemetry "github.com/tmc/apple/x/ane/telemetry"
 )
 
 type CompileOptions struct {
@@ -82,7 +83,7 @@ func (k *Kernel) EvalWithStats() (EvalStats, error) {
 func (k *Kernel) EvalHWExecutionNS() (uint64, error) {
 	return 0, fmt.Errorf("ane model requires darwin")
 }
-func (k *Kernel) Diagnostics() xane.Diagnostics { return xane.Diagnostics{} }
+func (k *Kernel) Diagnostics() xanetelemetry.Diagnostics { return xanetelemetry.Diagnostics{} }
 func (k *Kernel) EvalWithSignalEvent(uint32, uint64, xane.SharedEventEvalOptions) error {
 	return fmt.Errorf("ane model requires darwin")
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	xane "github.com/tmc/apple/x/ane"
+	xanetelemetry "github.com/tmc/apple/x/ane/telemetry"
 )
 
 type report struct {
@@ -20,7 +21,7 @@ type report struct {
 	RuntimeInfo       *xane.DeviceInfo    `json:"runtime_info,omitempty"`
 	CompileCount      int64               `json:"compile_count,omitempty"`
 	CompileError      string              `json:"compile_error,omitempty"`
-	KernelDiagnostics xane.Diagnostics    `json:"kernel_diagnostics,omitempty"`
+	KernelDiagnostics xanetelemetry.Diagnostics `json:"kernel_diagnostics,omitempty"`
 	InputLayouts      []xane.TensorLayout `json:"input_layouts,omitempty"`
 	OutputLayouts     []xane.TensorLayout `json:"output_layouts,omitempty"`
 	InputAllocBytes   []int               `json:"input_alloc_bytes,omitempty"`
@@ -94,7 +95,7 @@ func main() {
 	defer k.Close()
 
 	r.CompileCount = rt.CompileCount()
-	r.KernelDiagnostics = k.Diagnostics()
+	r.KernelDiagnostics = xanetelemetry.ProbeDiagnostics(k)
 	r.InputLayouts = make([]xane.TensorLayout, k.NumInputs())
 	r.OutputLayouts = make([]xane.TensorLayout, k.NumOutputs())
 	r.InputAllocBytes = make([]int, k.NumInputs())
@@ -115,7 +116,7 @@ func main() {
 			emitAndExit(r, 2)
 		}
 		t0 := time.Now()
-		stats, err := k.EvalWithStats()
+		stats, err := xanetelemetry.EvalWithStats(k)
 		r.EvalDurationMS = float64(time.Since(t0)) / float64(time.Millisecond)
 		if err != nil {
 			r.EvalError = err.Error()

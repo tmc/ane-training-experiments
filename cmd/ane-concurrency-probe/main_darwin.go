@@ -15,6 +15,7 @@ import (
 	"time"
 
 	xane "github.com/tmc/apple/x/ane"
+	xanetelemetry "github.com/tmc/apple/x/ane/telemetry"
 )
 
 type stats struct {
@@ -71,7 +72,7 @@ func main() {
 
 	for _, depth := range workerDepths {
 		var (
-			diag        xane.Diagnostics
+			diag        xanetelemetry.Diagnostics
 			flat        []float64
 			runDur      time.Duration
 			inflightMax int64
@@ -111,22 +112,22 @@ func main() {
 	}
 }
 
-func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xane.Diagnostics, []float64, time.Duration, int64, float64, error) {
+func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
 	k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
 	if err != nil {
-		return xane.Diagnostics{}, nil, 0, 0, 0, err
+		return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, err
 	}
 	defer k.Close()
-	diag := k.Diagnostics()
+	diag := xanetelemetry.ProbeDiagnostics(k)
 
 	input := patternedInput(k.InputAllocSize(0))
 	if err := k.WriteInput(0, input); err != nil {
-		return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
+		return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
 	}
 
 	pool, err := xane.NewRequestPool(k, depth)
 	if err != nil {
-		return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("request pool: %w", err)
+		return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("request pool: %w", err)
 	}
 	defer pool.Close()
 
@@ -169,21 +170,21 @@ func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inpu
 	return diag, flatten(allLat), runDur, maxInflight, avg, nil
 }
 
-func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xane.Diagnostics, []float64, time.Duration, int64, float64, error) {
+func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
 	ks := make([]*xane.Kernel, 0, depth)
 	defer closeKernels(ks)
 	for i := 0; i < depth; i++ {
 		k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
 		if err != nil {
-			return xane.Diagnostics{}, nil, 0, 0, 0, err
+			return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, err
 		}
 		if err := k.WriteInput(0, patternedInput(k.InputAllocSize(0))); err != nil {
 			k.Close()
-			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
+			return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("stage input: %w", err)
 		}
 		ks = append(ks, k)
 	}
-	diag := ks[0].Diagnostics()
+	diag := xanetelemetry.ProbeDiagnostics(ks[0])
 
 	waitEvents := make([]*xane.SharedEvent, depth)
 	signalEvents := make([]*xane.SharedEvent, depth)
@@ -193,11 +194,11 @@ func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uin
 		var err error
 		waitEvents[i], err = xane.NewSharedEvent()
 		if err != nil {
-			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create wait event: %w", err)
+			return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create wait event: %w", err)
 		}
 		signalEvents[i], err = xane.NewSharedEvent()
 		if err != nil {
-			return xane.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create signal event: %w", err)
+			return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, fmt.Errorf("create signal event: %w", err)
 		}
 	}
 
