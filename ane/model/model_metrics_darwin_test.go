@@ -6,14 +6,15 @@ import (
 	"testing"
 
 	xane "github.com/tmc/apple/x/ane"
+	xanetelemetry "github.com/tmc/apple/x/ane/telemetry"
 )
 
 func TestEvalStatsMetrics(t *testing.T) {
-	st := xane.EvalStats{
+	st := xanetelemetry.EvalStats{
 		HWExecutionNS:         123,
 		PerfCounterData:       make([]byte, 7),
 		RawStatsData:          make([]byte, 11),
-		PerfCounters:          []xane.PerfCounter{{Index: 3, Name: "cycles", Value: 17}, {Index: 9, Value: 29}},
+		PerfCounters:          []xanetelemetry.PerfCounter{{Index: 3, Name: "cycles", Value: 17}, {Index: 9, Value: 29}},
 		PerfCountersTruncated: true,
 	}
 
