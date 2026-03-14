@@ -262,14 +262,6 @@ func (p *sharedMILProgram) release() {
 	if p.refs > 0 {
 		p.refs--
 	}
-	if p.refs != 0 {
-		return
-	}
-	delete(sharedMILCache.m, p.key)
-	if p.owner != nil {
-		_ = p.owner.Close()
-		p.owner = nil
-	}
 }
 
 func sharedMILCacheKey(opts CompileOptions) string {
