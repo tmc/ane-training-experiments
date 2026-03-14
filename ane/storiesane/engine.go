@@ -123,8 +123,9 @@ type Engine struct {
 	gradPrev      []float32
 	ropeCos       []float32
 	ropeSin       []float32
-	embedGradDone chan struct{}
-	stepMetrics   aneStepMetrics
+	embedGradDone    chan struct{}
+	asyncRefreshDone chan time.Duration // async weight refresh result
+	stepMetrics      aneStepMetrics
 }
 
 const (
@@ -386,7 +387,8 @@ func (e *Engine) Flush() (time.Duration, error) {
 	if e == nil || e.mw == nil || e.opt == nil {
 		return 0, fmt.Errorf("storiesane flush: engine is closed")
 	}
-	compileDur := e.flushPending()
+	e.flushPending()
+	compileDur := e.waitAsyncRefresh()
 	if compileDur > 0 {
 		e.state.CumTrainMS += float64(compileDur) / float64(time.Millisecond)
 		e.state.CumWallMS = float64(time.Since(e.start)) / float64(time.Millisecond)
@@ -416,6 +418,7 @@ func (e *Engine) SaveCheckpoint(path string, meta stories.TrainMeta) error {
 	if e == nil || e.mw == nil || e.opt == nil {
 		return fmt.Errorf("storiesane save checkpoint: engine is closed")
 	}
+	e.waitAsyncRefresh()
 	meta.LR = e.lr
 	meta.Loss = e.state.LastLoss
 	meta.CumTrain = e.state.CumTrainMS
@@ -466,6 +469,7 @@ func (e *Engine) Close() {
 	if e == nil {
 		return
 	}
+	e.waitAsyncRefresh()
 	for i := range e.layers {
 		if e.layers[i] != nil {
 			e.layers[i].close()
@@ -534,11 +538,13 @@ func (e *Engine) flushPending() time.Duration {
 	adamUpdateCFWithInv(e.mw.RMSFinal, e.accum.RMSFinal, &e.opt.RMSFinal, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, 0, invBC1, invBC2, false)
 	adamUpdateCFWithInv(e.mw.Embed, e.accum.Embed, &e.opt.Embed, e.lr, e.adamBeta1, e.adamBeta2, e.adamEps, e.weightDecay, invBC1, invBC2, true)
 	e.stepMetrics.addAdam(time.Since(adamStart))
-	compileDur := e.refreshANERuntimeForWeights()
+	// Start kernel refresh asynchronously so the next step's data loading
+	// and embedding lookup overlap with compilation.
+	e.startAsyncRefresh()
 	clearModelGrad(e.accum)
 	e.state.PendingSteps = 0
 	e.state.CumBatches++
-	return compileDur
+	return 0
 }
 
 const (

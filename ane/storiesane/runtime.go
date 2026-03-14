@@ -68,6 +68,31 @@ func (e *Engine) refreshANERuntimeForWeights() time.Duration {
 	return dur
 }
 
+// startAsyncRefresh begins refreshing ANE kernels on a background goroutine.
+// The caller must call waitAsyncRefresh before accessing layers or backward
+// kernels.
+func (e *Engine) startAsyncRefresh() {
+	if e == nil || !e.useANE {
+		return
+	}
+	ch := make(chan time.Duration, 1)
+	e.asyncRefreshDone = ch
+	go func() {
+		ch <- e.refreshANERuntimeForWeights()
+	}()
+}
+
+// waitAsyncRefresh waits for a pending async refresh to complete and returns
+// the compile duration. Returns 0 if no async refresh is pending.
+func (e *Engine) waitAsyncRefresh() time.Duration {
+	if e == nil || e.asyncRefreshDone == nil {
+		return 0
+	}
+	dur := <-e.asyncRefreshDone
+	e.asyncRefreshDone = nil
+	return dur
+}
+
 func (e *Engine) ensureOffload() {
 	if e == nil || !e.useANE || e.mw == nil {
 		return
