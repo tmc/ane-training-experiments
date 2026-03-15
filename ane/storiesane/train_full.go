@@ -511,16 +511,7 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 		e.compactEmbedGrad(gradLogits, gradScale, target)
 		e.stepMetrics.addEmbedGrad(time.Since(begin))
 	}
-	if e.off == nil || !e.off.hasRMSBackward() {
-		stories.RMSNormBackward(e.dx, e.gRMS, e.dy, finalHidden, e.mw.RMSFinal, stories.Dim, e.seq)
-	} else if err := e.off.runRMSBackward(e.dx, e.dy, finalHidden); err != nil {
-		e.off.disableRMSBackward()
-		stories.RMSNormBackward(e.dx, e.gRMS, e.dy, finalHidden, e.mw.RMSFinal, stories.Dim, e.seq)
-	} else {
-		begin := time.Now()
-		rmsNormGradWeights(e.gRMS, e.dy, finalHidden, e.mw.RMSFinal, stories.Dim, e.seq)
-		e.stepMetrics.addRMSDW(time.Since(begin))
-	}
+	rmsNormBackwardPooled(e.dx, e.gRMS, e.dy, finalHidden, e.mw.RMSFinal, stories.Dim, e.seq)
 	e.stepMetrics.addFinalHead(time.Since(start))
 	return loss, nil
 }
@@ -594,7 +585,7 @@ func (e *Engine) buildCompactVocab(targets []uint16) int {
 }
 
 func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, _ []float32) {
-	stories.RMSNormBackward(dx, dw, dy, x, w, stories.Dim, e.seq)
+	rmsNormBackwardPooled(dx, dw, dy, x, w, stories.Dim, e.seq)
 }
 
 func (e *Engine) ensureAttentionCache(layer *stories.LayerWeights, cache *layerCache) {
@@ -629,7 +620,7 @@ func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, 
 	linearBackwardDXCF(e.gradXNorm, layer.W1, e.gradH1, stories.Hidden, stories.Dim, e.seq)
 	linearBackwardDXCF(dPrev, layer.W3, e.gradH3, stories.Hidden, stories.Dim, e.seq)
 	addSlice(e.gradXNorm, dPrev)
-	stories.RMSNormBackward(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
+	rmsNormBackwardPooled(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
 	addSlice(e.gradX2, dPrev)
 }
 
@@ -682,7 +673,7 @@ func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerC
 		linearBackwardDXCF(dPrev, layer.Wv, e.gradV, stories.Dim, stories.Dim, e.seq)
 		addSlice(e.gradXNorm, dPrev)
 	}
-	stories.RMSNormBackward(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, stories.Dim, e.seq)
+	rmsNormBackwardPooled(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, stories.Dim, e.seq)
 	addSlice(dPrev, dx2)
 }
 
