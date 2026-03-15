@@ -493,9 +493,7 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 					o.metrics.addHW(hwNS)
 				}
 			}
-			for i, v := range o.clsBwdTmp {
-				dy[i] += v
-			}
+			addSliceAccel(dy, o.clsBwdTmp)
 		}
 		return nil
 	}
@@ -523,9 +521,7 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 		if err := tile.kernel.ReadOutputFP16(0, o.clsBwdTmp); err != nil {
 			return err
 		}
-		for i, v := range o.clsBwdTmp {
-			dy[i] += v
-		}
+		addSliceAccel(dy, o.clsBwdTmp)
 	}
 	return nil
 }

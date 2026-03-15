@@ -554,13 +554,9 @@ func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, 
 	siluBackwardAccel(e.gradH1, e.gradH3, e.gradGate, cache.h1, cache.h3)
 	linearBackwardDXCF(e.gradXNorm, layer.W1, e.gradH1, stories.Hidden, stories.Dim, e.seq)
 	linearBackwardDXCF(dPrev, layer.W3, e.gradH3, stories.Hidden, stories.Dim, e.seq)
-	for i := range e.gradXNorm {
-		e.gradXNorm[i] += dPrev[i]
-	}
+	addSlice(e.gradXNorm, dPrev)
 	stories.RMSNormBackward(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
-	for i := range e.gradX2 {
-		e.gradX2[i] += dPrev[i]
-	}
+	addSlice(e.gradX2, dPrev)
 }
 
 func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) error {
@@ -576,9 +572,7 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 		accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
-	for i := range cache.dx2 {
-		cache.dx2[i] += dPrev[i]
-	}
+	addSlice(cache.dx2, dPrev)
 	return nil
 }
 
@@ -596,9 +590,7 @@ func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories
 		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
-	for i := range dPrev {
-		dPrev[i] += dx2[i]
-	}
+	addSlice(dPrev, dx2)
 	return nil
 }
 
@@ -614,18 +606,12 @@ func (e *Engine) backwardAttentionCPU(layer *stories.LayerWeights, cache *layerC
 		stories.Dim, stories.Dim, e.seq) {
 		linearBackwardDXCF(e.gradXNorm, layer.Wq, e.gradQ, stories.Dim, stories.Dim, e.seq)
 		linearBackwardDXCF(dPrev, layer.Wk, e.gradK, stories.Dim, stories.Dim, e.seq)
-		for i := range e.gradXNorm {
-			e.gradXNorm[i] += dPrev[i]
-		}
+		addSlice(e.gradXNorm, dPrev)
 		linearBackwardDXCF(dPrev, layer.Wv, e.gradV, stories.Dim, stories.Dim, e.seq)
-		for i := range e.gradXNorm {
-			e.gradXNorm[i] += dPrev[i]
-		}
+		addSlice(e.gradXNorm, dPrev)
 	}
 	stories.RMSNormBackward(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, stories.Dim, e.seq)
-	for i := range dPrev {
-		dPrev[i] += dx2[i]
-	}
+	addSlice(dPrev, dx2)
 }
 
 
