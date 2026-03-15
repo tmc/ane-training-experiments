@@ -142,7 +142,7 @@ func (e *Executor) evalInto(dst, x, w []float32, collectMetrics bool) (EvalStats
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		packInputTile(tile.inputPacked, x, w, e.batch, e.inDim, e.outDim, tile.outOffset, tile.outDim)
-		if err := tile.k.WriteInputF32(0, tile.inputPacked); err != nil {
+		if err := tileWriteInputF32(tile); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write input tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
@@ -159,7 +159,7 @@ func (e *Executor) evalInto(dst, x, w []float32, collectMetrics bool) (EvalStats
 				return EvalStats{}, fmt.Errorf("dynamic matmul: eval tile %d: %w", i, err)
 			}
 		}
-		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
+		if err := tileReadOutputF32(tile); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read output tile %d: %w", i, err)
 		}
 		unpackOutputTile(dst, tile.outputPacked, e.batch, e.outDim, tile.outOffset, tile.outDim)
@@ -226,7 +226,7 @@ func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, 
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
-		if err := tile.k.WriteInputF32(0, tile.inputPacked); err != nil {
+		if err := tileWriteInputF32(tile); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
@@ -271,7 +271,7 @@ func (e *Executor) ReadOutputCF(dstCF []float32) error {
 
 	for i := range e.tiles {
 		tile := &e.tiles[i]
-		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
+		if err := tileReadOutputF32(tile); err != nil {
 			return fmt.Errorf("dynamic matmul: read channel-first output tile %d: %w", i, err)
 		}
 		copyOutputTileCF(dstCF, tile.outputPacked, e.batch, e.outDim, tile.outOffset, tile.outDim)
@@ -439,7 +439,7 @@ func (e *Executor) evalOneHotIOInto(dst []float32, xs []int, collectMetrics bool
 				return EvalStats{}, fmt.Errorf("dynamic matmul: eval one-hot tile %d: %w", i, err)
 			}
 		}
-		if err := tile.k.ReadOutputF32(0, tile.outputPacked); err != nil {
+		if err := tileReadOutputF32(tile); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: read one-hot tile %d: %w", i, err)
 		}
 		unpackOutputTileRows(dst, tile.outputPacked, logicalBatch, e.batch, e.outDim, tile.outOffset, tile.outDim)
