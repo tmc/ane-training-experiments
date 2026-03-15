@@ -628,6 +628,15 @@ func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, 
 
 func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) error {
 	e.ensureFFNCache(layer, cache)
+	// Alias dh1/dh3 into the backward output buffer before runFFN so the
+	// read inside runDynamicFFN skips the copy (dh1/dh3 point directly into
+	// lb.ffnOut). This avoids 2× hidden×seq float copies per layer.
+	if lb != nil && lb.dynamic {
+		dimN := lb.dim * lb.seq
+		hiddenN := lb.hidden * lb.seq
+		cache.dh1 = lb.ffnOut[dimN : dimN+hiddenN]
+		cache.dh3 = lb.ffnOut[dimN+hiddenN : dimN+2*hiddenN]
+	}
 	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dFFN, cache.h1, cache.h3); err != nil {
 		return err
 	}
