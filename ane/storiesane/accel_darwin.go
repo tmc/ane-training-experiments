@@ -301,13 +301,12 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 	return float64(loss), int(valid)
 }
 
-// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares and
-// vDSP_vmul for the strided element-wise multiply in channel-first layout.
+// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares in
+// channel-first layout. The inner scaling loop remains scalar because dim=64
+// is too small to amortize the CGo crossing overhead of additional vDSP calls.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	parallelForCF(seq, func(start, end int) {
-		var sw [512]float32 // stack-allocated; dim <= 512 for stories models
 		for t := start; t < end; t++ {
-			// Sum of squares with stride = seq using vDSP
 			var ssq C.float
 			C.vDSP_svesq(
 				(*C.float)(unsafe.Pointer(&x[t])), C.vDSP_Stride(seq),
@@ -318,20 +317,9 @@ func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 			if rrms != nil {
 				rrms[t] = scale
 			}
-			// Precompute scale * w[i] into contiguous buffer
-			C.vDSP_vsmul(
-				(*C.float)(unsafe.Pointer(&w[0])), 1,
-				(*C.float)(unsafe.Pointer(&scale)),
-				(*C.float)(unsafe.Pointer(&sw[0])), 1,
-				C.vDSP_Length(dim),
-			)
-			// Strided element-wise multiply: out[i*seq+t] = x[i*seq+t] * sw[i]
-			C.vDSP_vmul(
-				(*C.float)(unsafe.Pointer(&x[t])), C.vDSP_Stride(seq),
-				(*C.float)(unsafe.Pointer(&sw[0])), 1,
-				(*C.float)(unsafe.Pointer(&out[t])), C.vDSP_Stride(seq),
-				C.vDSP_Length(dim),
-			)
+			for i := 0; i < dim; i++ {
+				out[i*seq+t] = x[i*seq+t] * scale * w[i]
+			}
 		}
 	})
 }
