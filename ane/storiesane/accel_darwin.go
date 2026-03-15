@@ -351,6 +351,22 @@ func blendResidualInPlaceAccel(sum, base []float32, scale float32) {
 	)
 }
 
+// blendResidualAccel: dst[i] = base[i] + (branch[i]-base[i])*scale
+// Like blendResidualInPlaceAccel but reads from a separate branch buffer,
+// allowing the caller to skip a copy when branch != dst.
+func blendResidualAccel(dst, base, branch []float32, scale float32) {
+	if len(dst) == 0 {
+		return
+	}
+	C.vDSP_vintb(
+		(*C.float)(unsafe.Pointer(&base[0])), 1,
+		(*C.float)(unsafe.Pointer(&branch[0])), 1,
+		(*C.float)(unsafe.Pointer(&scale)),
+		(*C.float)(unsafe.Pointer(&dst[0])), 1,
+		C.vDSP_Length(len(dst)),
+	)
+}
+
 // addScaledResidualAccel: dst[i] = base[i] + scale*branch[i]
 func addScaledResidualAccel(dst, base, branch []float32, scale float32) {
 	if len(dst) == 0 {

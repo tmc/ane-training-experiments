@@ -51,6 +51,12 @@ func blendResidualInPlaceAccel(sum, base []float32, scale float32) {
 	}
 }
 
+func blendResidualAccel(dst, base, branch []float32, scale float32) {
+	for i := range dst {
+		dst[i] = base[i] + (branch[i]-base[i])*scale
+	}
+}
+
 func addScaledResidualAccel(dst, base, branch []float32, scale float32) {
 	for i := range dst {
 		dst[i] = base[i] + scale*branch[i]

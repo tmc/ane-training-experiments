@@ -349,8 +349,7 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
 	}
-	copy(lf.x2, lf.attOut[:want])
-	blendResidualInPlace(lf.x2, x)
+	blendResidual(lf.x2, x, lf.attOut[:want])
 	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.x2); err != nil {
 		return fmt.Errorf("run layer forward dynamic: write ffn input: %w", err)
 	}
@@ -360,8 +359,7 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := readOutputFP16ChannelsFast(lf.ffn, 0, 0, lf.seq, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read ffn output: %w", err)
 	}
-	copy(out, lf.ffnOut[:want])
-	blendResidualInPlace(out, lf.x2)
+	blendResidual(out, lf.x2, lf.ffnOut[:want])
 	return nil
 }
 

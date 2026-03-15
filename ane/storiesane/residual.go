@@ -12,6 +12,10 @@ func blendResidualInPlace(sum, base []float32) {
 	blendResidualInPlaceAccel(sum, base, layerResidualScale)
 }
 
+func blendResidual(dst, base, branch []float32) {
+	blendResidualAccel(dst, base, branch, layerResidualScale)
+}
+
 func addScaledResidual(dst, base, branch []float32) {
 	addScaledResidualAccel(dst, base, branch, layerResidualScale)
 }
