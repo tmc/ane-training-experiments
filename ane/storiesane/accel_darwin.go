@@ -79,14 +79,11 @@ static float softmax_strided_ce_f32(
 	int stride,
 	int t
 ) {
-	// Find max
-	float mx = logits[t];
-	for (int i = 1; i < vocab; i++) {
-		float v = logits[i*stride + t];
-		if (v > mx) mx = v;
-	}
+	// Find max using vDSP (handles stride natively).
+	float mx;
+	vDSP_maxv(logits + t, stride, &mx, vocab);
 
-	// Gather, subtract max, vectorized exp, scatter, accumulate sum
+	// Gather, subtract max, vectorized exp, scatter, accumulate sum.
 	enum { kChunk = 4096 };
 	float sum = 0.0f;
 	for (int off = 0; off < vocab; off += kChunk) {
@@ -103,11 +100,9 @@ static float softmax_strided_ce_f32(
 		}
 	}
 
-	// Normalize
+	// Normalize using vDSP (handles stride natively).
 	float inv = 1.0f / sum;
-	for (int i = 0; i < vocab; i++) {
-		dLogits[i*stride + t] *= inv;
-	}
+	vDSP_vsmul(dLogits + t, stride, &inv, dLogits + t, stride, vocab);
 
 	// Loss
 	if (target < 0 || target >= vocab) {
