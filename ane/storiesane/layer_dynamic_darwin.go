@@ -423,11 +423,9 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	if err := evalKernelTracked(lb.metrics, lb.ffnW2); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: eval w2: %w", err)
 	}
-	if err := copyOutputRangeToInputCGo(lb.ffn, 0, 0, 0, lb.ffnW2, 0, 0, 0, lb.hidden, lb.seq); err != nil {
-		return fmt.Errorf("run layer backward dynamic ffn: copy dsilu to tail: %w", err)
-	}
-	if err := writeStoriesFFNTailAuxActs(lb.ffn, lb.seq, lb.hidden, h1, h3); err != nil {
-		return fmt.Errorf("run layer backward dynamic ffn: write tail aux input: %w", err)
+	if err := copyAndWriteFP16CGo(lb.ffn, 0, lb.ffnW2, 0, 0, lb.hidden,
+		h1, lb.seq, h3, 2*lb.seq, lb.seq); err != nil {
+		return fmt.Errorf("run layer backward dynamic ffn: copy dsilu + write h1/h3: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.ffn); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: eval tail: %w", err)
