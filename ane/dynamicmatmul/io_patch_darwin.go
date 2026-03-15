@@ -16,31 +16,6 @@ static void iosurface_unlock(IOSurfaceRef surf, uint32_t options) {
 	IOSurfaceUnlock(surf, options, NULL);
 }
 
-// iosurface_write_partial_width_f32 writes only the first writeWidth
-// floats of each channel row, leaving the rest untouched. Used to update
-// activation columns without re-writing static weight columns.
-static int iosurface_write_partial_width_f32(
-	IOSurfaceRef surf,
-	const float* data,
-	int channels, int srcStride, int writeWidth,
-	int planeStride, int allocSize
-) {
-	void *base = iosurface_lock_and_get_base(surf, 0);
-	if (!base) {
-		iosurface_unlock(surf, 0);
-		return -1;
-	}
-	char *dst = (char*)base;
-	int copyBytes = writeWidth * 4;
-	for (int c = 0; c < channels; c++) {
-		int off = c * planeStride;
-		if (off + copyBytes > allocSize) break;
-		memcpy(dst + off, data + c * srcStride, copyBytes);
-	}
-	iosurface_unlock(surf, 0);
-	return 0;
-}
-
 // iosurface_write_strided_f32 writes float32 data to an IOSurface with
 // the given layout. Single CGo crossing replaces 3 purego calls.
 static int iosurface_write_strided_f32(
@@ -252,34 +227,8 @@ func tileWriteInputF32(tile *tile) error {
 	return writeFullTileInput(tile)
 }
 
-func tileWriteActivationsF32(tile *tile, batch, inDim int) error {
-	layout := tile.k.InputLayout(0)
-	if layout.Height != 1 || layout.ElemSize != 4 {
-		return writeFullTileInput(tile)
-	}
-	ref := tile.k.InputSurface(0)
-	if ref == 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface ref")
-	}
-	srcStride := batch + tile.outDim
-	return writeActivationsToSurface(ref, tile.inputPacked, layout, srcStride, batch)
-}
-
 func tileReadOutputF32(tile *tile) error {
 	return readOutputF32CGo(tile.k, 0, tile.outputPacked)
-}
-
-func writeActivationsToSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xane.TensorLayout, srcStride, writeWidth int) error {
-	rc := C.iosurface_write_partial_width_f32(
-		C.IOSurfaceRef(unsafe.Pointer(ref)),
-		(*C.float)(unsafe.Pointer(&data[0])),
-		C.int(layout.Channels), C.int(srcStride), C.int(writeWidth),
-		C.int(layout.PlaneStride), C.int(layout.AllocSize()),
-	)
-	if rc != 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface base address")
-	}
-	return nil
 }
 
 func writeF32ToSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xane.TensorLayout) error {
