@@ -43,7 +43,7 @@ static void silu_backward_f32(
 
 // silu_gate_forward_f32 computes gate[i] = silu(h1[i]) * h3[i]
 // where silu(x) = x / (1 + exp(-x)).
-// Uses chunked vvexpf for vectorized exp().
+// Uses chunked vvexpf for vectorized exp() and vDSP for all arithmetic.
 static void silu_gate_forward_f32(
 	float* restrict gate,
 	const float* restrict h1,
@@ -54,16 +54,16 @@ static void silu_gate_forward_f32(
 	for (int off = 0; off < n; off += kChunk) {
 		int cnt = n - off;
 		if (cnt > kChunk) cnt = kChunk;
-		float negH1[kChunk];
+		vDSP_Length ucnt = (vDSP_Length)cnt;
+		float buf[kChunk];
 		float minusOne = -1.0f;
-		vDSP_vsmul(h1 + off, 1, &minusOne, negH1, 1, cnt);
-		float expBuf[kChunk];
-		vvexpf(expBuf, negH1, &cnt);
-		for (int i = 0; i < cnt; i++) {
-			int idx = off + i;
-			float sig = 1.0f / (1.0f + expBuf[i]);
-			gate[idx] = (h1[idx] * sig) * h3[idx];
-		}
+		vDSP_vsmul(h1 + off, 1, &minusOne, buf, 1, ucnt);   // buf = -h1
+		vvexpf(buf, buf, &cnt);                                // buf = exp(-h1)
+		float one = 1.0f;
+		vDSP_vsadd(buf, 1, &one, buf, 1, ucnt);              // buf = 1 + exp(-h1)
+		vDSP_svdiv(&one, buf, 1, buf, 1, ucnt);              // buf = 1 / (1 + exp(-h1)) = sig
+		vDSP_vmul(h1 + off, 1, buf, 1, gate + off, 1, ucnt); // gate = h1 * sig
+		vDSP_vmul(gate + off, 1, h3 + off, 1, gate + off, 1, ucnt); // gate = gate * h3
 	}
 }
 
