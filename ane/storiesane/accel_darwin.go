@@ -163,7 +163,10 @@ static void softmax_row_f32(float* out, const float* in, int n) {
 */
 import "C"
 
-import "unsafe"
+import (
+	"math"
+	"unsafe"
+)
 
 func scaleSliceAccel(v []float32, scale float32) {
 	if len(v) == 0 || scale == 1 {
@@ -198,6 +201,24 @@ func scaleIntoAccel(dst, src []float32, scale float32) {
 		(*C.float)(unsafe.Pointer(&scale)),
 		(*C.float)(unsafe.Pointer(&dst[0])), 1,
 		C.vDSP_Length(len(dst)),
+	)
+}
+
+// blendResidualInPlaceAccel: sum[i] = base[i] + (sum[i]-base[i])*scale
+// Uses vDSP_vintb (vector interpolation): C[i] = A[i] + (B[i]-A[i])*scale
+func blendResidualInPlaceAccel(sum, base []float32, scale float32) {
+	if len(sum) == 0 {
+		return
+	}
+	// vDSP_vintb: C[i] = A[i] + (B[i] - A[i]) * iScale
+	// We want: sum[i] = base[i] + (sum[i] - base[i]) * scale
+	// So: A=base, B=sum, C=sum, iScale=scale
+	C.vDSP_vintb(
+		(*C.float)(unsafe.Pointer(&base[0])), 1,
+		(*C.float)(unsafe.Pointer(&sum[0])), 1,
+		(*C.float)(unsafe.Pointer(&scale)),
+		(*C.float)(unsafe.Pointer(&sum[0])), 1,
+		C.vDSP_Length(len(sum)),
 	)
 }
 
@@ -276,6 +297,30 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 		&valid,
 	)
 	return float64(loss), int(valid)
+}
+
+// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares in
+// channel-first layout. The inner scaling loop remains scalar because the
+// weight-scaled output has stride=seq (gather/scatter pattern).
+func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
+	parallelForCF(seq, func(start, end int) {
+		for t := start; t < end; t++ {
+			// Sum of squares with stride = seq using vDSP
+			var ssq C.float
+			C.vDSP_svesq(
+				(*C.float)(unsafe.Pointer(&x[t])), C.vDSP_Stride(seq),
+				&ssq,
+				C.vDSP_Length(dim),
+			)
+			scale := float32(1.0 / math.Sqrt(float64(ssq)/float64(dim)+1e-5))
+			if rrms != nil {
+				rrms[t] = scale
+			}
+			for i := 0; i < dim; i++ {
+				out[i*seq+t] = x[i*seq+t] * scale * w[i]
+			}
+		}
+	})
 }
 
 func softmaxRowAccel(out, in []float32) {

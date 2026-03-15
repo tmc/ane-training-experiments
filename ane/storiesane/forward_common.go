@@ -50,22 +50,7 @@ func rmsNormCF(out, x, w []float32, dim, seq int) {
 }
 
 func rmsNormCFWithRRMS(out, rrms, x, w []float32, dim, seq int) {
-	parallelForCF(seq, func(start, end int) {
-		for t := start; t < end; t++ {
-			sum := 0.0
-			for i := 0; i < dim; i++ {
-				v := float64(x[i*seq+t])
-				sum += v * v
-			}
-			scale := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
-			if rrms != nil {
-				rrms[t] = scale
-			}
-			for i := 0; i < dim; i++ {
-				out[i*seq+t] = x[i*seq+t] * scale * w[i]
-			}
-		}
-	})
+	rmsNormCFWithRRMSImpl(out, rrms, x, w, dim, seq)
 }
 
 func rmsNormRRMS(rrms, x []float32, dim, seq int) {

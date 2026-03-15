@@ -4,6 +4,25 @@ package storiesane
 
 import "math"
 
+func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
+	parallelForCF(seq, func(start, end int) {
+		for t := start; t < end; t++ {
+			sum := 0.0
+			for i := 0; i < dim; i++ {
+				v := float64(x[i*seq+t])
+				sum += v * v
+			}
+			scale := float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
+			if rrms != nil {
+				rrms[t] = scale
+			}
+			for i := 0; i < dim; i++ {
+				out[i*seq+t] = x[i*seq+t] * scale * w[i]
+			}
+		}
+	})
+}
+
 func scaleSliceAccel(v []float32, scale float32) {
 	for i := range v {
 		v[i] *= scale
@@ -19,6 +38,12 @@ func addSliceAccel(dst, src []float32) {
 func scaleIntoAccel(dst, src []float32, scale float32) {
 	for i := range dst {
 		dst[i] = src[i] * scale
+	}
+}
+
+func blendResidualInPlaceAccel(sum, base []float32, scale float32) {
+	for i := range sum {
+		sum[i] = base[i] + (sum[i]-base[i])*scale
 	}
 }
 
