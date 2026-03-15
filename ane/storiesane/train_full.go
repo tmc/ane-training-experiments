@@ -637,8 +637,7 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 		cache := &e.caches[l]
 		grad := &e.accum.Layers[l]
 
-		copy(cache.dOut, dCur)
-		scaleSlice(cache.dOut, layerResidualScale)
+		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
 			copy(cache.dx2, dCur)
 			// backwardFFNHybrid submits dW jobs internally, right after
@@ -712,8 +711,7 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 		grad := &e.applyGrads[l]
 		clearLayerGrad(grad)
 
-		copy(cache.dOut, dCur)
-		scaleSlice(cache.dOut, layerResidualScale)
+		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
 			copy(cache.dx2, dCur)
 			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
