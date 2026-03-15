@@ -199,9 +199,13 @@ func (p *sharedMILProgram) mapRequest(request appleneuralengine.ANERequest) erro
 
 func (p *sharedMILProgram) mapRequestSlow(request appleneuralengine.ANERequest) error {
 	p.mapMu.Lock()
+	mode := p.mapMode.Load()
+	if mode != 0 {
+		p.mapMu.Unlock()
+		return p.mapRequest(request)
+	}
 	defer p.mapMu.Unlock()
 
-	mode := p.mapMode.Load()
 	try := []bool{true, false}
 	switch mode {
 	case 1:
