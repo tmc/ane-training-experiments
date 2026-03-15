@@ -60,9 +60,3 @@ func crossEntropyLossFromProbsRange(dLogits, probs []float32, targets []uint16, 
 	}
 	return loss, valid
 }
-
-func scaleCrossEntropyGradSlice(dLogits []float32, scale float32, start, end int) {
-	for i := start; i < end; i++ {
-		dLogits[i] *= scale
-	}
-}
