@@ -329,9 +329,6 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 
 // runDynamicForwardOnly executes the attention and FFN kernels, writing the
 // blended residual result into out. It does NOT populate the backward cache.
-// Only reads the main output channels (dim) from each kernel; the remaining
-// channels (q/k/v/attOut for attention, h1/h3 for FFN) are deferred to
-// fillDynamicCache which reads them directly from the IOSurface.
 func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if lf == nil || lf.att == nil || lf.ffn == nil {
 		return fmt.Errorf("run layer forward dynamic: layer is closed")
@@ -349,11 +346,10 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval attention: %w", err)
 	}
-	// Only read channels [0, dim) for the forward path. The backward cache
-	// channels (q, k, v, attOut) are read later by fillDynamicCache.
-	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.x2); err != nil {
+	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
 	}
+	copy(lf.x2, lf.attOut[:want])
 	blendResidualInPlace(lf.x2, x)
 	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.x2); err != nil {
 		return fmt.Errorf("run layer forward dynamic: write ffn input: %w", err)
@@ -361,40 +357,35 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval ffn: %w", err)
 	}
-	// Only read channels [0, dim) for the forward path. The backward cache
-	// channels (h1, h3) are read later by fillDynamicCache.
-	if err := readOutputFP16ChannelsFast(lf.ffn, 0, 0, lf.seq, out); err != nil {
+	if err := readOutputFP16ChannelsFast(lf.ffn, 0, 0, lf.seq, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read ffn output: %w", err)
 	}
+	copy(out, lf.ffnOut[:want])
 	blendResidualInPlace(out, lf.x2)
 	return nil
 }
 
 // fillDynamicCache populates the backward cache from the layer's intermediate
-// buffers and IOSurface outputs. Must be called after runDynamicForwardOnly.
-// Reads backward-only channels (q/k/v/attOut, h1/h3) directly from the
-// IOSurface, avoiding copies through intermediate buffers.
+// buffers (attOut, ffnOut, x2). Must be called after runDynamicForwardOnly.
 // Safe to call concurrently with the next layer's runDynamicForwardOnly since
-// each layer has its own IOSurfaces and cache buffers.
+// it only reads from this layer's buffers and writes to its own cache.
 func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 	if cache == nil {
 		return
 	}
+	want := lf.dim * lf.seq
 	copy(cache.x2, lf.x2)
 	cache.attTapsReady = false
 	cache.ffnTapsReady = false
 	rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, x, lf.rmsAtt, lf.dim, lf.seq)
-	// Read backward-cache channels directly from the attention IOSurface output.
-	// Channels [dim, 5*dim) contain q, k, v, attOut respectively.
-	readOutputFP16ChannelsFast(lf.att, 0, lf.dim, lf.seq, cache.q)
-	readOutputFP16ChannelsFast(lf.att, 0, 2*lf.dim, lf.seq, cache.k)
-	readOutputFP16ChannelsFast(lf.att, 0, 3*lf.dim, lf.seq, cache.v)
-	readOutputFP16ChannelsFast(lf.att, 0, 4*lf.dim, lf.seq, cache.attOut)
+	copy(cache.q, lf.attOut[want:2*want])
+	copy(cache.k, lf.attOut[2*want:3*want])
+	copy(cache.v, lf.attOut[3*want:4*want])
+	copy(cache.attOut, lf.attOut[4*want:5*want])
 	cache.attTapsReady = true
-	// Read backward-cache channels directly from the FFN IOSurface output.
-	// Channels [dim, dim+hidden) contain h1, [dim+hidden, dim+2*hidden) contain h3.
-	readOutputFP16ChannelsFast(lf.ffn, 0, lf.dim, lf.seq, cache.h1)
-	readOutputFP16ChannelsFast(lf.ffn, 0, lf.dim+lf.hidden, lf.seq, cache.h3)
+	hiddenSpan := lf.hidden * lf.seq
+	copy(cache.h1, lf.ffnOut[want:want+hiddenSpan])
+	copy(cache.h3, lf.ffnOut[want+hiddenSpan:want+2*hiddenSpan])
 	siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 	rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, lf.rmsFFN, lf.dim, lf.seq)
 	cache.ffnTapsReady = true
