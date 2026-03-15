@@ -68,7 +68,7 @@ func GenDynamicMatmulFP16(inCh, outCh, seq int) string {
 // Output layout:
 //
 //	concat(x2, q, k, v, att_out) along channels.
-func GenStoriesSDPAForwardDynamicTaps(dim, heads, seq int) string {
+func GenStoriesSDPAForwardDynamicTaps(dim, heads, seq int, residualScale ...float64) string {
 	headDim := dim / heads
 	scale := 1.0 / math.Sqrt(float64(headDim))
 	spatial := seq + 1 + 4*dim
@@ -150,7 +150,13 @@ func GenStoriesSDPAForwardDynamicTaps(dim, heads, seq int) string {
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k_rt = transpose(perm=pm,x=k_rope)[name=string(\"k_rt\")];\n", heads, headDim, seq)
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> krf = reshape(shape=att_shape,x=k_rt)[name=string(\"krf\")];\n", dim, seq)
 	appendDynamicMatmulFP16(&b, "oo", "af", "Wo", dim, dim, seq)
-	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x2 = add(x=x,y=oo)[name=string(\"x2\")];\n", dim, seq)
+	if len(residualScale) > 0 && residualScale[0] > 0 && residualScale[0] < 1 {
+		fmt.Fprintf(&b, "        fp16 rsc = const()[name=string(\"rsc\"), val=fp16(%f)];\n", residualScale[0])
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> oos = mul(x=oo,y=rsc)[name=string(\"oos\")];\n", dim, seq)
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x2 = add(x=x,y=oos)[name=string(\"x2\")];\n", dim, seq)
+	} else {
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x2 = add(x=x,y=oo)[name=string(\"x2\")];\n", dim, seq)
+	}
 	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
 	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(x2,qrf,krf,vf,af))[name=string(\"out\")];\n", 5*dim, seq)
@@ -167,7 +173,7 @@ func GenStoriesSDPAForwardDynamicTaps(dim, heads, seq int) string {
 // Output layout:
 //
 //	concat(x_next, h1, h3) along channels.
-func GenStoriesFFNForwardDynamicTaps(dim, hidden, seq int) string {
+func GenStoriesFFNForwardDynamicTaps(dim, hidden, seq int, residualScale ...float64) string {
 	spatial := seq + 1 + 3*hidden
 
 	var b strings.Builder
@@ -204,7 +210,13 @@ func GenStoriesFFNForwardDynamicTaps(dim, hidden, seq int) string {
 	fmt.Fprintf(&b, "        tensor<fp16, [1,1,%d,%d]> fft = transpose(perm=pm,x=ffm)[name=string(\"fft\")];\n", dim, seq)
 	fmt.Fprintf(&b, "        tensor<int32, [4]> ff_shape = const()[name=string(\"ff_shape\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> ff = reshape(shape=ff_shape,x=fft)[name=string(\"ff\")];\n", dim, seq)
-	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x_next = add(x=x2,y=ff)[name=string(\"x_next\")];\n", dim, seq)
+	if len(residualScale) > 0 && residualScale[0] > 0 && residualScale[0] < 1 {
+		fmt.Fprintf(&b, "        fp16 rsc = const()[name=string(\"rsc\"), val=fp16(%f)];\n", residualScale[0])
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> ffs = mul(x=ff,y=rsc)[name=string(\"ffs\")];\n", dim, seq)
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x_next = add(x=x2,y=ffs)[name=string(\"x_next\")];\n", dim, seq)
+	} else {
+		fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> x_next = add(x=x2,y=ff)[name=string(\"x_next\")];\n", dim, seq)
+	}
 	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
 	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
 	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(x_next,h1,h3))[name=string(\"out\")];\n", dim+2*hidden, seq)

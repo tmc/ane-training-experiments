@@ -62,8 +62,8 @@ func dynamicLayerSpec(seq int) (*dynamicLayerCompileSpec, error) {
 		maskBlob:    maskBlob,
 		ropeCosBlob: ropeCosBlob,
 		ropeSinBlob: ropeSinBlob,
-		attMIL:      mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq),
-		ffnMIL:      mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
+		attMIL:      mil.GenStoriesSDPAForwardDynamicTaps(dim, heads, seq, float64(layerResidualScale)),
+		ffnMIL:      mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq, float64(layerResidualScale)),
 		ffnW2MIL:    mil.GenDynamicMatmulFP16(dim, hidden, seq),
 		ffnTailMIL:  mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
 		ffnFusedMIL:  mil.GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq),
@@ -406,8 +406,9 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
 	}
-	blendResidual(lf.x2, x, lf.attOut[:want])
-	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.x2); err != nil {
+	// Attention kernel applies residual scale internally:
+	// attOut[:want] = x + Wo_output * scale (already blended x2).
+	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.attOut[:want]); err != nil {
 		return fmt.Errorf("run layer forward dynamic: write ffn input: %w", err)
 	}
 	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
@@ -416,7 +417,9 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := readOutputFP16ChannelsFast(lf.ffn, 0, 0, lf.seq, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward dynamic: read ffn output: %w", err)
 	}
-	blendResidual(out, lf.x2, lf.ffnOut[:want])
+	// FFN kernel applies residual scale internally:
+	// ffnOut[:want] = x2 + ff * scale (already blended).
+	copy(out, lf.ffnOut[:want])
 	return nil
 }
 
@@ -429,7 +432,9 @@ func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 		return
 	}
 	want := lf.dim * lf.seq
-	cache.x2 = lf.x2
+	// The attention kernel applies residual scale internally, so
+	// attOut[:want] is already the blended x2 = x + Wo_output * scale.
+	cache.x2 = lf.attOut[:want]
 	cache.attTapsReady = false
 	cache.ffnTapsReady = false
 	rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, x, lf.rmsAtt, lf.dim, lf.seq)
