@@ -378,14 +378,18 @@ func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 	cache.attTapsReady = false
 	cache.ffnTapsReady = false
 	rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, x, lf.rmsAtt, lf.dim, lf.seq)
-	copy(cache.q, lf.attOut[want:2*want])
-	copy(cache.k, lf.attOut[2*want:3*want])
-	copy(cache.v, lf.attOut[3*want:4*want])
-	copy(cache.attOut, lf.attOut[4*want:5*want])
+	// Alias cache q/k/v/attOut directly into layerForward's attOut buffer
+	// to avoid 4 copies per layer. These are read-only during backward and
+	// the layerForward buffer persists until the next weight refresh.
+	cache.q = lf.attOut[want : 2*want]
+	cache.k = lf.attOut[2*want : 3*want]
+	cache.v = lf.attOut[3*want : 4*want]
+	cache.attOut = lf.attOut[4*want : 5*want]
 	cache.attTapsReady = true
 	hiddenSpan := lf.hidden * lf.seq
-	copy(cache.h1, lf.ffnOut[want:want+hiddenSpan])
-	copy(cache.h3, lf.ffnOut[want+hiddenSpan:want+2*hiddenSpan])
+	// Alias h1/h3 into layerForward's ffnOut buffer.
+	cache.h1 = lf.ffnOut[want : want+hiddenSpan]
+	cache.h3 = lf.ffnOut[want+hiddenSpan : want+2*hiddenSpan]
 	siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 	rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, lf.rmsFFN, lf.dim, lf.seq)
 	cache.ffnTapsReady = true
