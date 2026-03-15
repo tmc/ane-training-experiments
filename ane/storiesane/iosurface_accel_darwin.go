@@ -42,55 +42,6 @@ static int iosurface_copy_range(
 	iosurface_unlock(dstSurf, 0);
 	return 0;
 }
-// iosurface_copy_from2_to1 copies ranges from two different source surfaces
-// into the same destination surface in a single destination lock/unlock.
-// Saves one lock/unlock of the destination compared to two separate calls.
-static int iosurface_copy_from2_to1(
-	IOSurfaceRef dstSurf, int dstPlaneStride, int dstAllocSize,
-	IOSurfaceRef src1Surf, int src1PlaneStride, int src1AllocSize,
-	int s1_src1Channel, int s1_src1Offset, int s1_dst1Channel, int s1_dst1Offset,
-	int s1_src2Channel, int s1_src2Offset, int s1_dst2Channel, int s1_dst2Offset,
-	int s1_channels, int s1_rowBytes, int s1_elemSize,
-	IOSurfaceRef src2Surf, int src2PlaneStride, int src2AllocSize,
-	int s2_srcChannel, int s2_srcOffset, int s2_dstChannel, int s2_dstOffset,
-	int s2_channels, int s2_rowBytes, int s2_elemSize
-) {
-	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
-	void *src1Base = iosurface_lock_and_get_base(src1Surf, 1);
-	void *src2Base = iosurface_lock_and_get_base(src2Surf, 1);
-	if (!dstBase || !src1Base || !src2Base) {
-		if (src2Base) iosurface_unlock(src2Surf, 1);
-		if (src1Base) iosurface_unlock(src1Surf, 1);
-		if (dstBase) iosurface_unlock(dstSurf, 0);
-		return -1;
-	}
-	// Copy from source 1 (sdpa2): range 1 (dq)
-	for (int c = 0; c < s1_channels; c++) {
-		int dOff = (s1_dst1Channel + c) * dstPlaneStride + s1_dst1Offset * s1_elemSize;
-		int sOff = (s1_src1Channel + c) * src1PlaneStride + s1_src1Offset * s1_elemSize;
-		if (dOff >= 0 && dOff + s1_rowBytes <= dstAllocSize && sOff >= 0 && sOff + s1_rowBytes <= src1AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src1Base + sOff, s1_rowBytes);
-	}
-	// Copy from source 1 (sdpa2): range 2 (dk)
-	for (int c = 0; c < s1_channels; c++) {
-		int dOff = (s1_dst2Channel + c) * dstPlaneStride + s1_dst2Offset * s1_elemSize;
-		int sOff = (s1_src2Channel + c) * src1PlaneStride + s1_src2Offset * s1_elemSize;
-		if (dOff >= 0 && dOff + s1_rowBytes <= dstAllocSize && sOff >= 0 && sOff + s1_rowBytes <= src1AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src1Base + sOff, s1_rowBytes);
-	}
-	iosurface_unlock(src1Surf, 1);
-	// Copy from source 2 (sdpa1): dv
-	for (int c = 0; c < s2_channels; c++) {
-		int dOff = (s2_dstChannel + c) * dstPlaneStride + s2_dstOffset * s2_elemSize;
-		int sOff = (s2_srcChannel + c) * src2PlaneStride + s2_srcOffset * s2_elemSize;
-		if (dOff >= 0 && dOff + s2_rowBytes <= dstAllocSize && sOff >= 0 && sOff + s2_rowBytes <= src2AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src2Base + sOff, s2_rowBytes);
-	}
-	iosurface_unlock(src2Surf, 1);
-	iosurface_unlock(dstSurf, 0);
-	return 0;
-}
-
 // iosurface_copy_range2 copies two contiguous width ranges from the same source
 // surface to the same destination surface in a single lock/unlock pair.
 static int iosurface_copy_range2(
@@ -259,52 +210,6 @@ func copyOutputRange2ToInputCGo(
 		C.int(src1Channel), C.int(src1Offset),
 		C.int(src2Channel), C.int(src2Offset),
 		C.int(channels), C.int(rowBytes), C.int(srcLayout.ElemSize),
-	)
-	if rc != 0 {
-		return errNilIOSurfaceBase
-	}
-	return nil
-}
-
-// copyFrom2SrcToInputCGo copies from two source output surfaces into one
-// destination input surface in a single destination lock/unlock cycle.
-// src1 contributes two channel ranges (dq, dk), src2 contributes one (dv).
-func copyFrom2SrcToInputCGo(
-	dst *model.Kernel, dstInput int,
-	src1 *model.Kernel, src1Output int,
-	s1Src1Ch, s1Src1Off, s1Dst1Ch, s1Dst1Off int,
-	s1Src2Ch, s1Src2Off, s1Dst2Ch, s1Dst2Off int,
-	s1Ch, s1Width int,
-	src2 *model.Kernel, src2Output int,
-	s2SrcCh, s2SrcOff, s2DstCh, s2DstOff int,
-	s2Ch, s2Width int,
-) error {
-	if dst == nil || src1 == nil || src2 == nil {
-		return fmt.Errorf("copy from2 src to input cgo: nil kernel")
-	}
-	dstLayout := dst.InputLayout(dstInput)
-	src1Layout := src1.OutputLayout(src1Output)
-	src2Layout := src2.OutputLayout(src2Output)
-	s1RowBytes := s1Width * src1Layout.ElemSize
-	s2RowBytes := s2Width * src2Layout.ElemSize
-	dstRef := dst.InputSurface(dstInput)
-	src1Ref := src1.OutputSurface(src1Output)
-	src2Ref := src2.OutputSurface(src2Output)
-	if dstRef == 0 || src1Ref == 0 || src2Ref == 0 {
-		return fmt.Errorf("copy from2 src to input cgo: nil surface ref")
-	}
-	rc := C.iosurface_copy_from2_to1(
-		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
-		C.int(dstLayout.PlaneStride), C.int(dstLayout.AllocSize()),
-		C.IOSurfaceRef(unsafe.Pointer(src1Ref)),
-		C.int(src1Layout.PlaneStride), C.int(src1Layout.AllocSize()),
-		C.int(s1Src1Ch), C.int(s1Src1Off), C.int(s1Dst1Ch), C.int(s1Dst1Off),
-		C.int(s1Src2Ch), C.int(s1Src2Off), C.int(s1Dst2Ch), C.int(s1Dst2Off),
-		C.int(s1Ch), C.int(s1RowBytes), C.int(src1Layout.ElemSize),
-		C.IOSurfaceRef(unsafe.Pointer(src2Ref)),
-		C.int(src2Layout.PlaneStride), C.int(src2Layout.AllocSize()),
-		C.int(s2SrcCh), C.int(s2SrcOff), C.int(s2DstCh), C.int(s2DstOff),
-		C.int(s2Ch), C.int(s2RowBytes), C.int(src2Layout.ElemSize),
 	)
 	if rc != 0 {
 		return errNilIOSurfaceBase
