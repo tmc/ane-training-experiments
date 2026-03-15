@@ -20,7 +20,7 @@ func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 }
 
 func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(4, runtime.GOMAXPROCS(0))
 	if workers < 2 || s < workers*4 {
 		rmsNormGradWeightsRange(dw, dy, x, rrms, d, s, 0, s)
 		return
