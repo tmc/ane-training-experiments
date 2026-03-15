@@ -4,7 +4,9 @@ package storiesane
 
 import "github.com/maderix/ANE/ane/stories"
 
-type offload struct{}
+type offload struct {
+	combinedSoftmaxFailed bool
+}
 
 func newOffload(*stories.ModelWeights, int, bool, bool) *offload               { return nil }
 func refreshOffload(*offload, *stories.ModelWeights, int, bool, bool) *offload { return nil }

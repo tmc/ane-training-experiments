@@ -425,10 +425,9 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	validTargets := 0
 	logitsScaled := false
 	combinedSoftmax := false
-	if e.off != nil && e.off.hasClassifierForward() && e.off.hasSoftmax() {
+	if e.off != nil && e.off.hasClassifierForward() && e.off.hasSoftmax() && !e.off.combinedSoftmaxFailed {
 		if err := e.off.runClassifierSoftmax(e.logits, e.xNorm); err != nil {
-			e.off.disableClassifierForward()
-			e.off.disableSoftmax()
+			e.off.combinedSoftmaxFailed = true
 		} else {
 			loss, validTargets = crossEntropyLossFromProbsUnscaled(e.logits, e.logits, target, stories.Vocab, e.seq)
 			combinedSoftmax = true
