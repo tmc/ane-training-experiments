@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/maderix/ANE/ane/stories"
@@ -402,23 +403,32 @@ func (e *Engine) forwardTrainingANE(input []uint16) ([]float32, error) {
 	// ANE evaluation. Cache work (RMS norms, copies, siluGate) only reads
 	// from layer i's buffers and writes to layer i's cache, so it's safe to
 	// run concurrently with the next layer's forward pass.
+	var cacheWG sync.WaitGroup
 	for i := range e.layers {
 		lf := e.layers[i]
 		cache := &e.caches[i]
 		copy(cache.x, cur)
 		if !lf.dynamic {
+			cacheWG.Wait()
 			if err := lf.runWithTaps(next, cur, cache); err != nil {
 				return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
 			}
 			cur, next = next, cur
 			continue
 		}
+		cacheWG.Wait()
 		if err := lf.runDynamicForwardOnly(next, cur); err != nil {
 			return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
 		}
-		lf.fillDynamicCache(cur, cache)
+		prevCur := cur // capture for goroutine (lf reads from its own buffers, but RMS norm reads x)
+		cacheWG.Add(1)
+		go func() {
+			defer cacheWG.Done()
+			lf.fillDynamicCache(prevCur, cache)
+		}()
 		cur, next = next, cur
 	}
+	cacheWG.Wait()
 	return cur, nil
 }
 
