@@ -456,14 +456,8 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := evalKernelTracked(lb.metrics, lb.wot); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval wot: %w", err)
 	}
-	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, q); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write q: %w", err)
-	}
-	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, lb.dim, lb.seq, k); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write k: %w", err)
-	}
-	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, 2*lb.dim, lb.seq, v); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write v: %w", err)
+	if err := writeInputFP16Channels3CGo(lb.sdpa1, 0, 0, q, lb.dim, k, 2*lb.dim, v); err != nil {
+		return fmt.Errorf("run layer backward dynamic attention: write q+k+v: %w", err)
 	}
 	if err := copyOutputChannelsToInputCGo(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy da: %w", err)
@@ -474,11 +468,8 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy sdpa1 output: %w", err)
 	}
-	if err := writeInputFP16ChannelsFast(lb.sdpa2, 0, 2*lb.scoreCh, lb.seq, q); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write q into sdpa2: %w", err)
-	}
-	if err := writeInputFP16ChannelsFast(lb.sdpa2, 0, 2*lb.scoreCh+lb.dim, lb.seq, k); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write k into sdpa2: %w", err)
+	if err := writeInputFP16Channels2CGo(lb.sdpa2, 0, 2*lb.scoreCh, q, 2*lb.scoreCh+lb.dim, k); err != nil {
+		return fmt.Errorf("run layer backward dynamic attention: write q+k into sdpa2: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval sdpa2: %w", err)
@@ -492,11 +483,8 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
-	if err := readOutputFP16ChannelsFast(lb.sdpa2, 0, 0, lb.seq, dq); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: read dq: %w", err)
-	}
-	if err := readOutputFP16ChannelsFast(lb.sdpa2, 0, lb.dim, lb.seq, dk); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: read dk: %w", err)
+	if err := readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, lb.dim, dk); err != nil {
+		return fmt.Errorf("run layer backward dynamic attention: read dq+dk: %w", err)
 	}
 	if err := readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, dv); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dv: %w", err)

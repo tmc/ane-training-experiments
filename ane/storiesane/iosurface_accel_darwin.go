@@ -195,6 +195,51 @@ func writeInputFP16Channels2CGo(k *model.Kernel, input int, ch1 int, data1 []flo
 	})
 }
 
+// writeInputFP16Channels3CGo writes three channel-offset regions to the same
+// IOSurface input in a single lock/unlock.
+func writeInputFP16Channels3CGo(k *model.Kernel, input int, ch1 int, data1 []float32, ch2 int, data2 []float32, ch3 int, data3 []float32) error {
+	if k == nil {
+		return fmt.Errorf("write input fp16 channels3 cgo: kernel is nil")
+	}
+	layout := k.InputLayout(input)
+	ref := k.InputSurface(input)
+	if ref == 0 {
+		return fmt.Errorf("write input fp16 channels3 cgo: input surface %d is nil", input)
+	}
+	channelElems := layout.Height * layout.Width
+	if channelElems <= 0 {
+		return fmt.Errorf("write input fp16 channels3 cgo: invalid channel elems %d", channelElems)
+	}
+	return withLockedFP16InputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		writeChannelFirstActsOffsetFP16(surfData, layout, ch1, 0, channelElems, data1)
+		writeChannelFirstActsOffsetFP16(surfData, layout, ch2, 0, channelElems, data2)
+		writeChannelFirstActsOffsetFP16(surfData, layout, ch3, 0, channelElems, data3)
+		return nil
+	})
+}
+
+// readOutputFP16Channels2CGo reads two channel-offset regions from the same
+// IOSurface output in a single lock/unlock.
+func readOutputFP16Channels2CGo(k *model.Kernel, output int, ch1 int, data1 []float32, ch2 int, data2 []float32) error {
+	if k == nil {
+		return fmt.Errorf("read output fp16 channels2 cgo: kernel is nil")
+	}
+	layout := k.OutputLayout(output)
+	ref := k.OutputSurface(output)
+	if ref == 0 {
+		return fmt.Errorf("read output fp16 channels2 cgo: output surface %d is nil", output)
+	}
+	channelElems := layout.Height * layout.Width
+	if channelElems <= 0 || len(data1)%channelElems != 0 || len(data2)%channelElems != 0 {
+		return fmt.Errorf("read output fp16 channels2 cgo: invalid data lens %d %d channelElems %d", len(data1), len(data2), channelElems)
+	}
+	return withLockedFP16OutputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		readChannelFirstActsOffsetFP16(data1, surfData, layout, ch1, 0, channelElems)
+		readChannelFirstActsOffsetFP16(data2, surfData, layout, ch2, 0, channelElems)
+		return nil
+	})
+}
+
 // readOutputFP16ChannelsCGo reads channel-offset float32 data using CGo.
 func readOutputFP16ChannelsCGo(k *model.Kernel, output, channel int, data []float32) error {
 	if k == nil {
