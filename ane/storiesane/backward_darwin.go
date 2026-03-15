@@ -17,13 +17,14 @@ type layerBackward struct {
 	seq     int
 	scoreCh int
 
-	ffnW2    *model.Kernel
-	ffn      *model.Kernel
-	ffnFused *model.Kernel
-	wot      *model.Kernel
-	sdpa1    *model.Kernel
-	sdpa2    *model.Kernel
-	qkv      *model.Kernel
+	ffnW2      *model.Kernel
+	ffn        *model.Kernel
+	ffnFused   *model.Kernel
+	wot        *model.Kernel
+	sdpa1      *model.Kernel
+	sdpa1Fused *model.Kernel
+	sdpa2      *model.Kernel
+	qkv        *model.Kernel
 
 	metrics  *aneStepMetrics
 	dynamic  bool
@@ -197,6 +198,7 @@ func (lb *layerBackward) close() {
 	closeKernel(lb.ffnFused)
 	closeKernel(lb.wot)
 	closeKernel(lb.sdpa1)
+	closeKernel(lb.sdpa1Fused)
 	closeKernel(lb.sdpa2)
 	closeKernel(lb.qkv)
 	lb.ffnW2 = nil
@@ -204,6 +206,7 @@ func (lb *layerBackward) close() {
 	lb.ffnFused = nil
 	lb.wot = nil
 	lb.sdpa1 = nil
+	lb.sdpa1Fused = nil
 	lb.sdpa2 = nil
 	lb.qkv = nil
 	lb.ffnIn = nil

@@ -26,9 +26,10 @@ type dynamicLayerCompileSpec struct {
 	ffnMIL       string
 	ffnW2MIL     string
 	ffnTailMIL   string
-	ffnFusedMIL  string
-	wotMIL       string
-	sdpa1MIL     string
+	ffnFusedMIL   string
+	wotMIL        string
+	sdpa1MIL      string
+	sdpa1FusedMIL string
 	sdpa2MIL     string
 	qkvMIL       string
 }
@@ -65,9 +66,10 @@ func dynamicLayerSpec(seq int) (*dynamicLayerCompileSpec, error) {
 		ffnMIL:      mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
 		ffnW2MIL:    mil.GenDynamicMatmulFP16(dim, hidden, seq),
 		ffnTailMIL:  mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
-		ffnFusedMIL: mil.GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq),
-		wotMIL:      mil.GenDynamicMatmulFP16(dim, dim, seq),
-		sdpa1MIL:    mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		ffnFusedMIL:  mil.GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq),
+		wotMIL:       mil.GenDynamicMatmulFP16(dim, dim, seq),
+		sdpa1MIL:     mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
+		sdpa1FusedMIL: mil.GenStoriesSDPABackward1FusedWotDynamic(dim, heads, seq),
 		sdpa2MIL:    mil.GenSDPABackward2(dim, heads, seq),
 		qkvMIL:      mil.GenStoriesQKVBackwardDynamic(dim, heads, seq),
 	}
@@ -236,34 +238,55 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 			}
 		}()
 	}
-	wot, err := model.Compile(model.CompileOptions{
-		MILText:     spec.wotMIL,
-		SharedModel: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("compile layer backward dynamic: wot: %w", err)
-	}
-	defer func() {
-		if err != nil {
-			wot.Close()
-		}
-	}()
-	sdpa1, err := model.Compile(model.CompileOptions{
-		MILText:     spec.sdpa1MIL,
+	// Try compiling the fused wot+sdpa1 kernel that includes the Wo^T
+	// matmul inside the attention backward stage 1.
+	var sdpa1Fused *model.Kernel
+	sdpa1Fused, _ = model.Compile(model.CompileOptions{
+		MILText:     spec.sdpa1FusedMIL,
 		SharedModel: true,
 		WeightFiles: []model.WeightFile{{
 			Path: "@model_path/weights/mask.bin",
 			Blob: spec.maskBlob,
 		}},
 	})
-	if err != nil {
-		return nil, fmt.Errorf("compile layer backward dynamic: sdpa1: %w", err)
-	}
 	defer func() {
-		if err != nil {
-			sdpa1.Close()
+		if err != nil && sdpa1Fused != nil {
+			sdpa1Fused.Close()
 		}
 	}()
+
+	// Compile separate wot and sdpa1 kernels as fallback.
+	var wot, sdpa1 *model.Kernel
+	if sdpa1Fused == nil {
+		wot, err = model.Compile(model.CompileOptions{
+			MILText:     spec.wotMIL,
+			SharedModel: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("compile layer backward dynamic: wot: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				wot.Close()
+			}
+		}()
+		sdpa1, err = model.Compile(model.CompileOptions{
+			MILText:     spec.sdpa1MIL,
+			SharedModel: true,
+			WeightFiles: []model.WeightFile{{
+				Path: "@model_path/weights/mask.bin",
+				Blob: spec.maskBlob,
+			}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("compile layer backward dynamic: sdpa1: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				sdpa1.Close()
+			}
+		}()
+	}
 	sdpa2, err := model.Compile(model.CompileOptions{
 		MILText:     spec.sdpa2MIL,
 		SharedModel: true,
@@ -284,20 +307,21 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		return nil, fmt.Errorf("compile layer backward dynamic: qkv: %w", err)
 	}
 	lb := &layerBackward{
-		dim:      dim,
-		hidden:   hidden,
-		heads:    heads,
-		seq:      seq,
-		scoreCh:  heads * seq,
-		ffnW2:    ffnW2,
-		ffn:      ffnTail,
-		ffnFused: ffnFused,
-		wot:      wot,
-		sdpa1:    sdpa1,
-		sdpa2:    sdpa2,
-		qkv:      qkv,
-		dynamic:  true,
-		ffnOut:   make([]float32, (dim+2*hidden)*seq),
+		dim:        dim,
+		hidden:     hidden,
+		heads:      heads,
+		seq:        seq,
+		scoreCh:    heads * seq,
+		ffnW2:      ffnW2,
+		ffn:        ffnTail,
+		ffnFused:   ffnFused,
+		wot:        wot,
+		sdpa1:      sdpa1,
+		sdpa1Fused: sdpa1Fused,
+		sdpa2:      sdpa2,
+		qkv:        qkv,
+		dynamic:    true,
+		ffnOut:     make([]float32, (dim+2*hidden)*seq),
 	}
 	if err := lb.stageDynamicWeights(layer); err != nil {
 		lb.close()
@@ -337,8 +361,14 @@ func (lb *layerBackward) stageDynamicWeights(layer stories.LayerWeights) error {
 			return fmt.Errorf("stage layer backward dynamic weights: ffn tail: %w", err)
 		}
 	}
-	if err := stageDynamicMatmulWeights(lb.wot, lb.seq, lb.dim, layer.Wo); err != nil {
-		return fmt.Errorf("stage layer backward dynamic weights: wot: %w", err)
+	if lb.sdpa1Fused != nil {
+		if err := stageStoriesSDPA1FusedWeights(lb.sdpa1Fused, lb.seq, lb.dim, layer.Wo); err != nil {
+			return fmt.Errorf("stage layer backward dynamic weights: sdpa1 fused: %w", err)
+		}
+	} else {
+		if err := stageDynamicMatmulWeights(lb.wot, lb.seq, lb.dim, layer.Wo); err != nil {
+			return fmt.Errorf("stage layer backward dynamic weights: wot: %w", err)
+		}
 	}
 	if err := stageStoriesQKVBackwardWeights(lb.qkv, lb.seq, layer.Wq, layer.Wk, layer.Wv); err != nil {
 		return fmt.Errorf("stage layer backward dynamic weights: qkv: %w", err)
@@ -503,9 +533,6 @@ func (lb *layerBackward) runDynamicFFNFused(dxNorm, dh1, dh3, dFFN, h1, h3 []flo
 }
 
 func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32) error {
-	if lb == nil || lb.wot == nil || lb.sdpa1 == nil || lb.sdpa2 == nil || lb.qkv == nil {
-		return fmt.Errorf("run layer backward dynamic attention: layer is closed")
-	}
 	dimN := lb.dim * lb.seq
 	if err := checkLen("run layer backward dynamic attention", "q", q, dimN); err != nil {
 		return err
@@ -531,22 +558,44 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := checkLen("run layer backward dynamic attention", "dx", dxNorm, dimN); err != nil {
 		return err
 	}
-	if err := writeDynamicMatmulActs(lb.wot, lb.seq, dx2); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write wot input: %w", err)
+
+	// sdpa1Kern holds the kernel whose output contains (dv, probs, dp).
+	// Either the fused wot+sdpa1 kernel or the separate sdpa1.
+	var sdpa1Kern *model.Kernel
+	if lb.sdpa1Fused != nil {
+		// Fused path: write dx2+q+k+v into fused kernel, which
+		// internally computes da = Wo^T × dx2 then attention backward.
+		if err := writeStoriesSDPA1FusedActs(lb.sdpa1Fused, lb.seq, lb.dim, dx2, q, k, v); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: write fused sdpa1 input: %w", err)
+		}
+		if err := evalKernelTracked(lb.metrics, lb.sdpa1Fused); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: eval fused sdpa1: %w", err)
+		}
+		sdpa1Kern = lb.sdpa1Fused
+	} else {
+		if lb.wot == nil || lb.sdpa1 == nil || lb.sdpa2 == nil || lb.qkv == nil {
+			return fmt.Errorf("run layer backward dynamic attention: layer is closed")
+		}
+		if err := writeDynamicMatmulActs(lb.wot, lb.seq, dx2); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: write wot input: %w", err)
+		}
+		if err := evalKernelTracked(lb.metrics, lb.wot); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: eval wot: %w", err)
+		}
+		if err := writeInputFP16Channels3CGo(lb.sdpa1, 0, 0, q, lb.dim, k, 2*lb.dim, v); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: write q+k+v: %w", err)
+		}
+		if err := copyOutputChannelsToInputCGo(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: copy da: %w", err)
+		}
+		if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: eval sdpa1: %w", err)
+		}
+		sdpa1Kern = lb.sdpa1
 	}
-	if err := evalKernelTracked(lb.metrics, lb.wot); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: eval wot: %w", err)
-	}
-	if err := writeInputFP16Channels3CGo(lb.sdpa1, 0, 0, q, lb.dim, k, 2*lb.dim, v); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: write q+k+v: %w", err)
-	}
-	if err := copyOutputChannelsToInputCGo(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: copy da: %w", err)
-	}
-	if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: eval sdpa1: %w", err)
-	}
-	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
+
+	// sdpa2: reads (probs, dp) from sdpa1Kern output, plus (q, k).
+	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, sdpa1Kern, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy sdpa1 output: %w", err)
 	}
 	if err := writeInputFP16Channels2CGo(lb.sdpa2, 0, 2*lb.scoreCh, q, 2*lb.scoreCh+lb.dim, k); err != nil {
@@ -566,13 +615,13 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dq+dk to qkv: %w", err)
 	}
-	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
+	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, sdpa1Kern, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
 	if err := readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, lb.dim, dk); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dq+dk: %w", err)
 	}
-	if err := readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, dv); err != nil {
+	if err := readOutputFP16ChannelsFast(sdpa1Kern, 0, 0, lb.seq, dv); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dv: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {
@@ -738,6 +787,37 @@ func writeStoriesFFNFusedActs(k *model.Kernel, seq, dim, hidden int, dFFN, h1, h
 		writeChannelFirstActsOffsetFP16(data, layout, 0, h1Off, seq, h1)
 		// h3: channels 0..hidden-1, spatial offset seq+hidden+seq.
 		writeChannelFirstActsOffsetFP16(data, layout, 0, h1Off+seq, seq, h3)
+		return nil
+	})
+}
+
+// stageStoriesSDPA1FusedWeights writes Wo weights into the fused wot+sdpa1
+// kernel's input IOSurface. Layout: [1, dim, 1, 4*seq + dim].
+// Wo is stored at spatial offset 4*seq as [dim, dim] row-major.
+func stageStoriesSDPA1FusedWeights(k *model.Kernel, seq, dim int, wo []float32) error {
+	spatial := 4*seq + dim
+	return withLockedFP16Input(k, 0, func(layout xane.TensorLayout, data []uint16) error {
+		if err := requireFP16InputLayout("stage stories sdpa1 fused weights", layout, dim, spatial); err != nil {
+			return err
+		}
+		writeMatrixRowsFP16(data, layout, 0, 4*seq, dim, dim, wo)
+		return nil
+	})
+}
+
+// writeStoriesSDPA1FusedActs writes dx2, q, k, v activations into the fused
+// wot+sdpa1 kernel. Layout: [1, dim, 1, 4*seq + dim].
+// dx2 at spatial 0, q at spatial seq, k at spatial 2*seq, v at spatial 3*seq.
+func writeStoriesSDPA1FusedActs(kern *model.Kernel, seq, dim int, dx2, q, k, v []float32) error {
+	spatial := 4*seq + dim
+	return withLockedFP16Input(kern, 0, func(layout xane.TensorLayout, data []uint16) error {
+		if err := requireFP16InputLayout("write stories sdpa1 fused acts", layout, dim, spatial); err != nil {
+			return err
+		}
+		writeChannelFirstActsOffsetFP16(data, layout, 0, 0, seq, dx2)
+		writeChannelFirstActsOffsetFP16(data, layout, 0, seq, seq, q)
+		writeChannelFirstActsOffsetFP16(data, layout, 0, 2*seq, seq, k)
+		writeChannelFirstActsOffsetFP16(data, layout, 0, 3*seq, seq, v)
 		return nil
 	})
 }

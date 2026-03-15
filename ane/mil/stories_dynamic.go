@@ -344,6 +344,79 @@ func GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq int) string {
 	return b.String()
 }
 
+// GenStoriesSDPABackward1FusedWotDynamic generates a fused Wo^T matmul +
+// attention backward stage 1 kernel, eliminating the separate wot eval.
+//
+// Input layout: [1, dim, 1, 4*seq + dim]
+//
+//	dx2[seq]  q[seq]  k[seq]  v[seq]  Wo[dim×dim row-major]
+//
+// Output layout: concat(dv, probs, dp) along channels (same as unfused sdpa1).
+func GenStoriesSDPABackward1FusedWotDynamic(dim, heads, seq int) string {
+	headDim := dim / heads
+	scoreCh := heads * seq
+	scale := 1.0 / math.Sqrt(float64(headDim))
+	spatial := 4*seq + dim
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s{\n", buildInfoHeader)
+	fmt.Fprintf(&b, "    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> inp) {\n", dim, spatial)
+	b.WriteString("        tensor<int32, [4]> pm = const()[name=string(\"pm\"), val=tensor<int32, [4]>([0,1,3,2])];\n")
+	b.WriteString("        bool bF = const()[name=string(\"bF\"), val=bool(false)];\n")
+
+	// Extract dx2 and Wo, compute da = Wo^T × dx2.
+	fmt.Fprintf(&b, "        tensor<int32, [4]> dx2_size = const()[name=string(\"dx2_size\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	b.WriteString("        tensor<int32, [4]> dx2_begin = const()[name=string(\"dx2_begin\"), val=tensor<int32, [4]>([0,0,0,0])];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dx2 = slice_by_size(x=inp,begin=dx2_begin,size=dx2_size)[name=string(\"dx2\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> wo_begin = const()[name=string(\"wo_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", 4*seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> wo_size = const()[name=string(\"wo_size\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, dim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> Wo = slice_by_size(x=inp,begin=wo_begin,size=wo_size)[name=string(\"Wo\")];\n", dim, dim)
+	appendDynamicMatmulFP16(&b, "da", "dx2", "Wo", dim, dim, seq)
+
+	// Extract q, k, v from spatial layout.
+	fmt.Fprintf(&b, "        tensor<int32, [4]> sz = const()[name=string(\"sz\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> q_begin = const()[name=string(\"q_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> qf = slice_by_size(x=inp,begin=q_begin,size=sz)[name=string(\"qf\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> k_begin = const()[name=string(\"k_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", 2*seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> kf = slice_by_size(x=inp,begin=k_begin,size=sz)[name=string(\"kf\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> v_begin = const()[name=string(\"v_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", 3*seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> vf = slice_by_size(x=inp,begin=v_begin,size=sz)[name=string(\"vf\")];\n", dim, seq)
+
+	// Reshape and transpose for multi-head attention.
+	fmt.Fprintf(&b, "        tensor<int32, [4]> rsh = const()[name=string(\"rsh\"), val=tensor<int32, [4]>([1,%d,%d,%d])];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> qr = reshape(shape=rsh,x=qf)[name=string(\"qr\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> q = transpose(perm=pm,x=qr)[name=string(\"q\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> kr = reshape(shape=rsh,x=kf)[name=string(\"kr\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> k = transpose(perm=pm,x=kr)[name=string(\"k\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> vr = reshape(shape=rsh,x=vf)[name=string(\"vr\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> v = transpose(perm=pm,x=vr)[name=string(\"v\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> dr = reshape(shape=rsh,x=da)[name=string(\"dr\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> d = transpose(perm=pm,x=dr)[name=string(\"d\")];\n", heads, seq, headDim)
+
+	// Attention backward: scores, softmax, dv, dp.
+	b.WriteString("        bool bT = const()[name=string(\"bT\"), val=bool(true)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc1 = matmul(transpose_x=bF,transpose_y=bT,x=q,y=k)[name=string(\"sc1\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        fp16 scv = const()[name=string(\"scv\"), val=fp16(%f)];\n", scale)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> sc2 = mul(x=sc1,y=scv)[name=string(\"sc2\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,1,%d,%d]> cm = const()[name=string(\"cm\"), val=tensor<fp16, [1,1,%d,%d]>(BLOBFILE(path=string(\"@model_path/weights/mask.bin\"), offset=uint64(64)))];\n", seq, seq, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> ms = add(x=sc2,y=cm)[name=string(\"ms\")];\n", heads, seq, seq)
+	b.WriteString("        int32 sax = const()[name=string(\"sax\"), val=int32(-1)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> probs = softmax(axis=sax,x=ms)[name=string(\"probs\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> dv4 = matmul(transpose_x=bT,transpose_y=bF,x=probs,y=d)[name=string(\"dv4\")];\n", heads, seq, headDim)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> dp4 = matmul(transpose_x=bF,transpose_y=bT,x=d,y=v)[name=string(\"dp4\")];\n", heads, seq, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,%d,%d]> dvt = transpose(perm=pm,x=dv4)[name=string(\"dvt\")];\n", heads, headDim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> dv_shape = const()[name=string(\"dv_shape\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dvf = reshape(shape=dv_shape,x=dvt)[name=string(\"dvf\")];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> sc_shape = const()[name=string(\"sc_shape\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", scoreCh, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> pf = reshape(shape=sc_shape,x=probs)[name=string(\"pf\")];\n", scoreCh, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dpf = reshape(shape=sc_shape,x=dp4)[name=string(\"dpf\")];\n", scoreCh, seq)
+	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
+	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(dvf,pf,dpf))[name=string(\"out\")];\n", dim+2*scoreCh, seq)
+	b.WriteString("    } -> (out);\n}\n")
+	return b.String()
+}
+
 // GenStoriesSDPABackward1Dynamic generates the first attention backward stage.
 //
 // Input layout is concat(q, k, v, da) along channels.
