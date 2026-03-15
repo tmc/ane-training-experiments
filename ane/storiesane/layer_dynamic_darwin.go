@@ -22,14 +22,15 @@ type dynamicLayerCompileSpec struct {
 	ropeCosBlob []byte
 	ropeSinBlob []byte
 
-	attMIL     string
-	ffnMIL     string
-	ffnW2MIL   string
-	ffnTailMIL string
-	wotMIL     string
-	sdpa1MIL   string
-	sdpa2MIL   string
-	qkvMIL     string
+	attMIL       string
+	ffnMIL       string
+	ffnW2MIL     string
+	ffnTailMIL   string
+	ffnFusedMIL  string
+	wotMIL       string
+	sdpa1MIL     string
+	sdpa2MIL     string
+	qkvMIL       string
 }
 
 func dynamicLayerSpec(seq int) (*dynamicLayerCompileSpec, error) {
@@ -64,6 +65,7 @@ func dynamicLayerSpec(seq int) (*dynamicLayerCompileSpec, error) {
 		ffnMIL:      mil.GenStoriesFFNForwardDynamicTaps(dim, hidden, seq),
 		ffnW2MIL:    mil.GenDynamicMatmulFP16(dim, hidden, seq),
 		ffnTailMIL:  mil.GenStoriesFFNBackwardTailDynamic(dim, hidden, seq),
+		ffnFusedMIL: mil.GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq),
 		wotMIL:      mil.GenDynamicMatmulFP16(dim, dim, seq),
 		sdpa1MIL:    mil.GenStoriesSDPABackward1Dynamic(dim, heads, seq),
 		sdpa2MIL:    mil.GenSDPABackward2(dim, heads, seq),
@@ -192,30 +194,48 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 	if err != nil {
 		return nil, fmt.Errorf("compile layer backward dynamic: %w", err)
 	}
-	ffnW2, err := model.Compile(model.CompileOptions{
-		MILText:     spec.ffnW2MIL,
+	// Try compiling the fused FFN backward kernel that combines the W2^T
+	// matmul with the FFN backward tail, eliminating one ANE eval per layer.
+	var ffnFused *model.Kernel
+	ffnFused, _ = model.Compile(model.CompileOptions{
+		MILText:     spec.ffnFusedMIL,
 		SharedModel: true,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("compile layer backward dynamic: ffn w2: %w", err)
-	}
 	defer func() {
-		if err != nil {
-			ffnW2.Close()
+		if err != nil && ffnFused != nil {
+			ffnFused.Close()
 		}
 	}()
-	ffnTail, err := model.Compile(model.CompileOptions{
-		MILText:     spec.ffnTailMIL,
-		SharedModel: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("compile layer backward dynamic: ffn tail: %w", err)
-	}
-	defer func() {
+
+	// Compile the separate ffnW2 and ffnTail kernels as fallback (or if
+	// the fused kernel is not available).
+	var ffnW2, ffnTail *model.Kernel
+	if ffnFused == nil {
+		ffnW2, err = model.Compile(model.CompileOptions{
+			MILText:     spec.ffnW2MIL,
+			SharedModel: true,
+		})
 		if err != nil {
-			ffnTail.Close()
+			return nil, fmt.Errorf("compile layer backward dynamic: ffn w2: %w", err)
 		}
-	}()
+		defer func() {
+			if err != nil {
+				ffnW2.Close()
+			}
+		}()
+		ffnTail, err = model.Compile(model.CompileOptions{
+			MILText:     spec.ffnTailMIL,
+			SharedModel: true,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("compile layer backward dynamic: ffn tail: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				ffnTail.Close()
+			}
+		}()
+	}
 	wot, err := model.Compile(model.CompileOptions{
 		MILText:     spec.wotMIL,
 		SharedModel: true,
@@ -264,19 +284,20 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		return nil, fmt.Errorf("compile layer backward dynamic: qkv: %w", err)
 	}
 	lb := &layerBackward{
-		dim:     dim,
-		hidden:  hidden,
-		heads:   heads,
-		seq:     seq,
-		scoreCh: heads * seq,
-		ffnW2:   ffnW2,
-		ffn:     ffnTail,
-		wot:     wot,
-		sdpa1:   sdpa1,
-		sdpa2:   sdpa2,
-		qkv:     qkv,
-		dynamic: true,
-		ffnOut:  make([]float32, (dim+2*hidden)*seq),
+		dim:      dim,
+		hidden:   hidden,
+		heads:    heads,
+		seq:      seq,
+		scoreCh:  heads * seq,
+		ffnW2:    ffnW2,
+		ffn:      ffnTail,
+		ffnFused: ffnFused,
+		wot:      wot,
+		sdpa1:    sdpa1,
+		sdpa2:    sdpa2,
+		qkv:      qkv,
+		dynamic:  true,
+		ffnOut:   make([]float32, (dim+2*hidden)*seq),
 	}
 	if err := lb.stageDynamicWeights(layer); err != nil {
 		lb.close()
@@ -304,11 +325,17 @@ func (lb *layerBackward) stageDynamicWeights(layer stories.LayerWeights) error {
 	if lb == nil || !lb.dynamic {
 		return fmt.Errorf("stage layer backward dynamic weights: layer is not dynamic")
 	}
-	if err := stageDynamicMatmulWeights(lb.ffnW2, lb.seq, lb.hidden, layer.W2); err != nil {
-		return fmt.Errorf("stage layer backward dynamic weights: ffn w2: %w", err)
-	}
-	if err := stageStoriesFFNTailWeights(lb.ffn, lb.seq, lb.hidden, layer.W1, layer.W3); err != nil {
-		return fmt.Errorf("stage layer backward dynamic weights: ffn tail: %w", err)
+	if lb.ffnFused != nil {
+		if err := stageStoriesFFNFusedWeights(lb.ffnFused, lb.seq, lb.dim, lb.hidden, layer.W2, layer.W1, layer.W3); err != nil {
+			return fmt.Errorf("stage layer backward dynamic weights: ffn fused: %w", err)
+		}
+	} else {
+		if err := stageDynamicMatmulWeights(lb.ffnW2, lb.seq, lb.hidden, layer.W2); err != nil {
+			return fmt.Errorf("stage layer backward dynamic weights: ffn w2: %w", err)
+		}
+		if err := stageStoriesFFNTailWeights(lb.ffn, lb.seq, lb.hidden, layer.W1, layer.W3); err != nil {
+			return fmt.Errorf("stage layer backward dynamic weights: ffn tail: %w", err)
+		}
 	}
 	if err := stageDynamicMatmulWeights(lb.wot, lb.seq, lb.dim, layer.Wo); err != nil {
 		return fmt.Errorf("stage layer backward dynamic weights: wot: %w", err)
@@ -394,9 +421,6 @@ func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 }
 
 func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error {
-	if lb == nil || lb.ffnW2 == nil || lb.ffn == nil {
-		return fmt.Errorf("run layer backward dynamic ffn: layer is closed")
-	}
 	dimN := lb.dim * lb.seq
 	hiddenN := lb.hidden * lb.seq
 	if err := checkLen("run layer backward dynamic ffn", "dffn", dFFN, dimN); err != nil {
@@ -416,6 +440,14 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	}
 	if err := checkLen("run layer backward dynamic ffn", "dh3", dh3, hiddenN); err != nil {
 		return err
+	}
+
+	if lb.ffnFused != nil {
+		return lb.runDynamicFFNFused(dxNorm, dh1, dh3, dFFN, h1, h3)
+	}
+
+	if lb.ffnW2 == nil || lb.ffn == nil {
+		return fmt.Errorf("run layer backward dynamic ffn: layer is closed")
 	}
 	if err := writeDynamicMatmulActs(lb.ffnW2, lb.seq, dFFN); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: write w2 input: %w", err)
@@ -439,6 +471,28 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	// dh1/dh3 are aliased from lb.ffnOut by the caller (backwardFFNHybrid)
 	// when running in dynamic mode. Only copy if the caller provided
 	// separate destination buffers (non-dynamic or CPU fallback path).
+	if len(dh1) > 0 && &dh1[0] != &lb.ffnOut[dimN] {
+		copy(dh1, lb.ffnOut[dimN:dimN+hiddenN])
+	}
+	if len(dh3) > 0 && &dh3[0] != &lb.ffnOut[dimN+hiddenN] {
+		copy(dh3, lb.ffnOut[dimN+hiddenN:dimN+2*hiddenN])
+	}
+	return nil
+}
+
+func (lb *layerBackward) runDynamicFFNFused(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error {
+	dimN := lb.dim * lb.seq
+	hiddenN := lb.hidden * lb.seq
+	if err := writeStoriesFFNFusedActs(lb.ffnFused, lb.seq, lb.dim, lb.hidden, dFFN, h1, h3); err != nil {
+		return fmt.Errorf("run layer backward dynamic ffn fused: write input: %w", err)
+	}
+	if err := evalKernelTracked(lb.metrics, lb.ffnFused); err != nil {
+		return fmt.Errorf("run layer backward dynamic ffn fused: eval: %w", err)
+	}
+	if err := readOutputFP16ChannelsFast(lb.ffnFused, 0, 0, lb.seq, lb.ffnOut); err != nil {
+		return fmt.Errorf("run layer backward dynamic ffn fused: read output: %w", err)
+	}
+	copy(dxNorm, lb.ffnOut[:dimN])
 	if len(dh1) > 0 && &dh1[0] != &lb.ffnOut[dimN] {
 		copy(dh1, lb.ffnOut[dimN:dimN+hiddenN])
 	}
@@ -640,6 +694,50 @@ func stageStoriesQKVBackwardWeights(k *model.Kernel, seq int, wq, wk, wv []float
 		writeMatrixRowsFP16(data, layout, 0, 3*seq, stories.Dim, stories.Dim, wq)
 		writeMatrixRowsFP16(data, layout, 0, 3*seq+stories.Dim, stories.Dim, stories.Dim, wk)
 		writeMatrixRowsFP16(data, layout, 0, 3*seq+2*stories.Dim, stories.Dim, stories.Dim, wv)
+		return nil
+	})
+}
+
+// stageStoriesFFNFusedWeights writes W2, W1, W3 weights into the fused FFN
+// backward kernel's input IOSurface. The fused kernel layout is:
+//
+//	[1, hidden, 1, seq + hidden + 2*seq + 2*dim]
+//
+// W2 at channels 0..dim-1, spatial [seq..seq+hidden-1] (row-major [dim, hidden]).
+// W1 at channels 0..hidden-1, spatial [seq+hidden+2*seq..seq+hidden+2*seq+dim-1].
+// W3 at channels 0..hidden-1, spatial [seq+hidden+2*seq+dim..seq+hidden+2*seq+2*dim-1].
+func stageStoriesFFNFusedWeights(k *model.Kernel, seq, dim, hidden int, w2, w1, w3 []float32) error {
+	spatial := seq + hidden + 2*seq + 2*dim
+	return withLockedFP16Input(k, 0, func(layout xane.TensorLayout, data []uint16) error {
+		if err := requireFP16InputLayout("stage stories ffn fused weights", layout, hidden, spatial); err != nil {
+			return err
+		}
+		// W2: channels 0..dim-1, spatial offset seq, [dim, hidden] row-major.
+		writeMatrixRowsFP16(data, layout, 0, seq, dim, hidden, w2)
+		// W1: channels 0..hidden-1, spatial offset seq+hidden+2*seq.
+		w1Off := seq + hidden + 2*seq
+		writeMatrixRowsFP16(data, layout, 0, w1Off, hidden, dim, w1)
+		// W3: channels 0..hidden-1, spatial offset seq+hidden+2*seq+dim.
+		writeMatrixRowsFP16(data, layout, 0, w1Off+dim, hidden, dim, w3)
+		return nil
+	})
+}
+
+// writeStoriesFFNFusedActs writes dFFN, h1, h3 activations into the fused FFN
+// backward kernel's input IOSurface. Called per-step (per-layer).
+func writeStoriesFFNFusedActs(k *model.Kernel, seq, dim, hidden int, dFFN, h1, h3 []float32) error {
+	spatial := seq + hidden + 2*seq + 2*dim
+	return withLockedFP16Input(k, 0, func(layout xane.TensorLayout, data []uint16) error {
+		if err := requireFP16InputLayout("write stories ffn fused acts", layout, hidden, spatial); err != nil {
+			return err
+		}
+		// dFFN: channels 0..dim-1, spatial 0..seq-1.
+		writeChannelFirstActsOffsetFP16(data, layout, 0, 0, seq, dFFN)
+		// h1: channels 0..hidden-1, spatial offset seq+hidden.
+		h1Off := seq + hidden
+		writeChannelFirstActsOffsetFP16(data, layout, 0, h1Off, seq, h1)
+		// h3: channels 0..hidden-1, spatial offset seq+hidden+seq.
+		writeChannelFirstActsOffsetFP16(data, layout, 0, h1Off+seq, seq, h3)
 		return nil
 	})
 }

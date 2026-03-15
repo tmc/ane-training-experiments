@@ -261,6 +261,89 @@ func GenStoriesFFNBackwardTailDynamic(dim, hidden, seq int) string {
 	return b.String()
 }
 
+// GenStoriesFFNBackwardFusedDynamic generates a fused FFN backward kernel that
+// includes the W2^T matmul (previously a separate dynamic matmul eval),
+// eliminating one ANE eval per layer.
+//
+// Input layout: [1, hidden, 1, seq + hidden + 2*seq + 2*dim]
+//
+// Per-channel spatial:
+//
+//	dFFN[seq]   (channels 0..dim-1 only, channels dim..hidden-1 ignored)
+//	W2^T[hidden] (channels 0..dim-1 only, each row has hidden weight values)
+//	h1[seq]     (all hidden channels)
+//	h3[seq]     (all hidden channels)
+//	W1[dim]     (all hidden channels, each row has dim weight values)
+//	W3[dim]     (all hidden channels, each row has dim weight values)
+//
+// Output layout: concat(dx, dh1, dh3) along channels.
+func GenStoriesFFNBackwardFusedDynamic(dim, hidden, seq int) string {
+	spatial := seq + hidden + 2*seq + 2*dim
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s{\n", buildInfoHeader)
+	fmt.Fprintf(&b, "    func main<ios18>(tensor<fp16, [1, %d, 1, %d]> inp) {\n", hidden, spatial)
+	b.WriteString("        tensor<int32, [4]> pm = const()[name=string(\"pm\"), val=tensor<int32, [4]>([0,1,3,2])];\n")
+	b.WriteString("        bool bF = const()[name=string(\"bF\"), val=bool(false)];\n")
+
+	// Extract dFFN (channels 0..dim-1, spatial 0..seq-1).
+	b.WriteString("        tensor<int32, [4]> dffn_begin = const()[name=string(\"dffn_begin\"), val=tensor<int32, [4]>([0,0,0,0])];\n")
+	fmt.Fprintf(&b, "        tensor<int32, [4]> dffn_size = const()[name=string(\"dffn_size\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dFFN = slice_by_size(x=inp,begin=dffn_begin,size=dffn_size)[name=string(\"dFFN\")];\n", dim, seq)
+
+	// Extract W2^T (channels 0..dim-1, spatial seq..seq+hidden-1).
+	fmt.Fprintf(&b, "        tensor<int32, [4]> w2t_begin = const()[name=string(\"w2t_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> w2t_size = const()[name=string(\"w2t_size\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", dim, hidden)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> W2T = slice_by_size(x=inp,begin=w2t_begin,size=w2t_size)[name=string(\"W2T\")];\n", dim, hidden)
+
+	// Compute dsilu = W2^T × dFFN → [1, hidden, 1, seq].
+	appendDynamicMatmulFP16(&b, "dsilu", "dFFN", "W2T", dim, hidden, seq)
+
+	// Extract h1 (all hidden channels, spatial seq+hidden..seq+hidden+seq-1).
+	off := seq + hidden
+	fmt.Fprintf(&b, "        tensor<int32, [4]> sh = const()[name=string(\"sh\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> h1_begin = const()[name=string(\"h1_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", off)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> h1 = slice_by_size(x=inp,begin=h1_begin,size=sh)[name=string(\"h1\")];\n", hidden, seq)
+	off += seq
+
+	// Extract h3.
+	fmt.Fprintf(&b, "        tensor<int32, [4]> h3_begin = const()[name=string(\"h3_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", off)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> h3 = slice_by_size(x=inp,begin=h3_begin,size=sh)[name=string(\"h3\")];\n", hidden, seq)
+	off += seq
+
+	// Extract W1 and W3.
+	fmt.Fprintf(&b, "        tensor<int32, [4]> wt_shape = const()[name=string(\"wt_shape\"), val=tensor<int32, [4]>([1,%d,1,%d])];\n", hidden, dim)
+	fmt.Fprintf(&b, "        tensor<int32, [4]> w1_begin = const()[name=string(\"w1_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", off)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> W1 = slice_by_size(x=inp,begin=w1_begin,size=wt_shape)[name=string(\"W1\")];\n", hidden, dim)
+	off += dim
+	fmt.Fprintf(&b, "        tensor<int32, [4]> w3_begin = const()[name=string(\"w3_begin\"), val=tensor<int32, [4]>([0,0,0,%d])];\n", off)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> W3 = slice_by_size(x=inp,begin=w3_begin,size=wt_shape)[name=string(\"W3\")];\n", hidden, dim)
+
+	// SiLU backward: dh1 = dsilu * h3 * sig'(h1), dh3 = dsilu * silu(h1).
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> sig = sigmoid(x=h1)[name=string(\"sig\")];\n", hidden, seq)
+	b.WriteString("        fp16 one = const()[name=string(\"one\"), val=fp16(1.0)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> oms = sub(x=one,y=sig)[name=string(\"oms\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> homs = mul(x=h1,y=oms)[name=string(\"homs\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> brk = add(x=one,y=homs)[name=string(\"brk\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dsd = mul(x=sig,y=brk)[name=string(\"dsd\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> t1 = mul(x=dsilu,y=h3)[name=string(\"t1\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dh1 = mul(x=t1,y=dsd)[name=string(\"dh1\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> slh = mul(x=h1,y=sig)[name=string(\"slh\")];\n", hidden, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dh3 = mul(x=dsilu,y=slh)[name=string(\"dh3\")];\n", hidden, seq)
+
+	// dx = W1^T × dh1 + W3^T × dh3.
+	appendDynamicMatmulFP16(&b, "dx1", "dh1", "W1", hidden, dim, seq)
+	appendDynamicMatmulFP16(&b, "dx3", "dh3", "W3", hidden, dim, seq)
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> dx = add(x=dx1,y=dx3)[name=string(\"dx\")];\n", dim, seq)
+
+	// Output: concat(dx, dh1, dh3) along channel axis.
+	b.WriteString("        int32 cax = const()[name=string(\"cax\"), val=int32(1)];\n")
+	b.WriteString("        bool cid = const()[name=string(\"cid\"), val=bool(false)];\n")
+	fmt.Fprintf(&b, "        tensor<fp16, [1,%d,1,%d]> out = concat(axis=cax,interleave=cid,values=(dx,dh1,dh3))[name=string(\"out\")];\n", dim+2*hidden, seq)
+	b.WriteString("    } -> (out);\n}\n")
+	return b.String()
+}
+
 // GenStoriesSDPABackward1Dynamic generates the first attention backward stage.
 //
 // Input layout is concat(q, k, v, da) along channels.
