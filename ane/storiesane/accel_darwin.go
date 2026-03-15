@@ -305,7 +305,7 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 // vDSP_vmul for the strided element-wise multiply in channel-first layout.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	parallelForCF(seq, func(start, end int) {
-		sw := make([]float32, dim)
+		var sw [512]float32 // stack-allocated; dim <= 512 for stories models
 		for t := start; t < end; t++ {
 			// Sum of squares with stride = seq using vDSP
 			var ssq C.float
