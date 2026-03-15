@@ -11,7 +11,7 @@ func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 // avoiding Go goroutine overhead. Falls back to pooled Go goroutines
 // on other platforms.
 func rmsNormBackwardPooled(dx, dw, dy, x, w []float32, d, s int) {
-	rmsNormBackwardAccel(dx, dw, dy, x, w, d, s)
+	rmsNormBackwardAccel(dx, dw, dy, x, w, nil, d, s)
 }
 
 func rmsNormBackwardRange(dx, dw, dy, x, w []float32, d, s, start, end int) {

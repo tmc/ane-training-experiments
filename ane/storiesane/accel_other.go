@@ -138,7 +138,7 @@ func softmaxRowAccel(out, in []float32) {
 	}
 }
 
-func rmsNormBackwardAccel(dx, dw, dy, x, w []float32, dim, seq int) {
+func rmsNormBackwardAccel(dx, dw, dy, x, w, _ []float32, dim, seq int) {
 	rmsNormBackwardPooled(dx, dw, dy, x, w, dim, seq)
 }
 

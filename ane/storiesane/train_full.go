@@ -584,8 +584,8 @@ func (e *Engine) buildCompactVocab(targets []uint16) int {
 	return len(e.compactToFull)
 }
 
-func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, _ []float32) {
-	rmsNormBackwardPooled(dx, dw, dy, x, w, stories.Dim, e.seq)
+func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, rrms []float32) {
+	rmsNormBackwardAccel(dx, dw, dy, x, w, rrms, stories.Dim, e.seq)
 }
 
 func (e *Engine) ensureAttentionCache(layer *stories.LayerWeights, cache *layerCache) {
