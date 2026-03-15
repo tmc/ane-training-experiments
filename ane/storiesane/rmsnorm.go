@@ -70,11 +70,12 @@ func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
 }
 
 // rmsNormBackwardPooled computes both dx and dw using pooled shard buffers,
-// avoiding per-call allocations from stories.RMSNormBackward.
-func rmsNormBackwardPooled(dx, dw, dy, x, w []float32, d, s int) {
+// avoiding per-call allocations from stories.RMSNormBackward. If rrms is
+// non-nil, precomputed reciprocal-RMS values are used to skip recomputation.
+func rmsNormBackwardPooled(dx, dw, dy, x, w, rrms []float32, d, s int) {
 	workers := runtime.GOMAXPROCS(0)
 	if workers < 2 || s < workers*4 {
-		rmsNormBackwardRange(dx, dw, dy, x, w, d, s, 0, s)
+		rmsNormBackwardRange(dx, dw, dy, x, w, rrms, d, s, 0, s)
 		return
 	}
 	if workers > s {
@@ -108,7 +109,7 @@ func rmsNormBackwardPooled(dx, dw, dy, x, w []float32, d, s int) {
 		wg.Add(1)
 		go func(start, end int) {
 			defer wg.Done()
-			rmsNormBackwardRange(dx, shard, dy, x, w, d, s, start, end)
+			rmsNormBackwardRange(dx, shard, dy, x, w, rrms, d, s, start, end)
 		}(start, end)
 	}
 	wg.Wait()
@@ -120,23 +121,28 @@ func rmsNormBackwardPooled(dx, dw, dy, x, w []float32, d, s int) {
 	}
 }
 
-func rmsNormBackwardRange(dx, dw, dy, x, w []float32, d, s, start, end int) {
+func rmsNormBackwardRange(dx, dw, dy, x, w, rrms []float32, d, s, start, end int) {
 	for t := start; t < end; t++ {
-		sum := 0.0
-		for i := 0; i < d; i++ {
-			v := float64(x[i*s+t])
-			sum += v * v
+		var r float64
+		if len(rrms) > t {
+			r = float64(rrms[t])
+		} else {
+			sum := 0.0
+			for i := 0; i < d; i++ {
+				v := float64(x[i*s+t])
+				sum += v * v
+			}
+			r = 1.0 / math.Sqrt(sum/float64(d)+1e-5)
 		}
-		rrms := 1.0 / math.Sqrt(sum/float64(d)+1e-5)
-		rrms2InvD := (rrms * rrms) / float64(d)
+		rrms2InvD := (r * r) / float64(d)
 		dot := 0.0
 		for i := 0; i < d; i++ {
 			dot += float64(dy[i*s+t] * x[i*s+t] * w[i])
 		}
 		for i := 0; i < d; i++ {
 			v := float64(dy[i*s+t]) - float64(x[i*s+t])*dot*rrms2InvD
-			dx[i*s+t] = float32(v * rrms * float64(w[i]))
-			dw[i] += float32(float64(dy[i*s+t]*x[i*s+t]) * rrms)
+			dx[i*s+t] = float32(v * r * float64(w[i]))
+			dw[i] += float32(float64(dy[i*s+t]*x[i*s+t]) * r)
 		}
 	}
 }
