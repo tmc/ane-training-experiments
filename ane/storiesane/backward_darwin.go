@@ -241,13 +241,13 @@ func (lb *layerBackward) runFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error 
 	}
 
 	concatInto(lb.ffnIn, dFFN, h1, h3)
-	if err := lb.ffn.WriteInputFP16(0, lb.ffnIn); err != nil {
+	if err := writeInputFP16CGo(lb.ffn, 0, lb.ffnIn); err != nil {
 		return fmt.Errorf("run layer backward ffn: write input: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.ffn); err != nil {
 		return fmt.Errorf("run layer backward ffn: eval: %w", err)
 	}
-	if err := lb.ffn.ReadOutputFP16(0, lb.ffnOut); err != nil {
+	if err := readOutputFP16CGo(lb.ffn, 0, lb.ffnOut); err != nil {
 		return fmt.Errorf("run layer backward ffn: read output: %w", err)
 	}
 	copy(dxNorm, lb.ffnOut[:dimN])
@@ -290,7 +290,7 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	}
 
 	concatInto(lb.sdpa1In, q, k, v, dx2)
-	if err := lb.sdpa1.WriteInputFP16(0, lb.sdpa1In); err != nil {
+	if err := writeInputFP16CGo(lb.sdpa1, 0, lb.sdpa1In); err != nil {
 		return fmt.Errorf("run layer backward attention: write sdpa1 input: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
@@ -299,10 +299,10 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward attention: copy sdpa1 output into sdpa2 input: %w", err)
 	}
-	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh, q); err != nil {
+	if err := writeInputFP16ChannelsCGo(lb.sdpa2, 0, 2*lb.scoreCh, q); err != nil {
 		return fmt.Errorf("run layer backward attention: write q into sdpa2 input: %w", err)
 	}
-	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh+lb.dim, k); err != nil {
+	if err := writeInputFP16ChannelsCGo(lb.sdpa2, 0, 2*lb.scoreCh+lb.dim, k); err != nil {
 		return fmt.Errorf("run layer backward attention: write k into sdpa2 input: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
@@ -317,16 +317,16 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {
 		return fmt.Errorf("run layer backward attention: eval qkv: %w", err)
 	}
-	if err := lb.sdpa2.ReadOutputFP16Channels(0, 0, dq); err != nil {
+	if err := readOutputFP16ChannelsCGo(lb.sdpa2, 0, 0, dq); err != nil {
 		return fmt.Errorf("run layer backward attention: read dq: %w", err)
 	}
-	if err := lb.sdpa2.ReadOutputFP16Channels(0, lb.dim, dk); err != nil {
+	if err := readOutputFP16ChannelsCGo(lb.sdpa2, 0, lb.dim, dk); err != nil {
 		return fmt.Errorf("run layer backward attention: read dk: %w", err)
 	}
-	if err := lb.sdpa1.ReadOutputFP16Channels(0, 0, dv); err != nil {
+	if err := readOutputFP16ChannelsCGo(lb.sdpa1, 0, 0, dv); err != nil {
 		return fmt.Errorf("run layer backward attention: read dv: %w", err)
 	}
-	if err := lb.qkv.ReadOutputFP16(0, dxNorm); err != nil {
+	if err := readOutputFP16CGo(lb.qkv, 0, dxNorm); err != nil {
 		return fmt.Errorf("run layer backward attention: read qkv output: %w", err)
 	}
 	return nil

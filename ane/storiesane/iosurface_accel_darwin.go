@@ -150,6 +150,48 @@ func writeInputFP16CGo(k *model.Kernel, input int, data []float32) error {
 	})
 }
 
+// writeInputFP16ChannelsCGo writes channel-offset float32 data using CGo.
+func writeInputFP16ChannelsCGo(k *model.Kernel, input, channel int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("write input fp16 channels cgo: kernel is nil")
+	}
+	layout := k.InputLayout(input)
+	ref := k.InputSurface(input)
+	if ref == 0 {
+		return fmt.Errorf("write input fp16 channels cgo: input surface %d is nil", input)
+	}
+	channelElems := layout.Height * layout.Width
+	if channelElems <= 0 || len(data)%channelElems != 0 {
+		return fmt.Errorf("write input fp16 channels cgo: data len %d, channelElems %d", len(data), channelElems)
+	}
+	channels := len(data) / channelElems
+	return withLockedFP16InputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		writeChannelFirstActsOffsetFP16(surfData, layout, channel, 0, channelElems, data)
+		_ = channels
+		return nil
+	})
+}
+
+// readOutputFP16ChannelsCGo reads channel-offset float32 data using CGo.
+func readOutputFP16ChannelsCGo(k *model.Kernel, output, channel int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("read output fp16 channels cgo: kernel is nil")
+	}
+	layout := k.OutputLayout(output)
+	ref := k.OutputSurface(output)
+	if ref == 0 {
+		return fmt.Errorf("read output fp16 channels cgo: output surface %d is nil", output)
+	}
+	channelElems := layout.Height * layout.Width
+	if channelElems <= 0 || len(data)%channelElems != 0 {
+		return fmt.Errorf("read output fp16 channels cgo: data len %d, channelElems %d", len(data), channelElems)
+	}
+	return withLockedFP16OutputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		readChannelFirstActsOffsetFP16(data, surfData, layout, channel, 0, channelElems)
+		return nil
+	})
+}
+
 // readOutputFP16CGo reads float32 data from a kernel's output IOSurface using CGo.
 // Uses NEON-vectorized FP16 conversion from fp16_pack_darwin.go.
 func readOutputFP16CGo(k *model.Kernel, output int, data []float32) error {
