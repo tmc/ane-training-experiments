@@ -109,7 +109,7 @@ func main() {
 	}
 }
 
-func runRaw(k *xane.Kernel, in, out []byte, warmup, iters int) error {
+func runRaw(k *xane.Model, in, out []byte, warmup, iters int) error {
 	for i := 0; i < warmup; i++ {
 		if err := k.WriteInput(0, in); err != nil {
 			return fmt.Errorf("raw warmup write: %w", err)
@@ -140,7 +140,7 @@ func runRaw(k *xane.Kernel, in, out []byte, warmup, iters int) error {
 	return nil
 }
 
-func runEspressoExternal(k *xane.Kernel, in, out []byte, warmup, iters int, metalProbe bool) error {
+func runEspressoExternal(k *xane.Model, in, out []byte, warmup, iters int, metalProbe bool) error {
 	inRef := uintptr(k.InputSurface(0))
 	outRef := uintptr(k.OutputSurface(0))
 

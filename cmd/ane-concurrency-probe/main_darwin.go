@@ -112,7 +112,7 @@ func main() {
 	}
 }
 
-func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
+func runEvalDepth(rt *xane.Client, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
 	k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
 	if err != nil {
 		return xanetelemetry.Diagnostics{}, nil, 0, 0, 0, err
@@ -170,8 +170,8 @@ func runEvalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inpu
 	return diag, flatten(allLat), runDur, maxInflight, avg, nil
 }
 
-func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
-	ks := make([]*xane.Kernel, 0, depth)
+func runBidirectionalDepth(rt *xane.Client, modelPath, modelKey string, qos uint32, inputBytes, outputBytes, depth, iters, sampleMS int) (xanetelemetry.Diagnostics, []float64, time.Duration, int64, float64, error) {
+	ks := make([]*xane.Model, 0, depth)
 	defer closeKernels(ks)
 	for i := 0; i < depth; i++ {
 		k, err := compileKernel(rt, modelPath, modelKey, qos, inputBytes, outputBytes)
@@ -252,7 +252,7 @@ func runBidirectionalDepth(rt *xane.Runtime, modelPath, modelKey string, qos uin
 	return diag, flatten(allLat), runDur, maxInflight, avg, nil
 }
 
-func compileKernel(rt *xane.Runtime, modelPath, modelKey string, qos uint32, inputBytes, outputBytes int) (*xane.Kernel, error) {
+func compileKernel(rt *xane.Client, modelPath, modelKey string, qos uint32, inputBytes, outputBytes int) (*xane.Model, error) {
 	k, err := rt.Compile(xane.CompileOptions{
 		ModelType:   xane.ModelTypePackage,
 		PackagePath: modelPath,
@@ -325,7 +325,7 @@ func startInflightSampler(inflight *atomic.Int64, sampleMS int) func() (int64, f
 	}
 }
 
-func closeKernels(ks []*xane.Kernel) {
+func closeKernels(ks []*xane.Model) {
 	for _, k := range ks {
 		if k != nil {
 			_ = k.Close()

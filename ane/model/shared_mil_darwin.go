@@ -43,7 +43,7 @@ type sharedMILProgram struct {
 	mapMu         sync.Mutex
 	mapMode       atomic.Uint32
 
-	owner *xane.Kernel
+	owner *xane.Model
 	refs  int
 }
 
@@ -288,7 +288,7 @@ func writeHashU32(h interface{ Write([]byte) (int, error) }, v uint32) {
 	_, _ = h.Write(buf[:])
 }
 
-func cloneLayoutsFromXANE(k *xane.Kernel, inputs bool) []xane.TensorLayout {
+func cloneLayoutsFromXANE(k *xane.Model, inputs bool) []xane.TensorLayout {
 	n := k.NumOutputs()
 	if inputs {
 		n = k.NumInputs()

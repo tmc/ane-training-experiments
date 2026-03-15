@@ -21,7 +21,7 @@ const defaultQoS = uint32(21)
 
 var compileRuntime struct {
 	mu sync.Mutex
-	rt *xane.Runtime
+	rt *xane.Client
 }
 
 type CompileOptions struct {
@@ -54,8 +54,8 @@ type EvalStats struct {
 
 // Kernel adapts github.com/tmc/apple/x/ane for the local model API.
 type Kernel struct {
-	rt     *xane.Runtime
-	k      *xane.Kernel
+	rt     *xane.Client
+	k      *xane.Model
 	shared *sharedMILHandle
 
 	inputBytes   []int
@@ -559,7 +559,7 @@ func (k *Kernel) closed() bool {
 	return k == nil || (k.k == nil && k.shared == nil)
 }
 
-func acquireCompileRuntime() (*xane.Runtime, error) {
+func acquireCompileRuntime() (*xane.Client, error) {
 	compileRuntime.mu.Lock()
 	defer compileRuntime.mu.Unlock()
 	if compileRuntime.rt != nil {

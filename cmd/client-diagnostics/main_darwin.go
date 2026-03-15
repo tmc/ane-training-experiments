@@ -132,7 +132,7 @@ func main() {
 	emitReport(r)
 }
 
-func writePatternInput(k *xane.Kernel) error {
+func writePatternInput(k *xane.Model) error {
 	layout := k.InputLayout(0)
 	switch layout.ElemSize {
 	case 4:
@@ -156,7 +156,7 @@ func writePatternInput(k *xane.Kernel) error {
 	}
 }
 
-func sampleOutput(k *xane.Kernel, output, n int) ([]float32, error) {
+func sampleOutput(k *xane.Model, output, n int) ([]float32, error) {
 	layout := k.OutputLayout(output)
 	limit := n
 	if logical := layout.LogicalElements(); logical > 0 && logical < limit {
