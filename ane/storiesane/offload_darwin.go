@@ -42,8 +42,7 @@ type offload struct {
 	clsBwdDyn []classifierDynamicTile
 	clsBwd    *model.Kernel
 	clsBwdTil []classifierTile
-	rmsBwd    *model.Kernel
-	rmsBwdIn  []float32
+	rmsBwd *model.Kernel
 	clsBwdTmp []float32
 	rmsW      []float32
 
@@ -88,11 +87,10 @@ func newOffloadWithState(mw *stories.ModelWeights, seq int, useANE bool, cpuClas
 		return nil
 	}
 	o := &offload{
-		rmsFwd:   rmsFwd,
-		rmsBwd:   rmsBwd,
-		rmsBwdIn: make([]float32, 2*stories.Dim*seq),
-		rmsW:     mw.RMSFinal,
-		softmax:  softmax,
+		rmsFwd:  rmsFwd,
+		rmsBwd:  rmsBwd,
+		rmsW:    mw.RMSFinal,
+		softmax: softmax,
 	}
 	var err error
 
@@ -262,7 +260,6 @@ func (o *offload) close() {
 	o.clsBwd = nil
 	o.clsBwdTil = nil
 	o.rmsBwd = nil
-	o.rmsBwdIn = nil
 	o.clsBwdTmp = nil
 }
 
@@ -534,12 +531,10 @@ func (o *offload) runRMSBackwardWithWeights(dx, dy, x, w []float32) error {
 	if o == nil || o.rmsBwd == nil {
 		return fmt.Errorf("rms backward kernel is unavailable")
 	}
-	copy(o.rmsBwdIn, dy)
-	copy(o.rmsBwdIn[len(dy):], x)
 	if err := writeInputFP16CGo(o.rmsBwd, 1, w); err != nil {
 		return err
 	}
-	if err := writeInputFP16CGo(o.rmsBwd, 0, o.rmsBwdIn); err != nil {
+	if err := writeInputFP16Channels2CGo(o.rmsBwd, 0, 0, dy, stories.Dim, x); err != nil {
 		return err
 	}
 	if err := evalKernelTracked(o.metrics, o.rmsBwd); err != nil {
