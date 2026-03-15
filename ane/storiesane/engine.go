@@ -98,6 +98,7 @@ type Engine struct {
 	backwardDirty           bool
 	backwardInitErr         error
 	tmpHidden               []float32
+	fwdBufs                 [][]float32 // per-layer forward I/O buffers for cache aliasing
 	caches                  []layerCache
 	accum                   *modelGrad
 	applyGrads              []stories.LayerWeights
@@ -219,6 +220,10 @@ func Open(opts Options) (*Engine, error) {
 	for i := range applyGrads {
 		applyGrads[i] = newLayerGrad()
 	}
+	fwdBufs := make([][]float32, stories.NLayers+1)
+	for i := range fwdBufs {
+		fwdBufs[i] = make([]float32, stories.Dim*seq)
+	}
 
 	return &Engine{
 		mw:                      mw,
@@ -241,6 +246,7 @@ func Open(opts Options) (*Engine, error) {
 		rng:                     drand48Seed(opts.Seed),
 		start:                   time.Now(),
 		tmpHidden:               make([]float32, stories.Dim*seq),
+		fwdBufs:                 fwdBufs,
 		caches:                  caches,
 		accum:                   accum,
 		applyGrads:              applyGrads,

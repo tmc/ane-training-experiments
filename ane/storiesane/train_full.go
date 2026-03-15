@@ -396,40 +396,39 @@ func (e *Engine) forwardTrainingCPU(input []uint16) []float32 {
 }
 
 func (e *Engine) forwardTrainingANE(input []uint16) ([]float32, error) {
-	stories.EmbedLookup(e.x, e.mw.Embed, input, stories.Dim, e.seq)
-	cur := e.x
-	next := e.tmpHidden
+	stories.EmbedLookup(e.fwdBufs[0], e.mw.Embed, input, stories.Dim, e.seq)
 	// Pipeline forward pass: overlap layer i's cache work with layer i+1's
 	// ANE evaluation. Cache work (RMS norms, copies, siluGate) only reads
 	// from layer i's buffers and writes to layer i's cache, so it's safe to
 	// run concurrently with the next layer's forward pass.
+	//
+	// Per-layer fwdBufs[i] hold each layer's input, so cache.x can alias
+	// the buffer directly instead of copying.
 	var cacheWG sync.WaitGroup
 	for i := range e.layers {
 		lf := e.layers[i]
 		cache := &e.caches[i]
-		copy(cache.x, cur)
+		cache.x = e.fwdBufs[i]
 		if !lf.dynamic {
 			cacheWG.Wait()
-			if err := lf.runWithTaps(next, cur, cache); err != nil {
+			if err := lf.runWithTaps(e.fwdBufs[i+1], e.fwdBufs[i], cache); err != nil {
 				return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
 			}
-			cur, next = next, cur
 			continue
 		}
 		cacheWG.Wait()
-		if err := lf.runDynamicForwardOnly(next, cur); err != nil {
+		if err := lf.runDynamicForwardOnly(e.fwdBufs[i+1], e.fwdBufs[i]); err != nil {
 			return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
 		}
-		prevCur := cur // capture for goroutine (lf reads from its own buffers, but RMS norm reads x)
+		prevInput := e.fwdBufs[i]
 		cacheWG.Add(1)
 		go func() {
 			defer cacheWG.Done()
-			lf.fillDynamicCache(prevCur, cache)
+			lf.fillDynamicCache(prevInput, cache)
 		}()
-		cur, next = next, cur
 	}
 	cacheWG.Wait()
-	return cur, nil
+	return e.fwdBufs[stories.NLayers], nil
 }
 
 func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, error) {
