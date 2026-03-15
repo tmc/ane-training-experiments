@@ -27,7 +27,7 @@ static void release_queue(dispatch_queue_t q) {
 import "C"
 import (
 	"runtime"
-	"sync/atomic"
+	"sync"
 	"unsafe"
 )
 
@@ -47,34 +47,35 @@ func newGradTasks() *gradTasks {
 
 // gradJobSlots avoids passing Go pointers to C. Instead we pass an integer
 // slot index as the context pointer and look up the Go function on callback.
-// Uses atomic operations instead of a mutex to reduce contention between
-// the submitting goroutine and GCD callback threads.
-const gradJobSlotCount = 32
-
-var gradJobSlots [gradJobSlotCount]atomic.Pointer[func()]
+var gradJobSlots struct {
+	mu    sync.Mutex
+	funcs []func()
+	free  []int
+}
 
 func gradJobAlloc(fn func()) uintptr {
-	for i := range gradJobSlots {
-		if gradJobSlots[i].CompareAndSwap(nil, &fn) {
-			return uintptr(i + 1) // +1 so zero is never used
-		}
+	gradJobSlots.mu.Lock()
+	var idx int
+	if n := len(gradJobSlots.free); n > 0 {
+		idx = gradJobSlots.free[n-1]
+		gradJobSlots.free = gradJobSlots.free[:n-1]
+		gradJobSlots.funcs[idx] = fn
+	} else {
+		idx = len(gradJobSlots.funcs)
+		gradJobSlots.funcs = append(gradJobSlots.funcs, fn)
 	}
-	// All slots full — shouldn't happen with bounded concurrency.
-	// Spin-wait for a free slot.
-	for {
-		for i := range gradJobSlots {
-			if gradJobSlots[i].CompareAndSwap(nil, &fn) {
-				return uintptr(i + 1)
-			}
-		}
-		runtime.Gosched()
-	}
+	gradJobSlots.mu.Unlock()
+	return uintptr(idx + 1) // +1 so zero is never used
 }
 
 func gradJobTake(ctx uintptr) func() {
 	idx := int(ctx) - 1
-	fnp := gradJobSlots[idx].Swap(nil)
-	return *fnp
+	gradJobSlots.mu.Lock()
+	fn := gradJobSlots.funcs[idx]
+	gradJobSlots.funcs[idx] = nil
+	gradJobSlots.free = append(gradJobSlots.free, idx)
+	gradJobSlots.mu.Unlock()
+	return fn
 }
 
 //export gradCallback
