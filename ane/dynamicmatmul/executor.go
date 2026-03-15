@@ -223,53 +223,23 @@ func (e *Executor) EvalCFHW(xCF []float32) (uint64, error) {
 func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, error) {
 	var hwNS uint64
 	var metrics map[string]float64
-	n := len(e.tiles)
-	if n == 0 {
-		return EvalStats{}, nil
-	}
-
-	// Pipeline: stage+write tile i+1 concurrently with eval of tile i.
-	// Each tile has its own inputPacked buffer and IOSurface, so the
-	// write for the next tile is safe to overlap with the current eval.
-	var prepErr error
-	var prepWG sync.WaitGroup
-
-	// Stage+write the first tile synchronously.
-	tile := &e.tiles[0]
-	stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
-	if err := tileWriteInputF32(tile); err != nil {
-		return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile 0: %w", err)
-	}
-
-	for i := 0; i < n; i++ {
+	for i := range e.tiles {
 		tile := &e.tiles[i]
-
-		// Start preparing the next tile while this one evaluates.
-		if i+1 < n {
-			next := &e.tiles[i+1]
-			prepWG.Add(1)
-			go func(idx int) {
-				defer prepWG.Done()
-				stageChannelFirstActivations(next.inputPacked, xCF, e.batch, e.inDim, next.outDim)
-				if err := tileWriteInputF32(next); err != nil {
-					prepErr = fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", idx, err)
-				}
-			}(i + 1)
+		stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
+		if err := tileWriteInputF32(tile); err != nil {
+			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, err)
 		}
-
 		evalStart := time.Now()
 		var tileHW uint64
 		if collectMetrics {
 			st, err := tile.k.EvalWithStats()
 			if err != nil {
-				prepWG.Wait()
 				return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
 			}
 			tileHW = st.HWExecutionNS
 			metrics = addEvalMetrics(metrics, st.Metrics)
 		} else {
 			if err := tile.k.Eval(); err != nil {
-				prepWG.Wait()
 				return EvalStats{}, fmt.Errorf("dynamic matmul: eval channel-first tile %d: %w", i, err)
 			}
 		}
@@ -277,12 +247,6 @@ func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, 
 			hwNS += tileHW
 		} else {
 			hwNS += uint64(time.Since(evalStart).Nanoseconds())
-		}
-
-		// Wait for next tile prep before starting its eval.
-		prepWG.Wait()
-		if prepErr != nil {
-			return EvalStats{}, prepErr
 		}
 	}
 	return EvalStats{HWExecutionNS: hwNS, Metrics: metrics}, nil
