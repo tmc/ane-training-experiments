@@ -1,10 +1,6 @@
 package storiesane
 
-import (
-	"math"
-	"runtime"
-	"sync"
-)
+import "math"
 
 func crossEntropyLossFromProbs(dLogits, probs []float32, targets []uint16, vocab, seq int) float32 {
 	loss, valid := crossEntropyLossFromProbsUnscaled(dLogits, probs, targets, vocab, seq)
@@ -12,9 +8,7 @@ func crossEntropyLossFromProbs(dLogits, probs []float32, targets []uint16, vocab
 		return 0
 	}
 	scale := float32(1.0 / float64(valid))
-	parallelForCF(len(dLogits[:vocab*seq]), func(start, end int) {
-		scaleCrossEntropyGradSlice(dLogits, scale, start, end)
-	})
+	scaleSlice(dLogits[:vocab*seq], scale)
 	return loss
 }
 
@@ -31,46 +25,7 @@ func crossEntropyLossFromProbsUnscaled(dLogits, probs []float32, targets []uint1
 	if !sameBackingSlice(dLogits[:vocab*seq], probs[:vocab*seq]) {
 		copy(dLogits[:vocab*seq], probs[:vocab*seq])
 	}
-	loss := 0.0
-	valid := 0
-	workers := min(8, runtime.GOMAXPROCS(0))
-	if workers < 2 || seq < workers*4 {
-		loss, valid = crossEntropyLossFromProbsRange(dLogits, probs, targets, vocab, seq, 0, seq)
-		if valid == 0 {
-			return 0, 0
-		}
-		return float32(loss / float64(valid)), valid
-	}
-	if workers > seq {
-		workers = seq
-	}
-	chunk := (seq + workers - 1) / workers
-	type shard struct {
-		loss  float64
-		valid int
-	}
-	shards := make([]shard, workers)
-	var wg sync.WaitGroup
-	for worker := 0; worker < workers; worker++ {
-		start := worker * chunk
-		if start >= seq {
-			break
-		}
-		end := start + chunk
-		if end > seq {
-			end = seq
-		}
-		wg.Add(1)
-		go func(start, end, worker int) {
-			defer wg.Done()
-			shards[worker].loss, shards[worker].valid = crossEntropyLossFromProbsRange(dLogits, probs, targets, vocab, seq, start, end)
-		}(start, end, worker)
-	}
-	wg.Wait()
-	for _, shard := range shards {
-		loss += shard.loss
-		valid += shard.valid
-	}
+	loss, valid := crossEntropyLossFromProbsRange(dLogits, probs, targets, vocab, seq, 0, seq)
 	if valid == 0 {
 		return 0, 0
 	}
