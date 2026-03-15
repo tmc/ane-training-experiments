@@ -629,19 +629,12 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dFFN, cache.h1, cache.h3); err != nil {
 		return err
 	}
-	// Alias dh1/dh3 directly into lb.ffnOut to skip two large copies.
-	// Each layerBackward owns its own ffnOut that persists until the
-	// backward struct is freed, so the dW job can safely read from it.
-	dimN := stories.Dim * e.seq
-	hiddenN := stories.Hidden * e.seq
-	dh1 := lb.ffnOut[dimN : dimN+hiddenN]
-	dh3 := lb.ffnOut[dimN+hiddenN : dimN+2*hiddenN]
 	// Submit dW jobs immediately after ANE outputs are ready, before RMS
 	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
 	e.submitDWJob(func() {
 		accumLinearGradCF(grad.W2, cache.dOut, cache.gate, stories.Dim, stories.Hidden, e.seq)
-		accumLinearGradCF(grad.W1, dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-		accumLinearGradCF(grad.W3, dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+		accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
+		accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
 	addSlice(cache.dx2, dPrev)
