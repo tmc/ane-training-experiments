@@ -4,12 +4,8 @@ package storiesane
 
 /*
 #cgo darwin LDFLAGS: -framework IOSurface
-#cgo CFLAGS: -O3
 #include <IOSurface/IOSurface.h>
 #include <string.h>
-#ifdef __ARM_NEON
-#include <arm_neon.h>
-#endif
 
 static void *iosurface_lock_and_get_base(IOSurfaceRef surf, uint32_t options) {
 	IOSurfaceLock(surf, options, NULL);
@@ -77,88 +73,6 @@ static int iosurface_copy_range2(
 			memcpy((char*)dstBase + dOff, (char*)srcBase + sOff, rowBytes);
 	}
 	iosurface_unlock(srcSurf, 1);
-	iosurface_unlock(dstSurf, 0);
-	return 0;
-}
-// iosurface_copy_and_write_ffn_tail fuses the dsilu FP16 copy from srcSurf
-// with the h1/h3 FP32→FP16 writes into dstSurf in a single lock/unlock of
-// dstSurf. Saves 2 IOSurface ops per call vs separate copy + write.
-//
-// dst layout: [hidden] channels × [3*seq + 2*dim] width (FP16)
-//   dsilu goes at offset [0, seq)
-//   h1    goes at offset [seq, 2*seq)
-//   h3    goes at offset [2*seq, 3*seq)
-//
-// src layout: [hidden] channels × width (FP16), read from channel 0 offset 0
-static int iosurface_copy_and_write_ffn_tail(
-	IOSurfaceRef dstSurf, int dstPlaneStride, int dstAllocSize,
-	IOSurfaceRef srcSurf, int srcPlaneStride, int srcAllocSize,
-	const float *h1, int h1Len,
-	const float *h3, int h3Len,
-	int channels, int seq, int elemSize
-) {
-	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
-	void *srcBase = iosurface_lock_and_get_base(srcSurf, 1);
-	if (!dstBase || !srcBase) {
-		if (srcBase) iosurface_unlock(srcSurf, 1);
-		if (dstBase) iosurface_unlock(dstSurf, 0);
-		return -1;
-	}
-	int rowBytes = seq * elemSize;
-	// Copy dsilu (FP16→FP16) from srcSurf to dstSurf offset 0
-	for (int c = 0; c < channels; c++) {
-		int dOff = c * dstPlaneStride;
-		int sOff = c * srcPlaneStride;
-		if (dOff + rowBytes <= dstAllocSize && sOff + rowBytes <= srcAllocSize)
-			memcpy((char*)dstBase + dOff, (char*)srcBase + sOff, rowBytes);
-	}
-	iosurface_unlock(srcSurf, 1);
-	// Write h1 FP32→FP16 at offset seq, h3 at offset 2*seq
-	int h1Off = seq * elemSize;
-	int h3Off = 2 * seq * elemSize;
-	for (int c = 0; c < channels; c++) {
-		int base = c * dstPlaneStride;
-		if (base + h3Off + rowBytes > dstAllocSize) break;
-		int srcOff = c * seq;
-		// h1
-		if (srcOff + seq <= h1Len) {
-			const float *src1 = h1 + srcOff;
-			_Float16 *dst1 = (_Float16*)((char*)dstBase + base + h1Off);
-#ifdef __ARM_NEON
-			int w = 0;
-			for (; w + 7 < seq; w += 8) {
-				float16x8_t h = vcombine_f16(
-					vcvt_f16_f32(vld1q_f32(src1 + w)),
-					vcvt_f16_f32(vld1q_f32(src1 + w + 4)));
-				vst1q_f16((__fp16 *)(dst1 + w), h);
-			}
-			for (; w < seq; w++)
-				dst1[w] = (_Float16)src1[w];
-#else
-			for (int w = 0; w < seq; w++)
-				dst1[w] = (_Float16)src1[w];
-#endif
-		}
-		// h3
-		if (srcOff + seq <= h3Len) {
-			const float *src3 = h3 + srcOff;
-			_Float16 *dst3 = (_Float16*)((char*)dstBase + base + h3Off);
-#ifdef __ARM_NEON
-			int w = 0;
-			for (; w + 7 < seq; w += 8) {
-				float16x8_t h = vcombine_f16(
-					vcvt_f16_f32(vld1q_f32(src3 + w)),
-					vcvt_f16_f32(vld1q_f32(src3 + w + 4)));
-				vst1q_f16((__fp16 *)(dst3 + w), h);
-			}
-			for (; w < seq; w++)
-				dst3[w] = (_Float16)src3[w];
-#else
-			for (int w = 0; w < seq; w++)
-				dst3[w] = (_Float16)src3[w];
-#endif
-		}
-	}
 	iosurface_unlock(dstSurf, 0);
 	return 0;
 }
@@ -296,38 +210,6 @@ func copyOutputRange2ToInputCGo(
 		C.int(src1Channel), C.int(src1Offset),
 		C.int(src2Channel), C.int(src2Offset),
 		C.int(channels), C.int(rowBytes), C.int(srcLayout.ElemSize),
-	)
-	if rc != 0 {
-		return errNilIOSurfaceBase
-	}
-	return nil
-}
-
-// copyAndWriteFFNTailCGo fuses the dsilu FP16 copy from src output surface with
-// the h1/h3 FP32→FP16 writes into dst input surface. Holds the dst lock once
-// instead of twice, saving 2 IOSurface ops per call.
-func copyAndWriteFFNTailCGo(dst *model.Kernel, dstInput int, src *model.Kernel, srcOutput int, h1, h3 []float32, hidden, seq int) error {
-	if dst == nil || src == nil {
-		return fmt.Errorf("copy and write ffn tail cgo: nil kernel")
-	}
-	dstLayout := dst.InputLayout(dstInput)
-	srcLayout := src.OutputLayout(srcOutput)
-	if dstLayout.ElemSize != 2 || srcLayout.ElemSize != 2 {
-		return fmt.Errorf("copy and write ffn tail cgo: elem size dst=%d src=%d, want 2", dstLayout.ElemSize, srcLayout.ElemSize)
-	}
-	dstRef := dst.InputSurface(dstInput)
-	srcRef := src.OutputSurface(srcOutput)
-	if dstRef == 0 || srcRef == 0 {
-		return fmt.Errorf("copy and write ffn tail cgo: nil surface ref")
-	}
-	rc := C.iosurface_copy_and_write_ffn_tail(
-		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
-		C.int(dstLayout.PlaneStride), C.int(dstLayout.AllocSize()),
-		C.IOSurfaceRef(unsafe.Pointer(srcRef)),
-		C.int(srcLayout.PlaneStride), C.int(srcLayout.AllocSize()),
-		(*C.float)(unsafe.Pointer(&h1[0])), C.int(len(h1)),
-		(*C.float)(unsafe.Pointer(&h3[0])), C.int(len(h3)),
-		C.int(hidden), C.int(seq), C.int(dstLayout.ElemSize),
 	)
 	if rc != 0 {
 		return errNilIOSurfaceBase
