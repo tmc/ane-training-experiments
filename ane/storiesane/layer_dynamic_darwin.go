@@ -372,7 +372,7 @@ func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 		return
 	}
 	want := lf.dim * lf.seq
-	cache.x2 = lf.x2
+	copy(cache.x2, lf.x2)
 	cache.attTapsReady = false
 	cache.ffnTapsReady = false
 	rmsNormCFWithRRMS(cache.xNorm, cache.attRRMS, x, lf.rmsAtt, lf.dim, lf.seq)
