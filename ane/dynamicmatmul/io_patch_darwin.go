@@ -39,15 +39,6 @@ static int iosurface_write_strided_f32(
 		iosurface_unlock(surf, 0);
 		return 0;
 	}
-	// Fast path: height=1 and contiguous planes → single memcpy.
-	if (height == 1 && planeStride == width * 4 && limit == logical) {
-		int totalBytes = limit * 4;
-		if (totalBytes <= allocSize) {
-			memcpy(dst, data, totalBytes);
-			iosurface_unlock(surf, 0);
-			return 0;
-		}
-	}
 	for (int c = 0; c < channels; c++) {
 		for (int h = 0; h < height; h++) {
 			int srcIdx = c * hw + h * width;
@@ -87,15 +78,6 @@ static int iosurface_read_strided_f32(
 	if (limit == 0) {
 		iosurface_unlock(surf, 1);
 		return 0;
-	}
-	// Fast path: height=1 and contiguous planes → single memcpy.
-	if (height == 1 && planeStride == width * 4 && limit == logical) {
-		int totalBytes = limit * 4;
-		if (totalBytes <= allocSize) {
-			memcpy(data, src, totalBytes);
-			iosurface_unlock(surf, 1);
-			return 0;
-		}
 	}
 	for (int c = 0; c < channels; c++) {
 		for (int h = 0; h < height; h++) {
