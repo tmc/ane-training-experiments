@@ -16,6 +16,10 @@ func tileWriteInputF32(tile *tile) error {
 	return tile.k.WriteInputF32(0, tile.inputPacked)
 }
 
+func tileWriteActivationsF32(tile *tile, batch int) error {
+	return tile.k.WriteInputF32(0, tile.inputPacked)
+}
+
 func tileReadOutputF32(tile *tile) error {
 	return tile.k.ReadOutputF32(0, tile.outputPacked)
 }
