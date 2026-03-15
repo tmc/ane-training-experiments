@@ -172,6 +172,29 @@ func writeInputFP16ChannelsCGo(k *model.Kernel, input, channel int, data []float
 	})
 }
 
+// writeInputFP16Channels2CGo writes two channel-offset regions to the same
+// IOSurface input in a single lock/unlock, halving the kernel synchronization
+// overhead compared to two separate writeInputFP16ChannelsCGo calls.
+func writeInputFP16Channels2CGo(k *model.Kernel, input int, ch1 int, data1 []float32, ch2 int, data2 []float32) error {
+	if k == nil {
+		return fmt.Errorf("write input fp16 channels2 cgo: kernel is nil")
+	}
+	layout := k.InputLayout(input)
+	ref := k.InputSurface(input)
+	if ref == 0 {
+		return fmt.Errorf("write input fp16 channels2 cgo: input surface %d is nil", input)
+	}
+	channelElems := layout.Height * layout.Width
+	if channelElems <= 0 {
+		return fmt.Errorf("write input fp16 channels2 cgo: invalid channel elems %d", channelElems)
+	}
+	return withLockedFP16InputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		writeChannelFirstActsOffsetFP16(surfData, layout, ch1, 0, channelElems, data1)
+		writeChannelFirstActsOffsetFP16(surfData, layout, ch2, 0, channelElems, data2)
+		return nil
+	})
+}
+
 // readOutputFP16ChannelsCGo reads channel-offset float32 data using CGo.
 func readOutputFP16ChannelsCGo(k *model.Kernel, output, channel int, data []float32) error {
 	if k == nil {
