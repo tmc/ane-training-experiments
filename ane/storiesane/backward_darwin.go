@@ -296,7 +296,7 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa1: %w", err)
 	}
-	if err := model.CopyOutputChannelsToInput(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
+	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward attention: copy sdpa1 output into sdpa2 input: %w", err)
 	}
 	if err := lb.sdpa2.WriteInputFP16Channels(0, 2*lb.scoreCh, q); err != nil {
@@ -308,10 +308,10 @@ func (lb *layerBackward) runAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []float32
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward attention: eval sdpa2: %w", err)
 	}
-	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 0, lb.sdpa2, 0, 0, 2*lb.dim); err != nil {
+	if err := copyOutputChannelsToInputCGo(lb.qkv, 0, 0, lb.sdpa2, 0, 0, 2*lb.dim); err != nil {
 		return fmt.Errorf("run layer backward attention: copy sdpa2 output into qkv input: %w", err)
 	}
-	if err := model.CopyOutputChannelsToInput(lb.qkv, 0, 2*lb.dim, lb.sdpa1, 0, 0, lb.dim); err != nil {
+	if err := copyOutputChannelsToInputCGo(lb.qkv, 0, 2*lb.dim, lb.sdpa1, 0, 0, lb.dim); err != nil {
 		return fmt.Errorf("run layer backward attention: copy sdpa1 dv into qkv input: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {

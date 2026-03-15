@@ -5,6 +5,7 @@ package storiesane
 /*
 #cgo darwin LDFLAGS: -framework IOSurface
 #include <IOSurface/IOSurface.h>
+#include <string.h>
 
 static void *iosurface_lock_and_get_base(IOSurfaceRef surf, uint32_t options) {
 	IOSurfaceLock(surf, options, NULL);
@@ -14,12 +15,41 @@ static void *iosurface_lock_and_get_base(IOSurfaceRef surf, uint32_t options) {
 static void iosurface_unlock(IOSurfaceRef surf, uint32_t options) {
 	IOSurfaceUnlock(surf, options, NULL);
 }
+
+// iosurface_copy_range copies a contiguous width range for a block of channels
+// from src output surface to dst input surface without going through purego.
+// This replaces 6 purego calls (2 locks + 2 getbase + 2 unlocks) with 2 CGo calls.
+static int iosurface_copy_range(
+	IOSurfaceRef dstSurf, int dstPlaneStride, int dstChannel, int dstOffset, int dstAllocSize,
+	IOSurfaceRef srcSurf, int srcPlaneStride, int srcChannel, int srcOffset, int srcAllocSize,
+	int channels, int rowBytes, int elemSize
+) {
+	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
+	void *srcBase = iosurface_lock_and_get_base(srcSurf, 1); // kIOSurfaceLockReadOnly
+	if (!dstBase || !srcBase) {
+		if (srcBase) iosurface_unlock(srcSurf, 1);
+		if (dstBase) iosurface_unlock(dstSurf, 0);
+		return -1;
+	}
+	for (int c = 0; c < channels; c++) {
+		int dstOff = (dstChannel + c) * dstPlaneStride + dstOffset * elemSize;
+		int srcOff = (srcChannel + c) * srcPlaneStride + srcOffset * elemSize;
+		if (dstOff < 0 || dstOff + rowBytes > dstAllocSize) { break; }
+		if (srcOff < 0 || srcOff + rowBytes > srcAllocSize) { break; }
+		memcpy((char*)dstBase + dstOff, (char*)srcBase + srcOff, rowBytes);
+	}
+	iosurface_unlock(srcSurf, 1);
+	iosurface_unlock(dstSurf, 0);
+	return 0;
+}
 */
 import "C"
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
+	"github.com/maderix/ANE/ane/model"
 	coregraphics "github.com/tmc/apple/coregraphics"
 	xane "github.com/tmc/apple/x/ane"
 )
@@ -52,4 +82,52 @@ func withLockedFP16OutputCGo(surfRef coregraphics.IOSurfaceRef, layout xane.Tens
 	err := fn(layout, data)
 	C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(surfRef)), readOnly)
 	return err
+}
+
+// copyOutputRangeToInputCGo is a CGo-based replacement for model.CopyOutputRangeToInput,
+// replacing 6 purego calls (2 locks + 2 getbase + 2 unlocks) with 2 CGo calls
+// for the IOSurface operations.
+func copyOutputRangeToInputCGo(dst *model.Kernel, dstInput, dstChannel, dstOffset int, src *model.Kernel, srcOutput, srcChannel, srcOffset, channels, width int) error {
+	if dst == nil || src == nil {
+		return fmt.Errorf("copy output to input cgo: nil kernel")
+	}
+	if channels <= 0 {
+		return nil
+	}
+	dstLayout := dst.InputLayout(dstInput)
+	srcLayout := src.OutputLayout(srcOutput)
+	if dstLayout.Height != 1 || srcLayout.Height != 1 {
+		return fmt.Errorf("copy output to input cgo: height > 1 not supported")
+	}
+	if width < 0 {
+		if dstLayout.Width != srcLayout.Width {
+			return fmt.Errorf("copy output to input cgo: width mismatch dst=%d src=%d", dstLayout.Width, srcLayout.Width)
+		}
+		width = srcLayout.Width
+	}
+	if dstLayout.ElemSize != srcLayout.ElemSize {
+		return fmt.Errorf("copy output to input cgo: elem size mismatch dst=%d src=%d", dstLayout.ElemSize, srcLayout.ElemSize)
+	}
+	rowBytes := width * srcLayout.ElemSize
+	dstRef := dst.InputSurface(dstInput)
+	srcRef := src.OutputSurface(srcOutput)
+	if dstRef == 0 || srcRef == 0 {
+		return fmt.Errorf("copy output to input cgo: nil surface ref")
+	}
+	rc := C.iosurface_copy_range(
+		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
+		C.int(dstLayout.PlaneStride), C.int(dstChannel), C.int(dstOffset), C.int(dstLayout.AllocSize()),
+		C.IOSurfaceRef(unsafe.Pointer(srcRef)),
+		C.int(srcLayout.PlaneStride), C.int(srcChannel), C.int(srcOffset), C.int(srcLayout.AllocSize()),
+		C.int(channels), C.int(rowBytes), C.int(srcLayout.ElemSize),
+	)
+	if rc != 0 {
+		return errNilIOSurfaceBase
+	}
+	return nil
+}
+
+// copyOutputChannelsToInputCGo is a convenience wrapper.
+func copyOutputChannelsToInputCGo(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, srcOutput, srcChannel, channels int) error {
+	return copyOutputRangeToInputCGo(dst, dstInput, dstChannel, 0, src, srcOutput, srcChannel, 0, channels, -1)
 }

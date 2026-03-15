@@ -403,7 +403,7 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	if err := evalKernelTracked(lb.metrics, lb.ffnW2); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: eval w2: %w", err)
 	}
-	if err := model.CopyOutputRangeToInput(lb.ffn, 0, 0, 0, lb.ffnW2, 0, 0, 0, lb.hidden, lb.seq); err != nil {
+	if err := copyOutputRangeToInputCGo(lb.ffn, 0, 0, 0, lb.ffnW2, 0, 0, 0, lb.hidden, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: copy dsilu to tail: %w", err)
 	}
 	if err := writeStoriesFFNTailAuxActs(lb.ffn, lb.seq, lb.hidden, h1, h3); err != nil {
@@ -465,13 +465,13 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := writeInputFP16ChannelsFast(lb.sdpa1, 0, 2*lb.dim, lb.seq, v); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: write v: %w", err)
 	}
-	if err := model.CopyOutputChannelsToInput(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
+	if err := copyOutputChannelsToInputCGo(lb.sdpa1, 0, 3*lb.dim, lb.wot, 0, 0, lb.dim); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy da: %w", err)
 	}
 	if err := evalKernelTracked(lb.metrics, lb.sdpa1); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval sdpa1: %w", err)
 	}
-	if err := model.CopyOutputChannelsToInput(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
+	if err := copyOutputChannelsToInputCGo(lb.sdpa2, 0, 0, lb.sdpa1, 0, lb.dim, 2*lb.scoreCh); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy sdpa1 output: %w", err)
 	}
 	if err := writeInputFP16ChannelsFast(lb.sdpa2, 0, 2*lb.scoreCh, lb.seq, q); err != nil {
@@ -483,13 +483,13 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval sdpa2: %w", err)
 	}
-	if err := model.CopyOutputRangeToInput(lb.qkv, 0, 0, 0, lb.sdpa2, 0, 0, 0, lb.dim, lb.seq); err != nil {
+	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 0, lb.sdpa2, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dq to qkv: %w", err)
 	}
-	if err := model.CopyOutputRangeToInput(lb.qkv, 0, 0, lb.seq, lb.sdpa2, 0, lb.dim, 0, lb.dim, lb.seq); err != nil {
+	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, lb.seq, lb.sdpa2, 0, lb.dim, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dk to qkv: %w", err)
 	}
-	if err := model.CopyOutputRangeToInput(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
+	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
 	if err := readOutputFP16ChannelsFast(lb.sdpa2, 0, 0, lb.seq, dq); err != nil {

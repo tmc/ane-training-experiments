@@ -437,7 +437,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 		if err := evalKernelTracked(o.metrics, o.clsFwd); err != nil {
 			return err
 		}
-		if err := model.CopyOutputChannelsToInput(o.softmax, 0, 0, o.clsFwd, 0, 0, stories.Vocab); err != nil {
+		if err := copyOutputChannelsToInputCGo(o.softmax, 0, 0, o.clsFwd, 0, 0, stories.Vocab); err != nil {
 			return err
 		}
 	} else {
@@ -448,7 +448,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 			if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
 				return err
 			}
-			if err := model.CopyOutputChannelsToInput(o.softmax, 0, tile.start, tile.kernel, 0, 0, tile.size); err != nil {
+			if err := copyOutputChannelsToInputCGo(o.softmax, 0, tile.start, tile.kernel, 0, 0, tile.size); err != nil {
 				return err
 			}
 		}

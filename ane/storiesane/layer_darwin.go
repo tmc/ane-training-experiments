@@ -236,7 +236,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 		if err := lf.att.WriteInputFP16(0, x); err != nil {
 			return fmt.Errorf("run layer forward: write attention residual input: %w", err)
 		}
-		if err := model.CopyOutputChannelsToInput(lf.att, 1, 0, lf.qkv, 0, 0, 3*lf.dim); err != nil {
+		if err := copyOutputChannelsToInputCGo(lf.att, 1, 0, lf.qkv, 0, 0, 3*lf.dim); err != nil {
 			if cache == nil {
 				if err := lf.qkv.ReadOutputFP16(0, lf.qkvOut); err != nil {
 					return fmt.Errorf("run layer forward: read qkv output fallback: %w", err)
@@ -271,7 +271,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 	}
 	blendResidualInPlace(lf.x2, x)
 
-	if err := model.CopyOutputChannelsToInput(lf.ffn, 0, 0, lf.att, 0, 0, lf.dim); err != nil {
+	if err := copyOutputChannelsToInputCGo(lf.ffn, 0, 0, lf.att, 0, 0, lf.dim); err != nil {
 		if err := lf.ffn.WriteInputFP16(0, lf.x2); err != nil {
 			return fmt.Errorf("run layer forward: write ffn input: %w", err)
 		}
