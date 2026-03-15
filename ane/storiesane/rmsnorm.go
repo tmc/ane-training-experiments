@@ -72,7 +72,7 @@ func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
 // rmsNormBackwardPooled computes both dx and dw using pooled shard buffers,
 // avoiding per-call allocations from stories.RMSNormBackward.
 func rmsNormBackwardPooled(dx, dw, dy, x, w []float32, d, s int) {
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(8, runtime.GOMAXPROCS(0))
 	if workers < 2 || s < workers*4 {
 		rmsNormBackwardRange(dx, dw, dy, x, w, d, s, 0, s)
 		return
