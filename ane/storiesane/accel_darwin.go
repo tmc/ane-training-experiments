@@ -324,6 +324,33 @@ func scaleIntoAccel(dst, src []float32, scale float32) {
 	)
 }
 
+// scaleAndAddAccel: dst[i] = a[i]*scale + b[i]
+func scaleAndAddAccel(dst, a []float32, scale float32, b []float32) {
+	if len(dst) == 0 {
+		return
+	}
+	C.vDSP_vsma(
+		(*C.float)(unsafe.Pointer(&a[0])), 1,
+		(*C.float)(unsafe.Pointer(&scale)),
+		(*C.float)(unsafe.Pointer(&b[0])), 1,
+		(*C.float)(unsafe.Pointer(&dst[0])), 1,
+		C.vDSP_Length(len(dst)),
+	)
+}
+
+// addIntoAccel: dst[i] = a[i] + b[i]
+func addIntoAccel(dst, a, b []float32) {
+	if len(dst) == 0 {
+		return
+	}
+	C.vDSP_vadd(
+		(*C.float)(unsafe.Pointer(&a[0])), 1,
+		(*C.float)(unsafe.Pointer(&b[0])), 1,
+		(*C.float)(unsafe.Pointer(&dst[0])), 1,
+		C.vDSP_Length(len(dst)),
+	)
+}
+
 // blendResidualInPlaceAccel: sum[i] = base[i] + (sum[i]-base[i])*scale
 // Uses vDSP_vintb (vector interpolation): C[i] = A[i] + (B[i]-A[i])*scale
 func blendResidualInPlaceAccel(sum, base []float32, scale float32) {

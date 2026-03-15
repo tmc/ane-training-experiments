@@ -626,7 +626,7 @@ func (e *Engine) backwardFFNCPU(layer *stories.LayerWeights, cache *layerCache, 
 	addSlice(e.gradX2, dPrev)
 }
 
-func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev []float32) error {
+func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dFFN, dPrev, dCur []float32) error {
 	e.ensureFFNCache(layer, cache)
 	if err := lb.runFFN(e.gradXNorm, cache.dh1, cache.dh3, dFFN, cache.h1, cache.h3); err != nil {
 		return err
@@ -639,7 +639,8 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 		accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
-	addSlice(cache.dx2, dPrev)
+	// cache.dx2 = dCur + dPrev (fused, replaces copy+addSlice)
+	addIntoAccel(cache.dx2, dCur, dPrev)
 	return nil
 }
 
@@ -704,10 +705,9 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 
 		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
-			copy(cache.dx2, dCur)
-			// backwardFFNHybrid submits dW jobs internally, right after
-			// ANE outputs are ready, overlapping CBLAS with RMS backward.
-			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
+			// backwardFFNHybrid computes cache.dx2 = dCur + dPrev
+			// internally via addInto, replacing copy+addSlice.
+			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev, dCur); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
 			}
@@ -725,6 +725,9 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 			})
 		}
 
+		// dx2Scaled = dPrev*scale + dOut = (dPrev + dCur)*scale
+		// For hybrid path, cache.dx2 was computed by backwardFFNHybrid.
+		// For CPU path, cache.dx2 was computed by backwardFFNCPU + copies.
 		scaleInto(cache.dx2Scaled, cache.dx2, layerResidualScale)
 		if useHybrid {
 			// backwardAttentionHybridWithDW submits dW jobs internally,
@@ -773,8 +776,7 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 
 		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
-			copy(cache.dx2, dCur)
-			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
+			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev, dCur); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
 			}
