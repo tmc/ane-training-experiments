@@ -212,7 +212,7 @@ static void rms_norm_backward_cf_f32(
 	int dim,
 	int seq
 ) {
-	int workers = 8;
+	int workers = 4;
 	if (workers > seq) workers = seq;
 	if (seq < workers * 4) workers = 1;
 	int chunk = (seq + workers - 1) / workers;
