@@ -713,7 +713,10 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 
 		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
-			copy(cache.dx2, dCur)
+			// Alias cache.dx2 to dCur instead of copying. This is safe
+			// because after the backward pass, dCur becomes dPrev (output
+			// buffer) which is always overwritten before being read.
+			cache.dx2 = dCur
 			// backwardFFNHybrid submits dW jobs internally, right after
 			// ANE outputs are ready, overlapping CBLAS with RMS backward.
 			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
@@ -782,7 +785,7 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 
 		scaleInto(cache.dOut, dCur, layerResidualScale)
 		if useHybrid {
-			copy(cache.dx2, dCur)
+			cache.dx2 = dCur
 			if err := e.backwardFFNHybrid(e.backward[l], layer, cache, grad, cache.dOut, dPrev); err != nil {
 				e.disableHybridBackward(fmt.Errorf("storiesane step: layer %d hybrid ffn backward: %w", l, err))
 				useHybrid = false
