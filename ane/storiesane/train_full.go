@@ -647,11 +647,9 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 		accumLinearGradCF(grad.W1, cache.dh1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 		accumLinearGradCF(grad.W3, cache.dh3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 	})
-	// Write RMS backward output directly to cache.dx2 instead of a
-	// separate dPrev buffer, then add dCur. This avoids a 96KB copy
-	// per layer (the caller no longer needs copy(cache.dx2, dCur)).
-	e.runRMSBackwardLayer(cache.dx2, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS)
-	addSlice(cache.dx2, dCur)
+	// Write RMS backward output directly to cache.dx2 and add dCur in
+	// a single fused pass, avoiding a separate addSlice.
+	rmsNormBackwardAddAccel(cache.dx2, grad.RMSFFN, e.gradXNorm, cache.x2, layer.RMSFFN, cache.ffnRRMS, dCur, stories.Dim, e.seq)
 	return nil
 }
 
@@ -666,8 +664,7 @@ func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories
 		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
 		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	})
-	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
-	addSlice(dPrev, dx2)
+	rmsNormBackwardAddAccel(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS, dx2, stories.Dim, e.seq)
 	return nil
 }
 

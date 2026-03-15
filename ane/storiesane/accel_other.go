@@ -148,6 +148,17 @@ func rmsNormBackwardAccel(dx, dw, dy, x, w, rrms []float32, dim, seq int) {
 	rmsNormBackwardWithRRMS(dx, dw, dy, x, w, rrms, dim, seq)
 }
 
+func rmsNormBackwardAddAccel(dx, dw, dy, x, w, rrms, add []float32, dim, seq int) {
+	rmsNormBackwardWithRRMS(dx, dw, dy, x, w, rrms, dim, seq)
+	addSliceFallback(dx, add)
+}
+
+func addSliceFallback(dst, src []float32) {
+	for i := range dst {
+		dst[i] += src[i]
+	}
+}
+
 func transposeClassifierForwardTileAccel(dst, embed []float32, start, size int) {
 	dim := stories.Dim
 	for d := 0; d < dim; d++ {
