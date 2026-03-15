@@ -76,6 +76,20 @@ func softmaxStridedCEAccel(dLogits, logits []float32, target, vocab, stride, t i
 	return float32(-math.Log(float64(p)))
 }
 
+func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, vocab, stride, tStart, tEnd int) (float64, int) {
+	totalLoss := 0.0
+	totalValid := 0
+	for t := tStart; t < tEnd; t++ {
+		loss := softmaxStridedCEAccel(dLogits, logits, int(targets[t]), vocab, stride, t)
+		tgt := int(targets[t])
+		if tgt >= 0 && tgt < vocab {
+			totalLoss += float64(loss)
+			totalValid++
+		}
+	}
+	return totalLoss, totalValid
+}
+
 func softmaxRowAccel(out, in []float32) {
 	maxv := in[0]
 	for i := 1; i < len(in); i++ {

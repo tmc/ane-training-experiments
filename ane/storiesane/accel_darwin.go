@@ -121,6 +121,33 @@ static float softmax_strided_ce_f32(
 	return -logf(p);
 }
 
+// softmax_strided_ce_batch_f32 computes softmax + cross-entropy for tokens [t_start, t_end).
+// Returns total loss and valid count. Avoids repeated CGo crossings.
+static void softmax_strided_ce_batch_f32(
+	float* restrict dLogits,
+	const float* restrict logits,
+	const unsigned short* restrict targets,
+	int vocab,
+	int stride,
+	int t_start,
+	int t_end,
+	double* out_loss,
+	int* out_valid
+) {
+	double totalLoss = 0.0;
+	int totalValid = 0;
+	for (int t = t_start; t < t_end; t++) {
+		int target = (int)targets[t];
+		float loss = softmax_strided_ce_f32(dLogits, logits, target, vocab, stride, t);
+		if (target >= 0 && target < vocab) {
+			totalLoss += (double)loss;
+			totalValid++;
+		}
+	}
+	*out_loss = totalLoss;
+	*out_valid = totalValid;
+}
+
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -232,6 +259,23 @@ func softmaxStridedCEAccel(dLogits, logits []float32, target, vocab, stride, t i
 		C.int(stride),
 		C.int(t),
 	))
+}
+
+func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, vocab, stride, tStart, tEnd int) (float64, int) {
+	var loss C.double
+	var valid C.int
+	C.softmax_strided_ce_batch_f32(
+		(*C.float)(unsafe.Pointer(&dLogits[0])),
+		(*C.float)(unsafe.Pointer(&logits[0])),
+		(*C.ushort)(unsafe.Pointer(&targets[0])),
+		C.int(vocab),
+		C.int(stride),
+		C.int(tStart),
+		C.int(tEnd),
+		&loss,
+		&valid,
+	)
+	return float64(loss), int(valid)
 }
 
 func softmaxRowAccel(out, in []float32) {

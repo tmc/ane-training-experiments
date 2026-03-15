@@ -46,18 +46,7 @@ func crossEntropyLossAccel(dLogits, logits []float32, targets []uint16, v, s int
 		wg.Add(1)
 		go func(w, start, end int) {
 			defer wg.Done()
-			localLoss := 0.0
-			localValid := 0
-			for t := start; t < end; t++ {
-				tgt := int(targets[t])
-				loss := softmaxStridedCEAccel(dLogits, logits, tgt, v, s, t)
-				if tgt >= 0 && tgt < v {
-					localLoss += float64(loss)
-					localValid++
-				}
-			}
-			shards[w].loss = localLoss
-			shards[w].valid = localValid
+			shards[w].loss, shards[w].valid = softmaxStridedCEBatchAccel(dLogits, logits, targets, v, s, start, end)
 		}(w, start, end)
 	}
 	wg.Wait()
