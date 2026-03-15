@@ -9,7 +9,7 @@ import (
 // BenchmarkDynamicTrainStep measures steady-state train-step latency for the
 // fully dynamic Go path (compile once, refresh weights in place).
 func BenchmarkDynamicTrainStep(b *testing.B) {
-	engine := openDynamicParityEngine(b, 384, 10)
+	engine := openDynamicParityEngine(b, 384, 80)
 	if _, err := engine.Step(); err != nil {
 		b.Fatalf("warmup Step: %v", err)
 	}
