@@ -201,8 +201,7 @@ static void rms_norm_cf_parallel_f32(
 // rms_norm_backward_cf_f32 computes both dx and dw for RMS norm backward in
 // channel-first layout. Uses precomputed rrms values from the forward pass to
 // skip the sum-of-squares reduction. Uses dispatch_apply for parallelism,
-// avoiding Go goroutine overhead. Accepts a pre-allocated shard buffer
-// (workers*dim floats) to avoid per-call calloc/free overhead.
+// avoiding Go goroutine overhead.
 static void rms_norm_backward_cf_f32(
 	float* restrict dx,
 	float* restrict dw,
@@ -210,7 +209,6 @@ static void rms_norm_backward_cf_f32(
 	const float* restrict x,
 	const float* restrict w,
 	const float* restrict rrms,
-	float* restrict shards,
 	int dim,
 	int seq
 ) {
@@ -219,8 +217,25 @@ static void rms_norm_backward_cf_f32(
 	if (seq < workers * 4) workers = 1;
 	int chunk = (seq + workers - 1) / workers;
 
-	// Zero pre-allocated shard buffer.
-	memset(shards, 0, workers * dim * sizeof(float));
+	// Allocate thread-local dw shards.
+	float* shards = (float*)calloc(workers * dim, sizeof(float));
+	if (!shards) {
+		// Fallback: single-threaded.
+		for (int t = 0; t < seq; t++) {
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
+			for (int d = 0; d < dim; d++) {
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
+			}
+			for (int d = 0; d < dim; d++) {
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
+			}
+		}
+		return;
+	}
 
 	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
 	dispatch_apply(workers, queue, ^(size_t wi) {
@@ -249,6 +264,7 @@ static void rms_norm_backward_cf_f32(
 		float* shard = shards + wi * dim;
 		vDSP_vadd(shard, 1, dw, 1, dw, 1, dim);
 	}
+	free(shards);
 }
 
 // softmax_row_f32 computes numerically-stable softmax over n elements.
@@ -463,10 +479,6 @@ func softmaxRowAccel(out, in []float32) {
 	)
 }
 
-// rmsBwdShards is a pre-allocated shard buffer for rms_norm_backward_cf_f32,
-// avoiding per-call calloc/free. Sized for 8 workers × max dim.
-var rmsBwdShards = make([]float32, 8*256)
-
 // rmsNormBackwardAccel computes both dx and dw for RMS norm backward in a
 // single CGo call, using dispatch_apply for parallelism instead of Go goroutines.
 // Uses precomputed rrms values from the forward pass to skip the sum-of-squares pass.
@@ -478,7 +490,6 @@ func rmsNormBackwardAccel(dx, dw, dy, x, w, rrms []float32, dim, seq int) {
 		(*C.float)(unsafe.Pointer(&x[0])),
 		(*C.float)(unsafe.Pointer(&w[0])),
 		(*C.float)(unsafe.Pointer(&rrms[0])),
-		(*C.float)(unsafe.Pointer(&rmsBwdShards[0])),
 		C.int(dim),
 		C.int(seq),
 	)
