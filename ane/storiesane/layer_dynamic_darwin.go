@@ -5,13 +5,10 @@ package storiesane
 import (
 	"fmt"
 	"sync"
-	"unsafe"
 
 	"github.com/maderix/ANE/ane/mil"
 	"github.com/maderix/ANE/ane/model"
 	"github.com/maderix/ANE/ane/stories"
-	"github.com/tmc/apple/coregraphics"
-	appleiosurface "github.com/tmc/apple/iosurface"
 	xane "github.com/tmc/apple/x/ane"
 )
 
@@ -636,15 +633,7 @@ func withLockedFP16Input(k *model.Kernel, input int, fn func(layout xane.TensorL
 	if ref == 0 {
 		return fmt.Errorf("input surface %d is nil", input)
 	}
-	surf := appleiosurface.IOSurfaceRef(ref)
-	appleiosurface.IOSurfaceLock(surf, 0, nil)
-	defer appleiosurface.IOSurfaceUnlock(surf, 0, nil)
-	base := appleiosurface.IOSurfaceGetBaseAddress(surf)
-	if base == nil {
-		return fmt.Errorf("nil IOSurface base address")
-	}
-	data := unsafe.Slice((*uint16)(base), layout.AllocSize()/2)
-	return fn(layout, data)
+	return withLockedFP16InputCGo(ref, layout, fn)
 }
 
 func withLockedFP16Output(k *model.Kernel, output int, fn func(layout xane.TensorLayout, data []uint16) error) error {
@@ -656,15 +645,7 @@ func withLockedFP16Output(k *model.Kernel, output int, fn func(layout xane.Tenso
 	if ref == 0 {
 		return fmt.Errorf("output surface %d is nil", output)
 	}
-	surf := appleiosurface.IOSurfaceRef(ref)
-	appleiosurface.IOSurfaceLock(surf, appleiosurface.KIOSurfaceLockReadOnly, nil)
-	defer appleiosurface.IOSurfaceUnlock(surf, appleiosurface.KIOSurfaceLockReadOnly, nil)
-	base := appleiosurface.IOSurfaceGetBaseAddress(surf)
-	if base == nil {
-		return fmt.Errorf("nil IOSurface base address")
-	}
-	data := unsafe.Slice((*uint16)(base), layout.AllocSize()/2)
-	return fn(layout, data)
+	return withLockedFP16OutputCGo(ref, layout, fn)
 }
 
 func writeInputFP16ChannelsFast(k *model.Kernel, input, channelOffset, width int, x []float32) error {
@@ -770,6 +751,3 @@ func writeTransposedMatrixFP16(data []uint16, layout xane.TensorLayout, channelO
 	}
 }
 
-func iosurfaceRef(ref coregraphics.IOSurfaceRef) appleiosurface.IOSurfaceRef {
-	return appleiosurface.IOSurfaceRef(ref)
-}
