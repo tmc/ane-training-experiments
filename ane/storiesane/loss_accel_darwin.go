@@ -73,17 +73,7 @@ func crossEntropyLossAccel(dLogits, logits []float32, targets []uint16, v, s int
 	}
 
 	invValid := float32(1.0 / float64(totalValid))
-	parallelForCF(s, func(start, end int) {
-		for t := start; t < end; t++ {
-			tgt := int(targets[t])
-			if tgt < 0 || tgt >= v {
-				continue
-			}
-			for i := 0; i < v; i++ {
-				dLogits[i*s+t] *= invValid
-			}
-		}
-	})
+	scaleSliceAccel(dLogits[:v*s], invValid)
 
 	return float32(totalLoss / float64(totalValid))
 }
