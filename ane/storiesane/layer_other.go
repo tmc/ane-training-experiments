@@ -20,7 +20,9 @@ type layerForwardWeights struct {
 	W3     []float32
 }
 
-type layerForward struct{}
+type layerForward struct {
+	dynamic bool
+}
 
 var compileStoriesLayerForwardFunc = compileStoriesLayerForward
 
@@ -37,3 +39,9 @@ func (lf *layerForward) run([]float32, []float32) error {
 func (lf *layerForward) runWithTaps([]float32, []float32, *layerCache) error {
 	return fmt.Errorf("ane layer forward is unavailable on this platform")
 }
+
+func (lf *layerForward) runDynamicForwardOnly([]float32, []float32) error {
+	return fmt.Errorf("ane layer forward is unavailable on this platform")
+}
+
+func (lf *layerForward) fillDynamicCache([]float32, *layerCache) {}

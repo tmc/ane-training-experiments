@@ -320,6 +320,16 @@ func (lb *layerBackward) stageDynamicWeights(layer stories.LayerWeights) error {
 }
 
 func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) error {
+	if err := lf.runDynamicForwardOnly(out, x); err != nil {
+		return err
+	}
+	lf.fillDynamicCache(x, cache)
+	return nil
+}
+
+// runDynamicForwardOnly executes the attention and FFN kernels, writing the
+// blended residual result into out. It does NOT populate the backward cache.
+func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if lf == nil || lf.att == nil || lf.ffn == nil {
 		return fmt.Errorf("run layer forward dynamic: layer is closed")
 	}
@@ -352,9 +362,18 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 	}
 	copy(out, lf.ffnOut[:want])
 	blendResidualInPlace(out, lf.x2)
+	return nil
+}
+
+// fillDynamicCache populates the backward cache from the layer's intermediate
+// buffers (attOut, ffnOut, x2). Must be called after runDynamicForwardOnly.
+// Safe to call concurrently with the next layer's runDynamicForwardOnly since
+// it only reads from this layer's buffers and writes to its own cache.
+func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 	if cache == nil {
-		return nil
+		return
 	}
+	want := lf.dim * lf.seq
 	copy(cache.x2, lf.x2)
 	cache.attTapsReady = false
 	cache.ffnTapsReady = false
@@ -370,7 +389,6 @@ func (lf *layerForward) runDynamicWithTaps(out, x []float32, cache *layerCache) 
 	siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 	rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, lf.rmsFFN, lf.dim, lf.seq)
 	cache.ffnTapsReady = true
-	return nil
 }
 
 func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32) error {
