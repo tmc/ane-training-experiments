@@ -166,6 +166,8 @@ import "C"
 import (
 	"math"
 	"unsafe"
+
+	"github.com/maderix/ANE/ane/stories"
 )
 
 func scaleSliceAccel(v []float32, scale float32) {
@@ -299,11 +301,11 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 	return float64(loss), int(valid)
 }
 
-// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares in
-// channel-first layout. The inner scaling loop remains scalar because the
-// weight-scaled output has stride=seq (gather/scatter pattern).
+// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares and
+// vDSP_vmul for the strided element-wise multiply in channel-first layout.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	parallelForCF(seq, func(start, end int) {
+		sw := make([]float32, dim)
 		for t := start; t < end; t++ {
 			// Sum of squares with stride = seq using vDSP
 			var ssq C.float
@@ -316,11 +318,38 @@ func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 			if rrms != nil {
 				rrms[t] = scale
 			}
-			for i := 0; i < dim; i++ {
-				out[i*seq+t] = x[i*seq+t] * scale * w[i]
-			}
+			// Precompute scale * w[i] into contiguous buffer
+			C.vDSP_vsmul(
+				(*C.float)(unsafe.Pointer(&w[0])), 1,
+				(*C.float)(unsafe.Pointer(&scale)),
+				(*C.float)(unsafe.Pointer(&sw[0])), 1,
+				C.vDSP_Length(dim),
+			)
+			// Strided element-wise multiply: out[i*seq+t] = x[i*seq+t] * sw[i]
+			C.vDSP_vmul(
+				(*C.float)(unsafe.Pointer(&x[t])), C.vDSP_Stride(seq),
+				(*C.float)(unsafe.Pointer(&sw[0])), 1,
+				(*C.float)(unsafe.Pointer(&out[t])), C.vDSP_Stride(seq),
+				C.vDSP_Length(dim),
+			)
 		}
 	})
+}
+
+// transposeClassifierForwardTileAccel transposes a size×dim submatrix of embed
+// (starting at row `start`) into a dim×size channel-first layout in dst.
+// Uses vDSP_mtrans for hardware-accelerated matrix transpose.
+func transposeClassifierForwardTileAccel(dst, embed []float32, start, size int) {
+	dim := stories.Dim
+	src := embed[start*dim : (start+size)*dim]
+	// vDSP_mtrans transposes a rows×cols matrix to cols×rows.
+	// src is size×dim (rows=size, cols=dim), dst is dim×size.
+	C.vDSP_mtrans(
+		(*C.float)(unsafe.Pointer(&src[0])), 1,
+		(*C.float)(unsafe.Pointer(&dst[0])), 1,
+		C.vDSP_Length(dim),  // cols of source = rows of destination
+		C.vDSP_Length(size), // rows of source = cols of destination
+	)
 }
 
 func softmaxRowAccel(out, in []float32) {

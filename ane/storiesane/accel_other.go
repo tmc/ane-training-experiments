@@ -2,7 +2,11 @@
 
 package storiesane
 
-import "math"
+import (
+	"math"
+
+	"github.com/maderix/ANE/ane/stories"
+)
 
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	parallelForCF(seq, func(start, end int) {
@@ -131,6 +135,16 @@ func softmaxRowAccel(out, in []float32) {
 	inv := float32(1.0 / sum)
 	for i := range out {
 		out[i] *= inv
+	}
+}
+
+func transposeClassifierForwardTileAccel(dst, embed []float32, start, size int) {
+	dim := stories.Dim
+	for d := 0; d < dim; d++ {
+		row := dst[d*size : (d+1)*size]
+		for i := 0; i < size; i++ {
+			row[i] = embed[(start+i)*dim+d]
+		}
 	}
 }
 

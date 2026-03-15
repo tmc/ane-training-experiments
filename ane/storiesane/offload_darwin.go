@@ -745,12 +745,7 @@ func primeDynamicClassifierBackward(tiles []classifierDynamicTile, embed []float
 }
 
 func transposeClassifierForwardTile(dst, embed []float32, start, size int) {
-	for d := 0; d < stories.Dim; d++ {
-		row := dst[d*size : (d+1)*size]
-		for i := 0; i < size; i++ {
-			row[i] = embed[(start+i)*stories.Dim+d]
-		}
-	}
+	transposeClassifierForwardTileAccel(dst, embed, start, size)
 }
 
 func compileClassifierForwardTiles(embed []float32, seq int) ([]classifierTile, int, error) {
