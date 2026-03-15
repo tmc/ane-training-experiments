@@ -654,17 +654,13 @@ func (e *Engine) backwardFFNHybrid(lb *layerBackward, layer *stories.LayerWeight
 
 func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories.LayerWeights, cache *layerCache, grad *stories.LayerWeights, dx2, dx2Scaled, dPrev []float32) error {
 	e.ensureAttentionCache(layer, cache)
-	// Submit Wo dW job before ANE backward since dx2Scaled and attOut are
-	// already available from the forward pass. This overlaps the Wo GEMM
-	// with the attention backward ANE kernels.
-	e.submitDWJob(func() {
-		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-	})
 	if err := lb.runAttention(e.gradXNorm, cache.dq, cache.dk, cache.dv, cache.q, cache.k, cache.v, dx2Scaled); err != nil {
 		return err
 	}
-	// Submit QKV dW jobs after ANE outputs dq, dk, dv are ready.
+	// Submit dW jobs immediately after ANE outputs are ready, before RMS
+	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
 	e.submitDWJob(func() {
+		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
 		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
