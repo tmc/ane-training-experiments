@@ -669,7 +669,6 @@ func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories
 	// Submit dW jobs immediately after ANE outputs are ready, before RMS
 	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
 	e.submitDWJob(func() {
-		lb.readDeferredGrads(cache.dq, cache.dk, cache.dv, e.seq)
 		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
 		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	})
