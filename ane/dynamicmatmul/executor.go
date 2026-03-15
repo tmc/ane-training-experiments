@@ -491,6 +491,33 @@ func (e *Executor) CopyOutputToInput(dst *model.Kernel, dstInput, dstChannel int
 	return nil
 }
 
+// CopyOutputToInputFP16 copies the last evaluated output tensor (FP32) into
+// an FP16 destination kernel input, converting each element. This allows
+// chaining a dynamic matmul (FP32) output directly to a baked FP16 kernel
+// input without a CPU round-trip.
+func (e *Executor) CopyOutputToInputFP16(dst *model.Kernel, dstInput, dstChannel int) error {
+	if e == nil {
+		return fmt.Errorf("dynamic matmul: executor is nil")
+	}
+	if dst == nil {
+		return fmt.Errorf("dynamic matmul: destination kernel is nil")
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.tiles) == 0 {
+		return fmt.Errorf("dynamic matmul: executor is closed")
+	}
+
+	for i := range e.tiles {
+		tile := &e.tiles[i]
+		if err := tileCopyOutputToInputFP16(dst, dstInput, dstChannel+tile.outOffset, tile.k, tile.outDim); err != nil {
+			return fmt.Errorf("dynamic matmul: copy output tile %d fp16: %w", i, err)
+		}
+	}
+	return nil
+}
+
 func (e *Executor) validateIO(dst, x, w []float32) error {
 	if got, want := len(x), e.batch*e.inDim; got != want {
 		return fmt.Errorf("dynamic matmul: input length=%d want=%d", got, want)

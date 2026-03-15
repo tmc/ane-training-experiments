@@ -2,6 +2,8 @@
 
 package dynamicmatmul
 
+import "github.com/maderix/ANE/ane/model"
+
 func writeFullTileInput(tile *tile) error {
 	return tile.k.WriteInputF32(0, tile.inputPacked)
 }
@@ -16,4 +18,8 @@ func tileWriteInputF32(tile *tile) error {
 
 func tileReadOutputF32(tile *tile) error {
 	return tile.k.ReadOutputF32(0, tile.outputPacked)
+}
+
+func tileCopyOutputToInputFP16(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, channels int) error {
+	return model.CopyOutputChannelsToInput(dst, dstInput, dstChannel, src, 0, 0, channels)
 }

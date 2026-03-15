@@ -128,6 +128,36 @@ static int iosurface_write_rows_f32(
 	iosurface_unlock(surf, 0);
 	return 0;
 }
+// iosurface_copy_f32_to_f16 copies channel-first FP32 data from srcSurf
+// to FP16 data in dstSurf, converting each element. Both surfaces must
+// have height=1 and the same width.
+static int iosurface_copy_f32_to_f16(
+	IOSurfaceRef dstSurf, int dstPlaneStride, int dstChannel, int dstAllocSize,
+	IOSurfaceRef srcSurf, int srcPlaneStride, int srcChannel, int srcAllocSize,
+	int channels, int width
+) {
+	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
+	void *srcBase = iosurface_lock_and_get_base(srcSurf, 1);
+	if (!dstBase || !srcBase) {
+		if (srcBase) iosurface_unlock(srcSurf, 1);
+		if (dstBase) iosurface_unlock(dstSurf, 0);
+		return -1;
+	}
+	for (int c = 0; c < channels; c++) {
+		int dstOff = (dstChannel + c) * dstPlaneStride;
+		int srcOff = (srcChannel + c) * srcPlaneStride;
+		if (dstOff + width * 2 > dstAllocSize) break;
+		if (srcOff + width * 4 > srcAllocSize) break;
+		const float *src = (const float*)((char*)srcBase + srcOff);
+		__fp16 *dst = (__fp16*)((char*)dstBase + dstOff);
+		for (int w = 0; w < width; w++) {
+			dst[w] = (__fp16)src[w];
+		}
+	}
+	iosurface_unlock(srcSurf, 1);
+	iosurface_unlock(dstSurf, 0);
+	return 0;
+}
 */
 import "C"
 import (
@@ -213,6 +243,49 @@ func writeF32ToSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xan
 		return fmt.Errorf("dynamic matmul: nil IOSurface base address")
 	}
 	return nil
+}
+
+// copyOutputF32ToInputFP16 copies FP32 output channels from src to FP16
+// input channels of dst, converting each element. Both surfaces must have
+// height=1 and matching widths.
+func copyOutputF32ToInputFP16(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, srcOutput, srcChannel, channels int) error {
+	if dst == nil || src == nil {
+		return fmt.Errorf("copy f32 to fp16: nil kernel")
+	}
+	if channels <= 0 {
+		return nil
+	}
+	dstLayout := dst.InputLayout(dstInput)
+	srcLayout := src.OutputLayout(srcOutput)
+	if dstLayout.Height != 1 || srcLayout.Height != 1 {
+		return fmt.Errorf("copy f32 to fp16: height > 1 not supported")
+	}
+	if dstLayout.Width != srcLayout.Width {
+		return fmt.Errorf("copy f32 to fp16: width mismatch dst=%d src=%d", dstLayout.Width, srcLayout.Width)
+	}
+	if dstLayout.ElemSize != 2 || srcLayout.ElemSize != 4 {
+		return fmt.Errorf("copy f32 to fp16: elem size dst=%d src=%d, want dst=2 src=4", dstLayout.ElemSize, srcLayout.ElemSize)
+	}
+	dstRef := dst.InputSurface(dstInput)
+	srcRef := src.OutputSurface(srcOutput)
+	if dstRef == 0 || srcRef == 0 {
+		return fmt.Errorf("copy f32 to fp16: nil surface ref")
+	}
+	rc := C.iosurface_copy_f32_to_f16(
+		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
+		C.int(dstLayout.PlaneStride), C.int(dstChannel), C.int(dstLayout.AllocSize()),
+		C.IOSurfaceRef(unsafe.Pointer(srcRef)),
+		C.int(srcLayout.PlaneStride), C.int(srcChannel), C.int(srcLayout.AllocSize()),
+		C.int(channels), C.int(dstLayout.Width),
+	)
+	if rc != 0 {
+		return fmt.Errorf("copy f32 to fp16: nil IOSurface base address")
+	}
+	return nil
+}
+
+func tileCopyOutputToInputFP16(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, channels int) error {
+	return copyOutputF32ToInputFP16(dst, dstInput, dstChannel, src, 0, 0, channels)
 }
 
 func readF32FromSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xane.TensorLayout) error {

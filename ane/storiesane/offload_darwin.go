@@ -47,10 +47,9 @@ type offload struct {
 	clsBwdTmp []float32
 	rmsW      []float32
 
-	clsFwdTile            int
-	clsBwdTile            int
-	combinedSoftmaxFailed bool
-	diag                  []string
+	clsFwdTile int
+	clsBwdTile int
+	diag       []string
 }
 
 func newOffload(mw *stories.ModelWeights, seq int, useANE bool, cpuClassifierHead bool) *offload {
@@ -427,7 +426,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 					o.metrics.addHW(hwNS)
 				}
 			}
-			if err := tile.exec.CopyOutputToInput(o.softmax, 0, tile.start); err != nil {
+			if err := tile.exec.CopyOutputToInputFP16(o.softmax, 0, tile.start); err != nil {
 				return err
 			}
 		}
