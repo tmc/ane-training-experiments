@@ -343,16 +343,16 @@ func disableKernel(k **model.Kernel) {
 }
 
 func (o *offload) runRMSForward(out, x []float32) error {
-	if err := o.rmsFwd.WriteInputFP16(1, o.rmsW); err != nil {
+	if err := writeInputFP16CGo(o.rmsFwd, 1, o.rmsW); err != nil {
 		return err
 	}
-	if err := o.rmsFwd.WriteInputFP16(0, x); err != nil {
+	if err := writeInputFP16CGo(o.rmsFwd, 0, x); err != nil {
 		return err
 	}
 	if err := evalKernelTracked(o.metrics, o.rmsFwd); err != nil {
 		return err
 	}
-	return o.rmsFwd.ReadOutputFP16(0, out)
+	return readOutputFP16CGo(o.rmsFwd, 0, out)
 }
 
 func (o *offload) runClassifierForward(logits, xNorm []float32) error {
@@ -380,16 +380,16 @@ func (o *offload) runClassifierForward(logits, xNorm []float32) error {
 		return nil
 	}
 	if o.clsFwd != nil {
-		if err := o.clsFwd.WriteInputFP16(0, xNorm); err != nil {
+		if err := writeInputFP16CGo(o.clsFwd, 0, xNorm); err != nil {
 			return err
 		}
 		if err := evalKernelTracked(o.metrics, o.clsFwd); err != nil {
 			return err
 		}
-		return o.clsFwd.ReadOutputFP16(0, logits)
+		return readOutputFP16CGo(o.clsFwd, 0, logits)
 	}
 	for _, tile := range o.clsFwdTil {
-		if err := tile.kernel.WriteInputFP16(0, xNorm); err != nil {
+		if err := writeInputFP16CGo(tile.kernel, 0, xNorm); err != nil {
 			return err
 		}
 		if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
@@ -397,7 +397,7 @@ func (o *offload) runClassifierForward(logits, xNorm []float32) error {
 		}
 		seq := len(xNorm) / stories.Dim
 		dst := logits[tile.start*seq : (tile.start+tile.size)*seq]
-		if err := tile.kernel.ReadOutputFP16(0, dst); err != nil {
+		if err := readOutputFP16CGo(tile.kernel, 0, dst); err != nil {
 			return err
 		}
 	}
@@ -431,7 +431,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 			}
 		}
 	} else if o.clsFwd != nil {
-		if err := o.clsFwd.WriteInputFP16(0, xNorm); err != nil {
+		if err := writeInputFP16CGo(o.clsFwd, 0, xNorm); err != nil {
 			return err
 		}
 		if err := evalKernelTracked(o.metrics, o.clsFwd); err != nil {
@@ -442,7 +442,7 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 		}
 	} else {
 		for _, tile := range o.clsFwdTil {
-			if err := tile.kernel.WriteInputFP16(0, xNorm); err != nil {
+			if err := writeInputFP16CGo(tile.kernel, 0, xNorm); err != nil {
 				return err
 			}
 			if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
@@ -456,17 +456,17 @@ func (o *offload) runClassifierSoftmax(probs, xNorm []float32) error {
 	if err := evalKernelTracked(o.metrics, o.softmax); err != nil {
 		return err
 	}
-	return o.softmax.ReadOutputFP16(0, probs)
+	return readOutputFP16CGo(o.softmax, 0, probs)
 }
 
 func (o *offload) runSoftmax(probs []float32) error {
-	if err := o.softmax.WriteInputFP16(0, probs); err != nil {
+	if err := writeInputFP16CGo(o.softmax, 0, probs); err != nil {
 		return err
 	}
 	if err := evalKernelTracked(o.metrics, o.softmax); err != nil {
 		return err
 	}
-	return o.softmax.ReadOutputFP16(0, probs)
+	return readOutputFP16CGo(o.softmax, 0, probs)
 }
 
 func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
@@ -498,13 +498,13 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 		return nil
 	}
 	if o.clsBwd != nil {
-		if err := o.clsBwd.WriteInputFP16(0, dLogits); err != nil {
+		if err := writeInputFP16CGo(o.clsBwd, 0, dLogits); err != nil {
 			return err
 		}
 		if err := evalKernelTracked(o.metrics, o.clsBwd); err != nil {
 			return err
 		}
-		return o.clsBwd.ReadOutputFP16(0, dy)
+		return readOutputFP16CGo(o.clsBwd, 0, dy)
 	}
 	for i := range dy {
 		dy[i] = 0
@@ -512,13 +512,13 @@ func (o *offload) runClassifierBackward(dy, dLogits []float32) error {
 	seq := len(dy) / stories.Dim
 	for _, tile := range o.clsBwdTil {
 		src := dLogits[tile.start*seq : (tile.start+tile.size)*seq]
-		if err := tile.kernel.WriteInputFP16(0, src); err != nil {
+		if err := writeInputFP16CGo(tile.kernel, 0, src); err != nil {
 			return err
 		}
 		if err := evalKernelTracked(o.metrics, tile.kernel); err != nil {
 			return err
 		}
-		if err := tile.kernel.ReadOutputFP16(0, o.clsBwdTmp); err != nil {
+		if err := readOutputFP16CGo(tile.kernel, 0, o.clsBwdTmp); err != nil {
 			return err
 		}
 		addSliceAccel(dy, o.clsBwdTmp)
@@ -536,16 +536,16 @@ func (o *offload) runRMSBackwardWithWeights(dx, dy, x, w []float32) error {
 	}
 	copy(o.rmsBwdIn, dy)
 	copy(o.rmsBwdIn[len(dy):], x)
-	if err := o.rmsBwd.WriteInputFP16(1, w); err != nil {
+	if err := writeInputFP16CGo(o.rmsBwd, 1, w); err != nil {
 		return err
 	}
-	if err := o.rmsBwd.WriteInputFP16(0, o.rmsBwdIn); err != nil {
+	if err := writeInputFP16CGo(o.rmsBwd, 0, o.rmsBwdIn); err != nil {
 		return err
 	}
 	if err := evalKernelTracked(o.metrics, o.rmsBwd); err != nil {
 		return err
 	}
-	return o.rmsBwd.ReadOutputFP16(0, dx)
+	return readOutputFP16CGo(o.rmsBwd, 0, dx)
 }
 
 func (o *offload) refreshWeights(mw *stories.ModelWeights) error {

@@ -131,3 +131,38 @@ func copyOutputRangeToInputCGo(dst *model.Kernel, dstInput, dstChannel, dstOffse
 func copyOutputChannelsToInputCGo(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, srcOutput, srcChannel, channels int) error {
 	return copyOutputRangeToInputCGo(dst, dstInput, dstChannel, 0, src, srcOutput, srcChannel, 0, channels, -1)
 }
+
+// writeInputFP16CGo writes float32 data to a kernel's input IOSurface using CGo
+// instead of purego, bypassing the model package's purego IOSurface path.
+// Uses NEON-vectorized FP16 conversion from fp16_pack_darwin.go.
+func writeInputFP16CGo(k *model.Kernel, input int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("write input fp16 cgo: kernel is nil")
+	}
+	layout := k.InputLayout(input)
+	ref := k.InputSurface(input)
+	if ref == 0 {
+		return fmt.Errorf("write input fp16 cgo: input surface %d is nil", input)
+	}
+	return withLockedFP16InputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		writeChannelFirstActsOffsetFP16(surfData, layout, 0, 0, layout.Width, data)
+		return nil
+	})
+}
+
+// readOutputFP16CGo reads float32 data from a kernel's output IOSurface using CGo.
+// Uses NEON-vectorized FP16 conversion from fp16_pack_darwin.go.
+func readOutputFP16CGo(k *model.Kernel, output int, data []float32) error {
+	if k == nil {
+		return fmt.Errorf("read output fp16 cgo: kernel is nil")
+	}
+	layout := k.OutputLayout(output)
+	ref := k.OutputSurface(output)
+	if ref == 0 {
+		return fmt.Errorf("read output fp16 cgo: output surface %d is nil", output)
+	}
+	return withLockedFP16OutputCGo(ref, layout, func(layout xane.TensorLayout, surfData []uint16) error {
+		readChannelFirstActsOffsetFP16(data, surfData, layout, 0, 0, layout.Width)
+		return nil
+	})
+}
