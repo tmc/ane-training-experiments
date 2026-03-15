@@ -6,6 +6,15 @@ import (
 	"sync"
 )
 
+// rmsNormGradPool holds pre-allocated shard buffers to avoid per-call
+// allocations in rmsNormGradWeightsWithRRMS. The flat buffer is sized
+// for maxWorkers × dim floats and reused across calls.
+var rmsNormGradPool struct {
+	mu   sync.Mutex
+	buf  []float32
+	maxW int
+}
+
 func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 	rmsNormGradWeightsWithRRMS(dw, dy, x, nil, d, s)
 }
@@ -19,9 +28,21 @@ func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
 	if workers > s {
 		workers = s
 	}
-	shards := make([][]float32, workers)
 	chunk := (s + workers - 1) / workers
+
+	// Use pooled shard buffer to avoid per-call allocations.
+	rmsNormGradPool.mu.Lock()
+	need := workers * d
+	if len(rmsNormGradPool.buf) < need {
+		rmsNormGradPool.buf = make([]float32, need)
+		rmsNormGradPool.maxW = workers
+	}
+	buf := rmsNormGradPool.buf[:need]
+	clear(buf)
+	rmsNormGradPool.mu.Unlock()
+
 	var wg sync.WaitGroup
+	active := 0
 	for worker := 0; worker < workers; worker++ {
 		start := worker * chunk
 		if start >= s {
@@ -31,18 +52,17 @@ func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
 		if end > s {
 			end = s
 		}
-		shards[worker] = make([]float32, d)
+		shard := buf[worker*d : (worker+1)*d]
+		active++
 		wg.Add(1)
-		go func(start, end, worker int) {
+		go func(start, end int) {
 			defer wg.Done()
-			rmsNormGradWeightsRange(shards[worker], dy, x, rrms, d, s, start, end)
-		}(start, end, worker)
+			rmsNormGradWeightsRange(shard, dy, x, rrms, d, s, start, end)
+		}(start, end)
 	}
 	wg.Wait()
-	for _, shard := range shards {
-		if shard == nil {
-			continue
-		}
+	for w := 0; w < active; w++ {
+		shard := buf[w*d : (w+1)*d]
 		for i := range dw {
 			dw[i] += shard[i]
 		}
