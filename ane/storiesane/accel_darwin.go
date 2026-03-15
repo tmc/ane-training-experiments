@@ -201,12 +201,7 @@ static void rms_norm_cf_parallel_f32(
 // rms_norm_backward_cf_f32 computes both dx and dw for RMS norm backward in
 // channel-first layout. Uses precomputed rrms values from the forward pass to
 // skip the sum-of-squares reduction. Uses dispatch_apply for parallelism,
-// avoiding Go goroutine overhead. Uses a static shard buffer to avoid
-// per-call calloc/free. Uses float32 accumulation (sufficient for dim=64).
-#define RMS_BWD_MAX_WORKERS 8
-#define RMS_BWD_MAX_DIM 256
-static float rms_bwd_shards[RMS_BWD_MAX_WORKERS * RMS_BWD_MAX_DIM];
-
+// avoiding Go goroutine overhead.
 static void rms_norm_backward_cf_f32(
 	float* restrict dx,
 	float* restrict dw,
@@ -220,12 +215,27 @@ static void rms_norm_backward_cf_f32(
 	int workers = 8;
 	if (workers > seq) workers = seq;
 	if (seq < workers * 4) workers = 1;
-	if (workers > RMS_BWD_MAX_WORKERS) workers = RMS_BWD_MAX_WORKERS;
-	if (dim > RMS_BWD_MAX_DIM) dim = RMS_BWD_MAX_DIM;
 	int chunk = (seq + workers - 1) / workers;
 
-	// Zero static shard buffer.
-	memset(rms_bwd_shards, 0, workers * dim * sizeof(float));
+	// Allocate thread-local dw shards.
+	float* shards = (float*)calloc(workers * dim, sizeof(float));
+	if (!shards) {
+		// Fallback: single-threaded.
+		for (int t = 0; t < seq; t++) {
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
+			for (int d = 0; d < dim; d++) {
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
+			}
+			for (int d = 0; d < dim; d++) {
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
+			}
+		}
+		return;
+	}
 
 	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
 	dispatch_apply(workers, queue, ^(size_t wi) {
@@ -233,27 +243,28 @@ static void rms_norm_backward_cf_f32(
 		int end = start + chunk;
 		if (end > seq) end = seq;
 		if (start >= seq) return;
-		float* shard = rms_bwd_shards + (int)wi * dim;
+		float* shard = shards + (int)wi * dim;
 		for (int t = start; t < end; t++) {
-			float r = rrms[t];
-			float rrms2InvD = (r * r) / (float)dim;
-			float dot = 0.0f;
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
-				dot += dy[d*seq+t] * x[d*seq+t] * w[d];
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
 			for (int d = 0; d < dim; d++) {
-				float v = dy[d*seq+t] - x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = v * r * w[d];
-				shard[d] += dy[d*seq+t] * x[d*seq+t] * r;
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
 	});
 
 	// Reduce shards into dw.
 	for (int wi = 0; wi < workers; wi++) {
-		float* shard = rms_bwd_shards + wi * dim;
+		float* shard = shards + wi * dim;
 		vDSP_vadd(shard, 1, dw, 1, dw, 1, dim);
 	}
+	free(shards);
 }
 
 // softmax_row_f32 computes numerically-stable softmax over n elements.
