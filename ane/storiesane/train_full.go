@@ -485,17 +485,15 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	gradScale := scale * e.lossScale
 
 	embedAsync := e.off != nil && e.off.hasClassifierBackward()
-	e.embedGradDone = nil
 	gradLogits := e.logits
 	if embedAsync {
-		e.embedGradDone = make(chan struct{})
-		done := e.embedGradDone
 		embedScale := gradScale
+		e.embedGradWG.Add(1)
 		go func() {
+			defer e.embedGradWG.Done()
 			begin := time.Now()
 			e.compactEmbedGrad(gradLogits, embedScale, target)
 			e.stepMetrics.addEmbedGrad(time.Since(begin))
-			close(done)
 		}()
 	}
 	if gradScale == 0 {
@@ -769,10 +767,7 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 	}
 	e.waitDWJobs()
 
-	if e.embedGradDone != nil {
-		<-e.embedGradDone
-		e.embedGradDone = nil
-	}
+	e.embedGradWG.Wait()
 	begin := time.Now()
 	stories.EmbedBackward(e.gEmbed, dCur, input, stories.Dim, e.seq)
 	e.stepMetrics.addEmbedGrad(time.Since(begin))
@@ -835,10 +830,7 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 	}
 	e.waitDWJobs()
 
-	if e.embedGradDone != nil {
-		<-e.embedGradDone
-		e.embedGradDone = nil
-	}
+	e.embedGradWG.Wait()
 	begin := time.Now()
 	stories.EmbedBackward(e.gEmbed, dCur, input, stories.Dim, e.seq)
 	e.stepMetrics.addEmbedGrad(time.Since(begin))

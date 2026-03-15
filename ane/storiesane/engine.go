@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/maderix/ANE/ane/stories"
@@ -123,7 +124,7 @@ type Engine struct {
 	gradPrev      []float32
 	ropeCos       []float32
 	ropeSin       []float32
-	embedGradDone    chan struct{}
+	embedGradWG      sync.WaitGroup
 	asyncRefreshDone chan time.Duration // async weight refresh result
 	stepMetrics      aneStepMetrics
 
