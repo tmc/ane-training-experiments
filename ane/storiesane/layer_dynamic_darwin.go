@@ -432,12 +432,9 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 	if err := evalKernelTracked(lb.metrics, lb.ffn); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: eval tail: %w", err)
 	}
-	if err := readOutputFP16ChannelsFast(lb.ffn, 0, 0, lb.seq, lb.ffnOut); err != nil {
+	if err := readOutputFP16Channels3CGo(lb.ffn, 0, 0, dxNorm, lb.dim, dh1, lb.dim+lb.hidden, dh3); err != nil {
 		return fmt.Errorf("run layer backward dynamic ffn: read tail output: %w", err)
 	}
-	copy(dxNorm, lb.ffnOut[:dimN])
-	copy(dh1, lb.ffnOut[dimN:dimN+hiddenN])
-	copy(dh3, lb.ffnOut[dimN+hiddenN:dimN+2*hiddenN])
 	return nil
 }
 
