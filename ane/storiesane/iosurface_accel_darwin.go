@@ -325,6 +325,58 @@ func readOutputFP16Channels2CGo(k *model.Kernel, output int, ch1 int, data1 []fl
 	})
 }
 
+// copyAndWriteFFNTailInput fuses copyOutputRangeToInputCGo + writeStoriesFFNTailAuxActs
+// into a single lock/unlock of the destination surface, saving 2 IOSurface ops per call.
+// It copies dsilu channels from src output to dst input, then writes h1 and h3 as FP16.
+func copyAndWriteFFNTailInput(dst, src *model.Kernel, seq, hidden int, h1, h3 []float32) error {
+	if dst == nil || src == nil {
+		return fmt.Errorf("copy and write ffn tail input: nil kernel")
+	}
+	dstLayout := dst.InputLayout(0)
+	srcLayout := src.OutputLayout(0)
+	if dstLayout.ElemSize != srcLayout.ElemSize {
+		return fmt.Errorf("copy and write ffn tail input: elem size mismatch")
+	}
+	dstRef := dst.InputSurface(0)
+	srcRef := src.OutputSurface(0)
+	if dstRef == 0 || srcRef == 0 {
+		return fmt.Errorf("copy and write ffn tail input: nil surface ref")
+	}
+	// Lock source (readonly) for dsilu copy.
+	srcBase := C.iosurface_lock_and_get_base(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+	if srcBase == nil {
+		C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+		return errNilIOSurfaceBase
+	}
+	// Lock destination (write) — held for both copy and FP16 writes.
+	dstBase := C.iosurface_lock_and_get_base(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+	if dstBase == nil {
+		C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+		C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+		return errNilIOSurfaceBase
+	}
+	// Copy dsilu: hidden channels × seq width from src output to dst input.
+	rowBytes := seq * srcLayout.ElemSize
+	for c := 0; c < hidden; c++ {
+		srcOff := c * srcLayout.PlaneStride
+		dstOff := c * dstLayout.PlaneStride
+		C.memcpy(
+			unsafe.Pointer(uintptr(unsafe.Pointer(dstBase))+uintptr(dstOff)),
+			unsafe.Pointer(uintptr(unsafe.Pointer(srcBase))+uintptr(srcOff)),
+			C.size_t(rowBytes),
+		)
+	}
+	// Unlock source — done with the copy.
+	C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+	// Write h1 and h3 as FP16 into the still-locked destination.
+	dstData := unsafe.Slice((*uint16)(unsafe.Pointer(dstBase)), dstLayout.AllocSize()/2)
+	writeChannelFirstActsOffsetFP16(dstData, dstLayout, 0, seq, seq, h1)
+	writeChannelFirstActsOffsetFP16(dstData, dstLayout, 0, 2*seq, seq, h3)
+	// Unlock destination.
+	C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+	return nil
+}
+
 // readOutputFP16ChannelsCGo reads channel-offset float32 data using CGo.
 func readOutputFP16ChannelsCGo(k *model.Kernel, output, channel int, data []float32) error {
 	if k == nil {
