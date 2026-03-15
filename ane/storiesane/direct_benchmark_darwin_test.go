@@ -15,11 +15,36 @@ import (
 	"unicode"
 
 	"github.com/maderix/ANE/ane/stories"
+	"github.com/tmc/aneperf"
 )
+
+var benchSampler *aneperf.Sampler
+
+func init() {
+	s, err := aneperf.NewSampler()
+	if err != nil {
+		return
+	}
+	benchSampler = s
+}
+
+func startANESample() aneperf.Snapshot {
+	if benchSampler == nil {
+		return aneperf.Snapshot{}
+	}
+	return benchSampler.Start()
+}
+
+func stopANESample(snap aneperf.Snapshot, b *testing.B) {
+	if benchSampler == nil {
+		return
+	}
+	delta := benchSampler.Stop(snap)
+	delta.ReportMetrics(b)
+}
 
 func BenchmarkDirectGoANEDirect(b *testing.B) {
 	for _, seq := range []int{stories.SeqDefault, 384} {
-		seq := seq
 		b.Run(fmt.Sprintf("final_head_seq_%d", seq), func(b *testing.B) {
 			engine := openBenchmarkEngine(b, seq, 1<<30)
 			finalHidden := make([]float32, stories.Dim*seq)
@@ -39,6 +64,7 @@ func BenchmarkDirectGoANEDirect(b *testing.B) {
 			var totals benchmarkMetricTotals
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				snap := startANESample()
 				engine.stepMetrics.reset()
 				start := time.Now()
 				if _, err := engine.runFinalHead(finalHidden, targets); err != nil {
@@ -46,6 +72,7 @@ func BenchmarkDirectGoANEDirect(b *testing.B) {
 				}
 				totals.addWall(time.Since(start))
 				totals.addStepMetrics(&engine.stepMetrics)
+				stopANESample(snap, b)
 			}
 			reportBenchmarkMetrics(b, totals)
 		})
@@ -58,12 +85,14 @@ func BenchmarkDirectGoANEDirect(b *testing.B) {
 			var totals benchmarkMetricTotals
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				snap := startANESample()
 				res, err := engine.Step()
 				if err != nil {
 					b.Fatalf("Step: %v", err)
 				}
 				totals.addStepResult(res)
 				totals.addCustom(engine.stepMetrics.customMetrics())
+				stopANESample(snap, b)
 			}
 			reportBenchmarkMetrics(b, totals)
 		})
@@ -76,10 +105,12 @@ func BenchmarkDirectGoANEDirect(b *testing.B) {
 			var totals benchmarkMetricTotals
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				snap := startANESample()
 				engine.mw.RMSFinal[i%len(engine.mw.RMSFinal)] += 1e-6
 				d := engine.refreshANERuntimeForWeights()
 				totals.addRefresh(d)
 				totals.addWall(d)
+				stopANESample(snap, b)
 			}
 			reportBenchmarkMetrics(b, totals)
 		})
@@ -94,12 +125,14 @@ func BenchmarkDirectGoANEDirect(b *testing.B) {
 		var totals benchmarkMetricTotals
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
+			snap := startANESample()
 			res, err := engine.Step()
 			if err != nil {
 				b.Fatalf("Step(update): %v", err)
 			}
 			totals.addStepResult(res)
 			totals.addCustom(engine.stepMetrics.customMetrics())
+			stopANESample(snap, b)
 		}
 		reportBenchmarkMetrics(b, totals)
 	})

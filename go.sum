@@ -1,4 +1,6 @@
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
+github.com/tmc/aneperf v0.0.0-20260315013400-e1bd670fe867 h1:nLnoHtJS9O+xBly394N/Ogl4hicmjR4fIfctm+g2iFU=
+github.com/tmc/aneperf v0.0.0-20260315013400-e1bd670fe867/go.mod h1:6nGOFDPngx4078a8VL/Qc9gZzp64v7Iz4nnZcovEa2I=
 github.com/tmc/purego v0.10.0-alpha.2.0.20260130081008-0b23e28544a2 h1:aSmdsilkZRFqN29tsxRte/Jr0hHRIc0VWKLHBU8dMTc=
 github.com/tmc/purego v0.10.0-alpha.2.0.20260130081008-0b23e28544a2/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=

@@ -8,6 +8,8 @@ require (
 	github.com/tmc/mlx-go v0.0.0
 )
 
+require github.com/tmc/aneperf v0.0.0-20260315013400-e1bd670fe867 // indirect
+
 replace github.com/tmc/apple => /Users/tmc/go/src/github.com/tmc/apple
 
 replace github.com/tmc/mlx-go => /Users/tmc/go/src/github.com/tmc/mlx-go
