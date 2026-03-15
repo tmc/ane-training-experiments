@@ -199,15 +199,16 @@ static void rms_norm_cf_parallel_f32(
 }
 
 // rms_norm_backward_cf_f32 computes both dx and dw for RMS norm backward in
-// channel-first layout. Uses dispatch_apply for parallelism, avoiding Go
-// goroutine overhead. Each worker computes dx for its token range and
-// accumulates dw into a thread-local shard, then the main thread reduces.
+// channel-first layout. Uses precomputed rrms values from the forward pass to
+// skip the sum-of-squares reduction. Uses dispatch_apply for parallelism,
+// avoiding Go goroutine overhead.
 static void rms_norm_backward_cf_f32(
 	float* restrict dx,
 	float* restrict dw,
 	const float* restrict dy,
 	const float* restrict x,
 	const float* restrict w,
+	const float* restrict rrms,
 	int dim,
 	int seq
 ) {
@@ -221,21 +222,16 @@ static void rms_norm_backward_cf_f32(
 	if (!shards) {
 		// Fallback: single-threaded.
 		for (int t = 0; t < seq; t++) {
-			double sum = 0.0;
-			for (int d = 0; d < dim; d++) {
-				double v = (double)x[d*seq+t];
-				sum += v * v;
-			}
-			double rrms = 1.0 / sqrt(sum / (double)dim + 1e-5);
-			double rrms2InvD = (rrms * rrms) / (double)dim;
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
 			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
 				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
 			for (int d = 0; d < dim; d++) {
 				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = (float)(v * rrms * (double)w[d]);
-				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * rrms);
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
 		return;
@@ -249,21 +245,16 @@ static void rms_norm_backward_cf_f32(
 		if (start >= seq) return;
 		float* shard = shards + (int)wi * dim;
 		for (int t = start; t < end; t++) {
-			double sum = 0.0;
-			for (int d = 0; d < dim; d++) {
-				double v = (double)x[d*seq+t];
-				sum += v * v;
-			}
-			double rrms = 1.0 / sqrt(sum / (double)dim + 1e-5);
-			double rrms2InvD = (rrms * rrms) / (double)dim;
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
 			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
 				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
 			for (int d = 0; d < dim; d++) {
 				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = (float)(v * rrms * (double)w[d]);
-				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * rrms);
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
 	});
@@ -490,13 +481,15 @@ func softmaxRowAccel(out, in []float32) {
 
 // rmsNormBackwardAccel computes both dx and dw for RMS norm backward in a
 // single CGo call, using dispatch_apply for parallelism instead of Go goroutines.
-func rmsNormBackwardAccel(dx, dw, dy, x, w []float32, dim, seq int) {
+// Uses precomputed rrms values from the forward pass to skip the sum-of-squares pass.
+func rmsNormBackwardAccel(dx, dw, dy, x, w, rrms []float32, dim, seq int) {
 	C.rms_norm_backward_cf_f32(
 		(*C.float)(unsafe.Pointer(&dx[0])),
 		(*C.float)(unsafe.Pointer(&dw[0])),
 		(*C.float)(unsafe.Pointer(&dy[0])),
 		(*C.float)(unsafe.Pointer(&x[0])),
 		(*C.float)(unsafe.Pointer(&w[0])),
+		(*C.float)(unsafe.Pointer(&rrms[0])),
 		C.int(dim),
 		C.int(seq),
 	)

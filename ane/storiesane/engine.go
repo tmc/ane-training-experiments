@@ -105,6 +105,7 @@ type Engine struct {
 
 	x             []float32
 	xNorm         []float32
+	finalRRMS     []float32
 	logits        []float32
 	dy            []float32
 	dx            []float32
@@ -247,6 +248,7 @@ func Open(opts Options) (*Engine, error) {
 		gradTasks:               newGradTasks(),
 		x:                       make([]float32, stories.Dim*seq),
 		xNorm:                   make([]float32, stories.Dim*seq),
+		finalRRMS:               make([]float32, seq),
 		logits:                  make([]float32, stories.Vocab*seq),
 		dy:                      make([]float32, stories.Dim*seq),
 		dx:                      make([]float32, stories.Dim*seq),
