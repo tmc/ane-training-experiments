@@ -202,8 +202,6 @@ static void rms_norm_cf_parallel_f32(
 // channel-first layout. Uses precomputed rrms values from the forward pass to
 // skip the sum-of-squares reduction. Uses dispatch_apply for parallelism,
 // avoiding Go goroutine overhead.
-//
-// Uses a static shard buffer to avoid malloc/free per call.
 static void rms_norm_backward_cf_f32(
 	float* restrict dx,
 	float* restrict dw,
@@ -219,11 +217,25 @@ static void rms_norm_backward_cf_f32(
 	if (seq < workers * 4) workers = 1;
 	int chunk = (seq + workers - 1) / workers;
 
-	// Static shard buffer: 8 workers × 768 dims max = 24KB.
-	// Avoids malloc/free on every call (~25 calls per step).
-	enum { kMaxWorkers = 8, kMaxDim = 768 };
-	static float shards[kMaxWorkers * kMaxDim];
-	memset(shards, 0, workers * dim * sizeof(float));
+	// Allocate thread-local dw shards.
+	float* shards = (float*)calloc(workers * dim, sizeof(float));
+	if (!shards) {
+		// Fallback: single-threaded.
+		for (int t = 0; t < seq; t++) {
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
+			for (int d = 0; d < dim; d++) {
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
+			}
+			for (int d = 0; d < dim; d++) {
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
+			}
+		}
+		return;
+	}
 
 	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
 	dispatch_apply(workers, queue, ^(size_t wi) {
@@ -252,6 +264,7 @@ static void rms_norm_backward_cf_f32(
 		float* shard = shards + wi * dim;
 		vDSP_vadd(shard, 1, dw, 1, dw, 1, dim);
 	}
+	free(shards);
 }
 
 // softmax_row_f32 computes numerically-stable softmax over n elements.
