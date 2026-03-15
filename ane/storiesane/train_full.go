@@ -407,8 +407,8 @@ func (e *Engine) forwardTrainingANE(input []uint16) ([]float32, error) {
 	for i := range e.layers {
 		lf := e.layers[i]
 		cache := &e.caches[i]
-		copy(cache.x, cur)
 		if !lf.dynamic {
+			copy(cache.x, cur)
 			cacheWG.Wait()
 			if err := lf.runWithTaps(next, cur, cache); err != nil {
 				return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
@@ -420,10 +420,15 @@ func (e *Engine) forwardTrainingANE(input []uint16) ([]float32, error) {
 		if err := lf.runDynamicForwardOnly(next, cur); err != nil {
 			return nil, fmt.Errorf("storiesane step: layer %d: %w", i, err)
 		}
-		prevCur := cur // capture for goroutine (lf reads from its own buffers, but RMS norm reads x)
+		prevCur := cur // capture for goroutine
 		cacheWG.Add(1)
 		go func() {
 			defer cacheWG.Done()
+			// Copy cache.x here so the memcpy runs concurrently with
+			// the next layer's forward pass. prevCur is safe to read:
+			// cacheWG.Wait() at the next iteration completes before
+			// the buffer is reused.
+			copy(cache.x, prevCur)
 			lf.fillDynamicCache(prevCur, cache)
 		}()
 		cur, next = next, cur
