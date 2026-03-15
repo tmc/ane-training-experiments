@@ -275,8 +275,9 @@ func compileStoriesLayerBackwardDynamic(layer stories.LayerWeights, seq int) (_ 
 		sdpa1:   sdpa1,
 		sdpa2:   sdpa2,
 		qkv:     qkv,
-		dynamic: true,
-		ffnOut:  make([]float32, (dim+2*hidden)*seq),
+		dynamic:        true,
+		deferGradReads: true,
+		ffnOut:         make([]float32, (dim+2*hidden)*seq),
 	}
 	if err := lb.stageDynamicWeights(layer); err != nil {
 		lb.close()
@@ -506,11 +507,16 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
-	if err := readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, lb.dim, dk); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: read dq+dk: %w", err)
-	}
-	if err := readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, dv); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: read dv: %w", err)
+	// dq/dk/dv reads are deferred to the dW job closure (if deferGradReads
+	// is set) to overlap IOSurface reads with subsequent CPU work. The
+	// sdpa1/sdpa2 output surfaces remain valid until the next step.
+	if !lb.deferGradReads {
+		if err := readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, lb.dim, dk); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: read dq+dk: %w", err)
+		}
+		if err := readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, lb.seq, dv); err != nil {
+			return fmt.Errorf("run layer backward dynamic attention: read dv: %w", err)
+		}
 	}
 	if err := evalKernelTracked(lb.metrics, lb.qkv); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval qkv: %w", err)

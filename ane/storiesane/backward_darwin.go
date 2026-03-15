@@ -24,15 +24,26 @@ type layerBackward struct {
 	sdpa2 *model.Kernel
 	qkv   *model.Kernel
 
-	metrics  *aneStepMetrics
-	dynamic  bool
-	ffnIn    []float32
+	metrics        *aneStepMetrics
+	dynamic        bool
+	deferGradReads bool
+	ffnIn          []float32
 	ffnOut   []float32
 	sdpa1In  []float32
 	sdpa1Out []float32
 	sdpa2In  []float32
 	sdpa2Out []float32
 	qkvIn    []float32
+}
+
+// readDeferredGrads reads dq/dk/dv from IOSurface output buffers into the
+// provided slices. Called from the dW job closure when deferGradReads is set.
+func (lb *layerBackward) readDeferredGrads(dq, dk, dv []float32, seq int) {
+	if !lb.deferGradReads {
+		return
+	}
+	readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, stories.Dim, dk)
+	readOutputFP16ChannelsFast(lb.sdpa1, 0, 0, seq, dv)
 }
 
 var compileStoriesLayerBackwardFunc = compileStoriesLayerBackward
