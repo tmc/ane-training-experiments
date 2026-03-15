@@ -6,6 +6,7 @@ package storiesane
 #cgo darwin CFLAGS: -Wno-deprecated-declarations
 #cgo darwin LDFLAGS: -framework Accelerate
 #include <Accelerate/Accelerate.h>
+#include <dispatch/dispatch.h>
 
 // siluBackward computes dh1[i] = dGate[i] * h3[i] * sig*(1+h1*(1-sig))
 // and dh3[i] = dGate[i] * h1[i] * sig
@@ -175,11 +176,37 @@ static void rms_norm_cf_f32(
 	}
 }
 
+// rms_norm_cf_parallel_f32 computes RMS normalization for all seq tokens using
+// dispatch_apply for parallelism, avoiding Go goroutine overhead.
+static void rms_norm_cf_parallel_f32(
+	float* restrict out,
+	float* restrict rrms,
+	const float* restrict x,
+	const float* restrict w,
+	int dim,
+	int seq
+) {
+	int workers = 8;
+	if (workers > seq) workers = seq;
+	if (seq < workers * 4) {
+		rms_norm_cf_f32(out, rrms, x, w, dim, seq, 0, seq);
+		return;
+	}
+	int chunk = (seq + workers - 1) / workers;
+	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+	dispatch_apply(workers, queue, ^(size_t wi) {
+		int start = (int)wi * chunk;
+		int end = start + chunk;
+		if (end > seq) end = seq;
+		if (start >= seq) return;
+		rms_norm_cf_f32(out, rrms, x, w, dim, seq, start, end);
+	});
+}
+
 // rms_norm_backward_cf_f32 computes both dx and dw for RMS norm backward in
 // channel-first layout. Uses dispatch_apply for parallelism, avoiding Go
 // goroutine overhead. Each worker computes dx for its token range and
 // accumulates dw into a thread-local shard, then the main thread reduces.
-#include <dispatch/dispatch.h>
 static void rms_norm_backward_cf_f32(
 	float* restrict dx,
 	float* restrict dw,
@@ -406,23 +433,20 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 	return float64(loss), int(valid)
 }
 
-// rmsNormCFWithRRMSImpl uses a batched C function that processes all tokens
-// in a single CGo crossing per worker, replacing seq separate vDSP_svesq calls.
+// rmsNormCFWithRRMSImpl uses a parallel C function with dispatch_apply to
+// process all tokens, replacing Go goroutines with GCD threads.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	var rrmsPtr *C.float
 	if rrms != nil {
 		rrmsPtr = (*C.float)(unsafe.Pointer(&rrms[0]))
 	}
-	parallelForCF(seq, func(start, end int) {
-		C.rms_norm_cf_f32(
-			(*C.float)(unsafe.Pointer(&out[0])),
-			rrmsPtr,
-			(*C.float)(unsafe.Pointer(&x[0])),
-			(*C.float)(unsafe.Pointer(&w[0])),
-			C.int(dim), C.int(seq),
-			C.int(start), C.int(end),
-		)
-	})
+	C.rms_norm_cf_parallel_f32(
+		(*C.float)(unsafe.Pointer(&out[0])),
+		rrmsPtr,
+		(*C.float)(unsafe.Pointer(&x[0])),
+		(*C.float)(unsafe.Pointer(&w[0])),
+		C.int(dim), C.int(seq),
+	)
 }
 
 // transposeClassifierForwardTileAccel transposes a size×dim submatrix of embed
