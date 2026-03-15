@@ -217,6 +217,58 @@ func copyOutputRange2ToInputCGo(
 	return nil
 }
 
+// copyAndWriteFFNTailInput fuses the dsilu copy from ffnW2 output and the
+// h1/h3 FP32→FP16 write into a single lock/unlock of the ffn input surface.
+// This saves one lock+unlock compared to calling copyOutputRangeToInputCGo
+// followed by writeStoriesFFNTailAuxActs separately.
+func copyAndWriteFFNTailInput(ffn, ffnW2 *model.Kernel, seq, hidden int, h1, h3 []float32) error {
+	if ffn == nil || ffnW2 == nil {
+		return fmt.Errorf("copy and write ffn tail input: nil kernel")
+	}
+	dstLayout := ffn.InputLayout(0)
+	srcLayout := ffnW2.OutputLayout(0)
+	if dstLayout.Height != 1 || srcLayout.Height != 1 || dstLayout.ElemSize != 2 {
+		return fmt.Errorf("copy and write ffn tail input: unsupported layout")
+	}
+	dstRef := ffn.InputSurface(0)
+	srcRef := ffnW2.OutputSurface(0)
+	if dstRef == 0 || srcRef == 0 {
+		return fmt.Errorf("copy and write ffn tail input: nil surface ref")
+	}
+	// Lock destination (write) and source (read-only).
+	dstBase := C.iosurface_lock_and_get_base(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+	srcBase := C.iosurface_lock_and_get_base(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+	if dstBase == nil || srcBase == nil {
+		if srcBase != nil {
+			C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+		}
+		if dstBase != nil {
+			C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+		}
+		return errNilIOSurfaceBase
+	}
+	// Copy dsilu from ffnW2 output (channel 0, offset 0) to ffn input (channel 0, offset 0).
+	rowElems := seq // FP16 elements per row
+	for c := 0; c < hidden; c++ {
+		dOff := c * dstLayout.PlaneStride / 2
+		sOff := c * srcLayout.PlaneStride / 2
+		if (dOff+rowElems)*2 <= dstLayout.AllocSize() && (sOff+rowElems)*2 <= srcLayout.AllocSize() {
+			dstRow := unsafe.Slice((*uint16)(unsafe.Add(dstBase, dOff*2)), rowElems)
+			srcRow := unsafe.Slice((*uint16)(unsafe.Add(srcBase, sOff*2)), rowElems)
+			copy(dstRow, srcRow)
+		}
+	}
+	// Done with source — unlock it.
+	C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(srcRef)), 1)
+	// Write h1/h3 FP32→FP16 into ffn input while still holding the lock.
+	dstData := unsafe.Slice((*uint16)(dstBase), dstLayout.AllocSize()/2)
+	writeChannelFirstActsOffsetFP16(dstData, dstLayout, 0, seq, seq, h1)
+	writeChannelFirstActsOffsetFP16(dstData, dstLayout, 0, 2*seq, seq, h3)
+	// Unlock destination.
+	C.iosurface_unlock(C.IOSurfaceRef(unsafe.Pointer(dstRef)), 0)
+	return nil
+}
+
 // writeInputFP16CGo writes float32 data to a kernel's input IOSurface using CGo
 // instead of purego, bypassing the model package's purego IOSurface path.
 // Uses NEON-vectorized FP16 conversion from fp16_pack_darwin.go.
