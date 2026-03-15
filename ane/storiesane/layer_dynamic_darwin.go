@@ -501,17 +501,19 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval sdpa2: %w", err)
 	}
-	// Fuse dq+dk copies from sdpa2 and dv copy from sdpa1 into a single
-	// destination lock/unlock, reducing 4 lock/unlock pairs to 3.
-	if err := copy3Range2SrcToInputCGo(
+	if err := copyOutputRange2ToInputCGo(
 		lb.qkv, 0,
+		0, 0,          // dst1: channel 0, offset 0 (dq)
+		0, lb.seq,     // dst2: channel 0, offset seq (dk)
 		lb.sdpa2, 0,
-		0, 0, 0, 0, lb.dim, lb.seq,           // dq: sdpa2 ch0→qkv ch0 off0
-		0, lb.seq, lb.dim, 0, lb.dim, lb.seq,  // dk: sdpa2 ch_dim→qkv ch0 off_seq
-		lb.sdpa1, 0,
-		0, 2*lb.seq, 0, 0, lb.dim, lb.seq,     // dv: sdpa1 ch0→qkv ch0 off_2seq
+		0, 0,          // src1: channel 0, offset 0 (dq)
+		lb.dim, 0,     // src2: channel dim, offset 0 (dk)
+		lb.dim, lb.seq,
 	); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: copy dq+dk+dv to qkv: %w", err)
+		return fmt.Errorf("run layer backward dynamic attention: copy dq+dk to qkv: %w", err)
+	}
+	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
+		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
 	}
 	if err := readOutputFP16Channels2CGo(lb.sdpa2, 0, 0, dq, lb.dim, dk); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: read dq+dk: %w", err)

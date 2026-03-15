@@ -42,48 +42,6 @@ static int iosurface_copy_range(
 	iosurface_unlock(dstSurf, 0);
 	return 0;
 }
-// iosurface_copy_3range_2src copies 3 ranges: 2 from src1 and 1 from src2, all
-// to the same destination surface, in a single destination lock/unlock.
-static int iosurface_copy_3range_2src(
-	IOSurfaceRef dstSurf, int dstPlaneStride, int dstAllocSize, int elemSize,
-	IOSurfaceRef src1Surf, int src1PlaneStride, int src1AllocSize,
-	int dst1aCh, int dst1aOff, int src1aCh, int src1aOff, int ch1a, int rowBytes1a,
-	int dst1bCh, int dst1bOff, int src1bCh, int src1bOff, int ch1b, int rowBytes1b,
-	IOSurfaceRef src2Surf, int src2PlaneStride, int src2AllocSize,
-	int dst2Ch, int dst2Off, int src2Ch, int src2Off, int ch2, int rowBytes2
-) {
-	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
-	void *src1Base = iosurface_lock_and_get_base(src1Surf, 1);
-	void *src2Base = iosurface_lock_and_get_base(src2Surf, 1);
-	if (!dstBase || !src1Base || !src2Base) {
-		if (src2Base) iosurface_unlock(src2Surf, 1);
-		if (src1Base) iosurface_unlock(src1Surf, 1);
-		if (dstBase) iosurface_unlock(dstSurf, 0);
-		return -1;
-	}
-	for (int c = 0; c < ch1a; c++) {
-		int dOff = (dst1aCh + c) * dstPlaneStride + dst1aOff * elemSize;
-		int sOff = (src1aCh + c) * src1PlaneStride + src1aOff * elemSize;
-		if (dOff >= 0 && dOff + rowBytes1a <= dstAllocSize && sOff >= 0 && sOff + rowBytes1a <= src1AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src1Base + sOff, rowBytes1a);
-	}
-	for (int c = 0; c < ch1b; c++) {
-		int dOff = (dst1bCh + c) * dstPlaneStride + dst1bOff * elemSize;
-		int sOff = (src1bCh + c) * src1PlaneStride + src1bOff * elemSize;
-		if (dOff >= 0 && dOff + rowBytes1b <= dstAllocSize && sOff >= 0 && sOff + rowBytes1b <= src1AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src1Base + sOff, rowBytes1b);
-	}
-	for (int c = 0; c < ch2; c++) {
-		int dOff = (dst2Ch + c) * dstPlaneStride + dst2Off * elemSize;
-		int sOff = (src2Ch + c) * src2PlaneStride + src2Off * elemSize;
-		if (dOff >= 0 && dOff + rowBytes2 <= dstAllocSize && sOff >= 0 && sOff + rowBytes2 <= src2AllocSize)
-			memcpy((char*)dstBase + dOff, (char*)src2Base + sOff, rowBytes2);
-	}
-	iosurface_unlock(src2Surf, 1);
-	iosurface_unlock(src1Surf, 1);
-	iosurface_unlock(dstSurf, 0);
-	return 0;
-}
 // iosurface_copy_range2 copies two contiguous width ranges from the same source
 // surface to the same destination surface in a single lock/unlock pair.
 static int iosurface_copy_range2(
@@ -252,50 +210,6 @@ func copyOutputRange2ToInputCGo(
 		C.int(src1Channel), C.int(src1Offset),
 		C.int(src2Channel), C.int(src2Offset),
 		C.int(channels), C.int(rowBytes), C.int(srcLayout.ElemSize),
-	)
-	if rc != 0 {
-		return errNilIOSurfaceBase
-	}
-	return nil
-}
-
-// copy3Range2SrcToInputCGo copies 3 channel ranges (2 from src1, 1 from src2)
-// to a single destination input surface in one lock of the destination.
-// This saves 2 lock/unlock pairs vs 2 separate copy calls.
-func copy3Range2SrcToInputCGo(
-	dst *model.Kernel, dstInput int,
-	src1 *model.Kernel, src1Output int,
-	dst1aCh, dst1aOff, src1aCh, src1aOff, ch1a, width1a int,
-	dst1bCh, dst1bOff, src1bCh, src1bOff, ch1b, width1b int,
-	src2 *model.Kernel, src2Output int,
-	dst2Ch, dst2Off, src2Ch, src2Off, ch2, width2 int,
-) error {
-	if dst == nil || src1 == nil || src2 == nil {
-		return fmt.Errorf("copy 3range 2src to input cgo: nil kernel")
-	}
-	dstLayout := dst.InputLayout(dstInput)
-	src1Layout := src1.OutputLayout(src1Output)
-	src2Layout := src2.OutputLayout(src2Output)
-	elemSize := dstLayout.ElemSize
-	rowBytes1a := width1a * elemSize
-	rowBytes1b := width1b * elemSize
-	rowBytes2 := width2 * elemSize
-	dstRef := dst.InputSurface(dstInput)
-	src1Ref := src1.OutputSurface(src1Output)
-	src2Ref := src2.OutputSurface(src2Output)
-	if dstRef == 0 || src1Ref == 0 || src2Ref == 0 {
-		return fmt.Errorf("copy 3range 2src to input cgo: nil surface ref")
-	}
-	rc := C.iosurface_copy_3range_2src(
-		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
-		C.int(dstLayout.PlaneStride), C.int(dstLayout.AllocSize()), C.int(elemSize),
-		C.IOSurfaceRef(unsafe.Pointer(src1Ref)),
-		C.int(src1Layout.PlaneStride), C.int(src1Layout.AllocSize()),
-		C.int(dst1aCh), C.int(dst1aOff), C.int(src1aCh), C.int(src1aOff), C.int(ch1a), C.int(rowBytes1a),
-		C.int(dst1bCh), C.int(dst1bOff), C.int(src1bCh), C.int(src1bOff), C.int(ch1b), C.int(rowBytes1b),
-		C.IOSurfaceRef(unsafe.Pointer(src2Ref)),
-		C.int(src2Layout.PlaneStride), C.int(src2Layout.AllocSize()),
-		C.int(dst2Ch), C.int(dst2Off), C.int(src2Ch), C.int(src2Off), C.int(ch2), C.int(rowBytes2),
 	)
 	if rc != 0 {
 		return errNilIOSurfaceBase
