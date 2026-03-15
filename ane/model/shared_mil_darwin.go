@@ -230,9 +230,16 @@ func (p *sharedMILProgram) mapRequestSlow(request appleneuralengine.ANERequest) 
 	return fmt.Errorf("map IOSurfaces failed")
 }
 
+// evalCGoFunc is set by eval_cgo_darwin.go when CGo is available,
+// providing a faster eval path that bypasses purego ObjC messaging.
+var evalCGoFunc func(h *sharedMILHandle) error
+
 func (h *sharedMILHandle) eval() error {
 	if h == nil || h.program == nil {
 		return fmt.Errorf("eval: kernel is closed")
+	}
+	if evalCGoFunc != nil {
+		return evalCGoFunc(h)
 	}
 	ok, err := h.program.inMemModel.EvaluateWithQoSOptionsRequestError(h.program.qos, nil, h.request)
 	if err == nil && ok {
