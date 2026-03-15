@@ -244,38 +244,19 @@ static void rms_norm_backward_cf_f32(
 		if (end > seq) end = seq;
 		if (start >= seq) return;
 		float* shard = shards + (int)wi * dim;
-		// Local buffers to gather strided data into contiguous form for
-		// SIMD-friendly computation. Heap-allocated to avoid CGo stack
-		// SIGBUS. dim is small (typically 64), so this is cheap.
-		float* local_dy = (float*)malloc(3 * dim * sizeof(float));
-		if (!local_dy) return; // skip this chunk on OOM
-		float* local_x  = local_dy + dim;
-		float* local_dx = local_x + dim;
 		for (int t = start; t < end; t++) {
-			// Gather strided data into contiguous local buffers.
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
-				local_dy[d] = dy[d*seq+t];
-				local_x[d]  = x[d*seq+t];
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
-			float r = rrms[t];
-			float rrms2InvD = (r * r) / (float)dim;
-			// Dot product: contiguous access enables auto-vectorization.
-			float dot = 0.0f;
 			for (int d = 0; d < dim; d++) {
-				dot += local_dy[d] * local_x[d] * w[d];
-			}
-			// Compute dx and dw shard: contiguous access.
-			for (int d = 0; d < dim; d++) {
-				float v = local_dy[d] - local_x[d] * dot * rrms2InvD;
-				local_dx[d] = v * r * w[d];
-				shard[d] += local_dy[d] * local_x[d] * r;
-			}
-			// Scatter dx back to strided layout.
-			for (int d = 0; d < dim; d++) {
-				dx[d*seq+t] = local_dx[d];
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
-		free(local_dy);
 	});
 
 	// Reduce shards into dw.
