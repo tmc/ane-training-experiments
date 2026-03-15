@@ -276,71 +276,6 @@ static void rms_norm_backward_cf_f32(
 	free(shards);
 }
 
-// rms_norm_backward_with_rrms_cf_f32 is like rms_norm_backward_cf_f32 but
-// uses precomputed reciprocal-RMS values from the forward pass, skipping
-// the sum-of-squares recomputation.
-static void rms_norm_backward_with_rrms_cf_f32(
-	float* restrict dx,
-	float* restrict dw,
-	const float* restrict dy,
-	const float* restrict x,
-	const float* restrict w,
-	const float* restrict rrms,
-	int dim,
-	int seq
-) {
-	int workers = 8;
-	if (workers > seq) workers = seq;
-	if (seq < workers * 4) workers = 1;
-	int chunk = (seq + workers - 1) / workers;
-
-	float* shards = (float*)calloc(workers * dim, sizeof(float));
-	if (!shards) {
-		for (int t = 0; t < seq; t++) {
-			double r = (double)rrms[t];
-			double rrms2InvD = (r * r) / (double)dim;
-			double dot = 0.0;
-			for (int d = 0; d < dim; d++) {
-				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
-			}
-			for (int d = 0; d < dim; d++) {
-				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = (float)(v * r * (double)w[d]);
-				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
-			}
-		}
-		return;
-	}
-
-	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
-	dispatch_apply(workers, queue, ^(size_t wi) {
-		int start = (int)wi * chunk;
-		int end = start + chunk;
-		if (end > seq) end = seq;
-		if (start >= seq) return;
-		float* shard = shards + (int)wi * dim;
-		for (int t = start; t < end; t++) {
-			double r = (double)rrms[t];
-			double rrms2InvD = (r * r) / (double)dim;
-			double dot = 0.0;
-			for (int d = 0; d < dim; d++) {
-				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
-			}
-			for (int d = 0; d < dim; d++) {
-				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = (float)(v * r * (double)w[d]);
-				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
-			}
-		}
-	});
-
-	for (int wi = 0; wi < workers; wi++) {
-		float* shard = shards + wi * dim;
-		vDSP_vadd(shard, 1, dw, 1, dw, 1, dim);
-	}
-	free(shards);
-}
-
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -539,22 +474,7 @@ func softmaxRowAccel(out, in []float32) {
 
 // rmsNormBackwardAccel computes both dx and dw for RMS norm backward in a
 // single CGo call, using dispatch_apply for parallelism instead of Go goroutines.
-// When rrms is non-nil, uses precomputed reciprocal-RMS values from the forward
-// pass, skipping the sum-of-squares recomputation.
-func rmsNormBackwardAccel(dx, dw, dy, x, w, rrms []float32, dim, seq int) {
-	if len(rrms) >= seq {
-		C.rms_norm_backward_with_rrms_cf_f32(
-			(*C.float)(unsafe.Pointer(&dx[0])),
-			(*C.float)(unsafe.Pointer(&dw[0])),
-			(*C.float)(unsafe.Pointer(&dy[0])),
-			(*C.float)(unsafe.Pointer(&x[0])),
-			(*C.float)(unsafe.Pointer(&w[0])),
-			(*C.float)(unsafe.Pointer(&rrms[0])),
-			C.int(dim),
-			C.int(seq),
-		)
-		return
-	}
+func rmsNormBackwardAccel(dx, dw, dy, x, w []float32, dim, seq int) {
 	C.rms_norm_backward_cf_f32(
 		(*C.float)(unsafe.Pointer(&dx[0])),
 		(*C.float)(unsafe.Pointer(&dw[0])),
