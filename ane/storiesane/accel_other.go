@@ -44,6 +44,38 @@ func siluBackwardAccel(dh1, dh3, dGate, h1, h3 []float32) {
 	}
 }
 
+func softmaxStridedCEAccel(dLogits, logits []float32, target, vocab, stride, t int) float32 {
+	mx := logits[t]
+	for i := 1; i < vocab; i++ {
+		v := logits[i*stride+t]
+		if v > mx {
+			mx = v
+		}
+	}
+	sum := 0.0
+	for i := 0; i < vocab; i++ {
+		e := math.Exp(float64(logits[i*stride+t] - mx))
+		dLogits[i*stride+t] = float32(e)
+		sum += e
+	}
+	inv := float32(1.0 / sum)
+	for i := 0; i < vocab; i++ {
+		dLogits[i*stride+t] *= inv
+	}
+	if target < 0 || target >= vocab {
+		for i := 0; i < vocab; i++ {
+			dLogits[i*stride+t] = 0
+		}
+		return 0
+	}
+	p := dLogits[target*stride+t]
+	if p < 1e-10 {
+		p = 1e-10
+	}
+	dLogits[target*stride+t] -= 1
+	return float32(-math.Log(float64(p)))
+}
+
 func softmaxRowAccel(out, in []float32) {
 	maxv := in[0]
 	for i := 1; i < len(in); i++ {

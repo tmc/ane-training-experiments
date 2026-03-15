@@ -442,11 +442,11 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 			stories.MatMulVocabSeq(e.logits, e.mw.Embed, e.xNorm, stories.Vocab, stories.Dim, e.seq)
 		}
 		if e.off == nil || !e.off.hasSoftmax() {
-			loss = stories.CrossEntropyLoss(e.logits, e.logits, target, stories.Vocab, e.seq)
+			loss = crossEntropyLossAccel(e.logits, e.logits, target, stories.Vocab, e.seq)
 			logitsScaled = true
 		} else if err := e.off.runSoftmax(e.logits); err != nil {
 			e.off.disableSoftmax()
-			loss = stories.CrossEntropyLoss(e.logits, e.logits, target, stories.Vocab, e.seq)
+			loss = crossEntropyLossAccel(e.logits, e.logits, target, stories.Vocab, e.seq)
 			logitsScaled = true
 		} else {
 			loss, validTargets = crossEntropyLossFromProbsUnscaled(e.logits, e.logits, target, stories.Vocab, e.seq)

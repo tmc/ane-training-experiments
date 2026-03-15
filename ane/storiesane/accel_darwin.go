@@ -66,6 +66,61 @@ static void silu_gate_forward_f32(
 	}
 }
 
+// softmax_strided_ce_f32 computes softmax + cross-entropy loss for a single token
+// in channel-first layout. logits are at logits[i*stride+t] for vocab channels i.
+// Writes probs back into dLogits. Returns -log(p[target]) or 0 if target is invalid.
+// Uses chunked vvexpf for the vectorized exp().
+static float softmax_strided_ce_f32(
+	float* restrict dLogits,
+	const float* restrict logits,
+	int target,
+	int vocab,
+	int stride,
+	int t
+) {
+	// Find max
+	float mx = logits[t];
+	for (int i = 1; i < vocab; i++) {
+		float v = logits[i*stride + t];
+		if (v > mx) mx = v;
+	}
+
+	// Gather, subtract max, vectorized exp, scatter, accumulate sum
+	enum { kChunk = 4096 };
+	float sum = 0.0f;
+	for (int off = 0; off < vocab; off += kChunk) {
+		int cnt = vocab - off;
+		if (cnt > kChunk) cnt = kChunk;
+		float buf[kChunk];
+		for (int i = 0; i < cnt; i++) {
+			buf[i] = logits[(off+i)*stride + t] - mx;
+		}
+		vvexpf(buf, buf, &cnt);
+		for (int i = 0; i < cnt; i++) {
+			dLogits[(off+i)*stride + t] = buf[i];
+			sum += buf[i];
+		}
+	}
+
+	// Normalize
+	float inv = 1.0f / sum;
+	for (int i = 0; i < vocab; i++) {
+		dLogits[i*stride + t] *= inv;
+	}
+
+	// Loss
+	if (target < 0 || target >= vocab) {
+		for (int i = 0; i < vocab; i++) {
+			dLogits[i*stride + t] = 0;
+		}
+		return 0.0f;
+	}
+	float p = dLogits[target*stride + t];
+	if (p < 1e-10f) p = 1e-10f;
+	dLogits[target*stride + t] -= 1.0f;
+	return -logf(p);
+}
+
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -166,6 +221,17 @@ func siluBackwardAccel(dh1, dh3, dGate, h1, h3 []float32) {
 		(*C.float)(unsafe.Pointer(&h3[0])),
 		C.int(n),
 	)
+}
+
+func softmaxStridedCEAccel(dLogits, logits []float32, target, vocab, stride, t int) float32 {
+	return float32(C.softmax_strided_ce_f32(
+		(*C.float)(unsafe.Pointer(&dLogits[0])),
+		(*C.float)(unsafe.Pointer(&logits[0])),
+		C.int(target),
+		C.int(vocab),
+		C.int(stride),
+		C.int(t),
+	))
 }
 
 func softmaxRowAccel(out, in []float32) {
