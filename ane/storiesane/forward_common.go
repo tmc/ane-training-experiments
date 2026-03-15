@@ -53,22 +53,6 @@ func rmsNormCFWithRRMS(out, rrms, x, w []float32, dim, seq int) {
 	rmsNormCFWithRRMSImpl(out, rrms, x, w, dim, seq)
 }
 
-func rmsNormRRMS(rrms, x []float32, dim, seq int) {
-	if len(rrms) < seq {
-		return
-	}
-	parallelForCF(seq, func(start, end int) {
-		for t := start; t < end; t++ {
-			sum := 0.0
-			for i := 0; i < dim; i++ {
-				v := float64(x[i*seq+t])
-				sum += v * v
-			}
-			rrms[t] = float32(1.0 / math.Sqrt(sum/float64(dim)+1e-5))
-		}
-	})
-}
-
 func silu32(x float32) float32 {
 	return x / (1 + float32(math.Exp(float64(-x))))
 }
