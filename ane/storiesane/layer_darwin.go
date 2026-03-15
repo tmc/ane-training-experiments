@@ -222,45 +222,45 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 	}
 
 	if lf.attSplit {
-		if err := lf.qkv.WriteInputFP16(0, x); err != nil {
+		if err := writeInputFP16CGo(lf.qkv, 0, x); err != nil {
 			return fmt.Errorf("run layer forward: write qkv input: %w", err)
 		}
 		if err := evalKernelTracked(lf.metrics, lf.qkv); err != nil {
 			return fmt.Errorf("run layer forward: eval qkv: %w", err)
 		}
 		if cache != nil {
-			if err := lf.qkv.ReadOutputFP16(0, lf.qkvOut); err != nil {
+			if err := readOutputFP16CGo(lf.qkv, 0, lf.qkvOut); err != nil {
 				return fmt.Errorf("run layer forward: read qkv output: %w", err)
 			}
 		}
-		if err := lf.att.WriteInputFP16(0, x); err != nil {
+		if err := writeInputFP16CGo(lf.att, 0, x); err != nil {
 			return fmt.Errorf("run layer forward: write attention residual input: %w", err)
 		}
 		if err := copyOutputChannelsToInputCGo(lf.att, 1, 0, lf.qkv, 0, 0, 3*lf.dim); err != nil {
 			if cache == nil {
-				if err := lf.qkv.ReadOutputFP16(0, lf.qkvOut); err != nil {
+				if err := readOutputFP16CGo(lf.qkv, 0, lf.qkvOut); err != nil {
 					return fmt.Errorf("run layer forward: read qkv output fallback: %w", err)
 				}
 			}
-			if err := lf.att.WriteInputFP16(1, lf.qkvOut); err != nil {
+			if err := writeInputFP16CGo(lf.att, 1, lf.qkvOut); err != nil {
 				return fmt.Errorf("run layer forward: write attention qkv input: %w", err)
 			}
 		}
 		if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 			return fmt.Errorf("run layer forward: eval attention apply: %w", err)
 		}
-		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
+		if err := readOutputFP16CGo(lf.att, 0, lf.attOut); err != nil {
 			return fmt.Errorf("run layer forward: read attention apply output: %w", err)
 		}
 		copy(lf.x2, lf.attOut[:want])
 	} else {
-		if err := lf.att.WriteInputFP16(0, x); err != nil {
+		if err := writeInputFP16CGo(lf.att, 0, x); err != nil {
 			return fmt.Errorf("run layer forward: write attention input: %w", err)
 		}
 		if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 			return fmt.Errorf("run layer forward: eval attention: %w", err)
 		}
-		if err := lf.att.ReadOutputFP16(0, lf.attOut); err != nil {
+		if err := readOutputFP16CGo(lf.att, 0, lf.attOut); err != nil {
 			return fmt.Errorf("run layer forward: read attention output: %w", err)
 		}
 		if lf.attTaps {
@@ -272,14 +272,14 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 	blendResidualInPlace(lf.x2, x)
 
 	if err := copyOutputChannelsToInputCGo(lf.ffn, 0, 0, lf.att, 0, 0, lf.dim); err != nil {
-		if err := lf.ffn.WriteInputFP16(0, lf.x2); err != nil {
+		if err := writeInputFP16CGo(lf.ffn, 0, lf.x2); err != nil {
 			return fmt.Errorf("run layer forward: write ffn input: %w", err)
 		}
 	}
 	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
 		return fmt.Errorf("run layer forward: eval ffn: %w", err)
 	}
-	if err := lf.ffn.ReadOutputFP16(0, lf.ffnOut); err != nil {
+	if err := readOutputFP16CGo(lf.ffn, 0, lf.ffnOut); err != nil {
 		return fmt.Errorf("run layer forward: read ffn output: %w", err)
 	}
 	ffnMain := lf.ffnOut
