@@ -2,8 +2,6 @@ package storiesane
 
 import (
 	"math"
-	"runtime"
-	"sync"
 )
 
 func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
@@ -11,42 +9,7 @@ func rmsNormGradWeights(dw, dy, x, w []float32, d, s int) {
 }
 
 func rmsNormGradWeightsWithRRMS(dw, dy, x, rrms []float32, d, s int) {
-	workers := runtime.GOMAXPROCS(0)
-	if workers < 2 || s < workers*4 {
-		rmsNormGradWeightsRange(dw, dy, x, rrms, d, s, 0, s)
-		return
-	}
-	if workers > s {
-		workers = s
-	}
-	shards := make([][]float32, workers)
-	chunk := (s + workers - 1) / workers
-	var wg sync.WaitGroup
-	for worker := 0; worker < workers; worker++ {
-		start := worker * chunk
-		if start >= s {
-			break
-		}
-		end := start + chunk
-		if end > s {
-			end = s
-		}
-		shards[worker] = make([]float32, d)
-		wg.Add(1)
-		go func(start, end, worker int) {
-			defer wg.Done()
-			rmsNormGradWeightsRange(shards[worker], dy, x, rrms, d, s, start, end)
-		}(start, end, worker)
-	}
-	wg.Wait()
-	for _, shard := range shards {
-		if shard == nil {
-			continue
-		}
-		for i := range dw {
-			dw[i] += shard[i]
-		}
-	}
+	rmsNormGradWeightsRange(dw, dy, x, rrms, d, s, 0, s)
 }
 
 func rmsNormGradWeightsRange(dw, dy, x, rrms []float32, d, s, start, end int) {
