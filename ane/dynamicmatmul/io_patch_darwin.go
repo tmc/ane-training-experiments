@@ -56,33 +56,6 @@ done:
 	return 0;
 }
 
-// iosurface_write_partial_width_f32 writes only the first writeWidth elements
-// of each channel row to an IOSurface. The source data has row stride
-// srcRowWidth (total elements per channel including weight portion) but only
-// writeWidth elements per row are copied. Used when only the activation
-// portion of a dynamic matmul input has changed and weights are already staged.
-static int iosurface_write_partial_width_f32(
-	IOSurfaceRef surf,
-	const float* data,
-	int channels, int srcRowWidth, int writeWidth,
-	int planeStride, int allocSize
-) {
-	void *base = iosurface_lock_and_get_base(surf, 0);
-	if (!base) {
-		iosurface_unlock(surf, 0);
-		return -1;
-	}
-	char *dst = (char*)base;
-	int writeBytes = writeWidth * 4;
-	for (int c = 0; c < channels; c++) {
-		int off = c * planeStride;
-		if (off + writeBytes > allocSize) break;
-		memcpy(dst + off, data + c * srcRowWidth, writeBytes);
-	}
-	iosurface_unlock(surf, 0);
-	return 0;
-}
-
 // iosurface_read_strided_f32 reads float32 data from an IOSurface.
 // Single CGo crossing replaces 3 purego calls.
 static int iosurface_read_strided_f32(
@@ -252,33 +225,6 @@ func readOutputF32CGo(k *model.Kernel, output int, data []float32) error {
 
 func tileWriteInputF32(tile *tile) error {
 	return writeFullTileInput(tile)
-}
-
-// tileWriteActivationsF32 writes only the activation columns (first batch
-// elements of each channel row) to the IOSurface. The weight columns are
-// already staged from PrimeWeightsIO. This avoids rewriting the entire
-// inputPacked buffer (~7.9MB for vocab=32K) when only the activations
-// (~96KB for batch=384, dim=64) changed.
-func tileWriteActivationsF32(tile *tile, batch int) error {
-	layout := tile.k.InputLayout(0)
-	if layout.Height != 1 || layout.ElemSize != 4 {
-		return writeFullTileInput(tile)
-	}
-	ref := tile.k.InputSurface(0)
-	if ref == 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface ref")
-	}
-	srcRowWidth := batch + tile.outDim
-	rc := C.iosurface_write_partial_width_f32(
-		C.IOSurfaceRef(unsafe.Pointer(ref)),
-		(*C.float)(unsafe.Pointer(&tile.inputPacked[0])),
-		C.int(layout.Channels), C.int(srcRowWidth), C.int(batch),
-		C.int(layout.PlaneStride), C.int(layout.AllocSize()),
-	)
-	if rc != 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface base address")
-	}
-	return nil
 }
 
 func tileReadOutputF32(tile *tile) error {
