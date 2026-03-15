@@ -11,7 +11,7 @@ func parallelForCF(n int, fn func(start, end int)) {
 	if n <= 0 {
 		return
 	}
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(8, runtime.GOMAXPROCS(0))
 	if workers < 2 || n < workers*4 {
 		fn(0, n)
 		return
