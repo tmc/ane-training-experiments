@@ -128,33 +128,6 @@ static int iosurface_write_rows_f32(
 	iosurface_unlock(surf, 0);
 	return 0;
 }
-// iosurface_write_activation_cols_f32 writes only the first batchCols elements
-// of each channel row to an IOSurface, leaving the remaining (weight) columns
-// intact. This avoids re-writing weights that were already primed.
-static int iosurface_write_activation_cols_f32(
-	IOSurfaceRef surf,
-	const float* data,
-	int channels, int width,
-	int planeStride, int batchCols,
-	int allocSize
-) {
-	void *base = iosurface_lock_and_get_base(surf, 0);
-	if (!base) {
-		iosurface_unlock(surf, 0);
-		return -1;
-	}
-	char *dst = (char*)base;
-	int copyBytes = batchCols * 4;
-	for (int c = 0; c < channels; c++) {
-		int off = c * planeStride;
-		if (off + copyBytes > allocSize) break;
-		int srcIdx = c * width;
-		memcpy(dst + off, data + srcIdx, copyBytes);
-	}
-	iosurface_unlock(surf, 0);
-	return 0;
-}
-
 // iosurface_copy_f32_to_f16 copies channel-first FP32 data from srcSurf
 // to FP16 data in dstSurf, converting each element. Both surfaces must
 // have height=1 and the same width.
@@ -313,34 +286,6 @@ func copyOutputF32ToInputFP16(dst *model.Kernel, dstInput, dstChannel int, src *
 
 func tileCopyOutputToInputFP16(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, channels int) error {
 	return copyOutputF32ToInputFP16(dst, dstInput, dstChannel, src, 0, 0, channels)
-}
-
-// writeActivationColsF32 writes only the first batchCols elements of each
-// channel row to the IOSurface, leaving weight columns intact.
-func writeActivationColsF32(k *model.Kernel, input int, data []float32, batchCols int) error {
-	layout := k.InputLayout(input)
-	ref := k.InputSurface(input)
-	if ref == 0 {
-		return fmt.Errorf("dynamic matmul: nil input surface %d", input)
-	}
-	if layout.Height != 1 {
-		return writeF32ToSurface(ref, data, layout)
-	}
-	rc := C.iosurface_write_activation_cols_f32(
-		C.IOSurfaceRef(unsafe.Pointer(ref)),
-		(*C.float)(unsafe.Pointer(&data[0])),
-		C.int(layout.Channels), C.int(layout.Width),
-		C.int(layout.PlaneStride), C.int(batchCols),
-		C.int(layout.AllocSize()),
-	)
-	if rc != 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface base address")
-	}
-	return nil
-}
-
-func tileWriteActivationCols(tile *tile, batch int) error {
-	return writeActivationColsF32(tile.k, 0, tile.inputPacked, batch)
 }
 
 func readF32FromSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xane.TensorLayout) error {

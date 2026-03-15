@@ -226,7 +226,7 @@ func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, 
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
-		if err := tileWriteActivationCols(tile, e.batch); err != nil {
+		if err := tileWriteInputF32(tile); err != nil {
 			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
