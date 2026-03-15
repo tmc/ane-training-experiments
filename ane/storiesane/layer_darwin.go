@@ -310,9 +310,7 @@ func (lf *layerForward) runWithTaps(out, x []float32, cache *layerCache) error {
 			hiddenSpan := lf.hidden * lf.seq
 			copy(cache.h1, lf.ffnOut[want:want+hiddenSpan])
 			copy(cache.h3, lf.ffnOut[want+hiddenSpan:want+2*hiddenSpan])
-			for i := range cache.gate {
-				cache.gate[i] = silu32(cache.h1[i]) * cache.h3[i]
-			}
+			siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 			rmsNormCF(cache.x2Norm, cache.x2, lf.rmsFFN, lf.dim, lf.seq)
 			cache.ffnTapsReady = true
 		}

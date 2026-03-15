@@ -40,6 +40,32 @@ static void silu_backward_f32(
 	}
 }
 
+// silu_gate_forward_f32 computes gate[i] = silu(h1[i]) * h3[i]
+// where silu(x) = x / (1 + exp(-x)).
+// Uses chunked vvexpf for vectorized exp().
+static void silu_gate_forward_f32(
+	float* restrict gate,
+	const float* restrict h1,
+	const float* restrict h3,
+	int n
+) {
+	enum { kChunk = 4096 };
+	for (int off = 0; off < n; off += kChunk) {
+		int cnt = n - off;
+		if (cnt > kChunk) cnt = kChunk;
+		float negH1[kChunk];
+		float minusOne = -1.0f;
+		vDSP_vsmul(h1 + off, 1, &minusOne, negH1, 1, cnt);
+		float expBuf[kChunk];
+		vvexpf(expBuf, negH1, &cnt);
+		for (int i = 0; i < cnt; i++) {
+			int idx = off + i;
+			float sig = 1.0f / (1.0f + expBuf[i]);
+			gate[idx] = (h1[idx] * sig) * h3[idx];
+		}
+	}
+}
+
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -111,6 +137,19 @@ func addScaledResidualAccel(dst, base, branch []float32, scale float32) {
 		(*C.float)(unsafe.Pointer(&dst[0])), 1,
 		(*C.float)(unsafe.Pointer(&dst[0])), 1,
 		C.vDSP_Length(len(dst)),
+	)
+}
+
+func siluGateForwardAccel(gate, h1, h3 []float32) {
+	n := len(gate)
+	if n == 0 {
+		return
+	}
+	C.silu_gate_forward_f32(
+		(*C.float)(unsafe.Pointer(&gate[0])),
+		(*C.float)(unsafe.Pointer(&h1[0])),
+		(*C.float)(unsafe.Pointer(&h3[0])),
+		C.int(n),
 	)
 }
 

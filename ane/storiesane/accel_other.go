@@ -28,6 +28,13 @@ func addScaledResidualAccel(dst, base, branch []float32, scale float32) {
 	}
 }
 
+func siluGateForwardAccel(gate, h1, h3 []float32) {
+	for i := range gate {
+		sig := float32(1.0 / (1.0 + math.Exp(float64(-h1[i]))))
+		gate[i] = (h1[i] * sig) * h3[i]
+	}
+}
+
 func siluBackwardAccel(dh1, dh3, dGate, h1, h3 []float32) {
 	for i := range dh1 {
 		sig := float32(1.0 / (1.0 + math.Exp(float64(-h1[i]))))

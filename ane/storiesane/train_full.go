@@ -384,9 +384,7 @@ func (e *Engine) forwardTrainingCPU(input []uint16) []float32 {
 		rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
 		linearCF(cache.h1, layer.W1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 		linearCF(cache.h3, layer.W3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-		for j := range cache.gate {
-			cache.gate[j] = silu32(cache.h1[j]) * cache.h3[j]
-		}
+		siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 		cache.attTapsReady = true
 		cache.ffnTapsReady = true
 		linearCF(next, layer.W2, cache.gate, stories.Dim, stories.Hidden, e.seq)
@@ -542,9 +540,7 @@ func (e *Engine) ensureFFNCache(layer *stories.LayerWeights, cache *layerCache) 
 	rmsNormCFWithRRMS(cache.x2Norm, cache.ffnRRMS, cache.x2, layer.RMSFFN, stories.Dim, e.seq)
 	linearCF(cache.h1, layer.W1, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
 	linearCF(cache.h3, layer.W3, cache.x2Norm, stories.Hidden, stories.Dim, e.seq)
-	for i := range cache.gate {
-		cache.gate[i] = silu32(cache.h1[i]) * cache.h3[i]
-	}
+	siluGateForwardAccel(cache.gate, cache.h1, cache.h3)
 	cache.ffnTapsReady = true
 }
 
