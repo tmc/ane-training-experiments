@@ -45,20 +45,6 @@ func scaleIntoAccel(dst, src []float32, scale float32) {
 	}
 }
 
-// scaleAndAddAccel: dst[i] = a[i]*scale + b[i]
-func scaleAndAddAccel(dst, a []float32, scale float32, b []float32) {
-	for i := range dst {
-		dst[i] = a[i]*scale + b[i]
-	}
-}
-
-// addIntoAccel: dst[i] = a[i] + b[i]
-func addIntoAccel(dst, a, b []float32) {
-	for i := range dst {
-		dst[i] = a[i] + b[i]
-	}
-}
-
 func blendResidualInPlaceAccel(sum, base []float32, scale float32) {
 	for i := range sum {
 		sum[i] = base[i] + (sum[i]-base[i])*scale
