@@ -581,8 +581,6 @@ func (e *Engine) backwardAttentionHybridWithDW(lb *layerBackward, layer *stories
 	// backward CPU work, so CBLAS runs concurrently with the CPU reduction.
 	e.submitDWJob(func() {
 		accumLinearGradCF(grad.Wo, dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-	})
-	e.submitDWJob(func() {
 		accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 	})
 	e.runRMSBackwardLayer(dPrev, grad.RMSAtt, e.gradXNorm, cache.x, layer.RMSAtt, cache.attRRMS)
@@ -673,8 +671,6 @@ func (e *Engine) backwardAndAccumulate(input []uint16, useHybrid bool) time.Dura
 			copy(cache.dv, e.gradV)
 			e.submitDWJob(func() {
 				accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-			})
-			e.submitDWJob(func() {
 				accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 			})
 		}
@@ -741,8 +737,6 @@ func (e *Engine) backwardAndApply(input []uint16, stepT int, useHybrid bool) tim
 			copy(cache.dv, e.gradV)
 			e.submitDWJob(func() {
 				accumLinearGradCF(grad.Wo, cache.dx2Scaled, cache.attOut, stories.Dim, stories.Dim, e.seq)
-			})
-			e.submitDWJob(func() {
 				accumLinearGrad3CF(grad.Wq, cache.dq, grad.Wk, cache.dk, grad.Wv, cache.dv, cache.xNorm, stories.Dim, stories.Dim, e.seq)
 			})
 		}
