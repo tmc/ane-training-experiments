@@ -105,10 +105,6 @@ func softmaxStridedCEAccel(dLogits, logits []float32, target, vocab, stride, t i
 	return float32(-math.Log(float64(p)))
 }
 
-func crossEntropyLossParallelAccel(dLogits, logits []float32, targets []uint16, vocab, seq int) (float64, int) {
-	return softmaxStridedCEBatchAccel(dLogits, logits, targets, vocab, seq, 0, seq)
-}
-
 func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, vocab, stride, tStart, tEnd int) (float64, int) {
 	totalLoss := 0.0
 	totalValid := 0

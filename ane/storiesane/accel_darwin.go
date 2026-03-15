@@ -149,55 +149,6 @@ static void softmax_strided_ce_batch_f32(
 	*out_valid = totalValid;
 }
 
-// softmax_strided_ce_parallel_f32 parallelizes softmax + cross-entropy across
-// tokens using dispatch_apply, replacing Go goroutines with GCD threads.
-static void softmax_strided_ce_parallel_f32(
-	float* restrict dLogits,
-	const float* restrict logits,
-	const unsigned short* restrict targets,
-	int vocab,
-	int stride,
-	int seq,
-	double* out_loss,
-	int* out_valid
-) {
-	int workers = 8;
-	if (workers > seq) workers = seq;
-	if (seq < workers * 4) workers = 1;
-	int chunk = (seq + workers - 1) / workers;
-
-	// Heap-allocated thread-local loss/valid accumulators (blocks can't capture stack arrays).
-	double* losses = (double*)calloc(workers, sizeof(double));
-	int* valids = (int*)calloc(workers, sizeof(int));
-	if (!losses || !valids) {
-		// Fallback: single-threaded.
-		softmax_strided_ce_batch_f32(dLogits, logits, targets, vocab, stride, 0, seq, out_loss, out_valid);
-		free(losses);
-		free(valids);
-		return;
-	}
-
-	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
-	dispatch_apply(workers, queue, ^(size_t wi) {
-		int start = (int)wi * chunk;
-		int end = start + chunk;
-		if (end > seq) end = seq;
-		if (start >= seq) return;
-		softmax_strided_ce_batch_f32(dLogits, logits, targets, vocab, stride, start, end, &losses[(int)wi], &valids[(int)wi]);
-	});
-
-	double totalLoss = 0.0;
-	int totalValid = 0;
-	for (int i = 0; i < workers; i++) {
-		totalLoss += losses[i];
-		totalValid += valids[i];
-	}
-	free(losses);
-	free(valids);
-	*out_loss = totalLoss;
-	*out_valid = totalValid;
-}
-
 // rms_norm_cf_f32 computes RMS normalization in channel-first layout for all
 // tokens in [t_start, t_end). Each token's dim values are at x[d*seq+t] with
 // stride=seq. Writes out[d*seq+t] = x[d*seq+t] * scale * w[d] where
@@ -476,22 +427,6 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 		C.int(stride),
 		C.int(tStart),
 		C.int(tEnd),
-		&loss,
-		&valid,
-	)
-	return float64(loss), int(valid)
-}
-
-func crossEntropyLossParallelAccel(dLogits, logits []float32, targets []uint16, vocab, seq int) (float64, int) {
-	var loss C.double
-	var valid C.int
-	C.softmax_strided_ce_parallel_f32(
-		(*C.float)(unsafe.Pointer(&dLogits[0])),
-		(*C.float)(unsafe.Pointer(&logits[0])),
-		(*C.ushort)(unsafe.Pointer(&targets[0])),
-		C.int(vocab),
-		C.int(seq),
-		C.int(seq),
 		&loss,
 		&valid,
 	)
