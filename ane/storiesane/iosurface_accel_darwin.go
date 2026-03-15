@@ -42,6 +42,40 @@ static int iosurface_copy_range(
 	iosurface_unlock(dstSurf, 0);
 	return 0;
 }
+// iosurface_copy_range2 copies two contiguous width ranges from the same source
+// surface to the same destination surface in a single lock/unlock pair.
+static int iosurface_copy_range2(
+	IOSurfaceRef dstSurf, int dstPlaneStride, int dstAllocSize,
+	int dst1Channel, int dst1Offset,
+	int dst2Channel, int dst2Offset,
+	IOSurfaceRef srcSurf, int srcPlaneStride, int srcAllocSize,
+	int src1Channel, int src1Offset,
+	int src2Channel, int src2Offset,
+	int channels, int rowBytes, int elemSize
+) {
+	void *dstBase = iosurface_lock_and_get_base(dstSurf, 0);
+	void *srcBase = iosurface_lock_and_get_base(srcSurf, 1);
+	if (!dstBase || !srcBase) {
+		if (srcBase) iosurface_unlock(srcSurf, 1);
+		if (dstBase) iosurface_unlock(dstSurf, 0);
+		return -1;
+	}
+	for (int c = 0; c < channels; c++) {
+		int dOff = (dst1Channel + c) * dstPlaneStride + dst1Offset * elemSize;
+		int sOff = (src1Channel + c) * srcPlaneStride + src1Offset * elemSize;
+		if (dOff >= 0 && dOff + rowBytes <= dstAllocSize && sOff >= 0 && sOff + rowBytes <= srcAllocSize)
+			memcpy((char*)dstBase + dOff, (char*)srcBase + sOff, rowBytes);
+	}
+	for (int c = 0; c < channels; c++) {
+		int dOff = (dst2Channel + c) * dstPlaneStride + dst2Offset * elemSize;
+		int sOff = (src2Channel + c) * srcPlaneStride + src2Offset * elemSize;
+		if (dOff >= 0 && dOff + rowBytes <= dstAllocSize && sOff >= 0 && sOff + rowBytes <= srcAllocSize)
+			memcpy((char*)dstBase + dOff, (char*)srcBase + sOff, rowBytes);
+	}
+	iosurface_unlock(srcSurf, 1);
+	iosurface_unlock(dstSurf, 0);
+	return 0;
+}
 */
 import "C"
 import (
@@ -130,6 +164,57 @@ func copyOutputRangeToInputCGo(dst *model.Kernel, dstInput, dstChannel, dstOffse
 // copyOutputChannelsToInputCGo is a convenience wrapper.
 func copyOutputChannelsToInputCGo(dst *model.Kernel, dstInput, dstChannel int, src *model.Kernel, srcOutput, srcChannel, channels int) error {
 	return copyOutputRangeToInputCGo(dst, dstInput, dstChannel, 0, src, srcOutput, srcChannel, 0, channels, -1)
+}
+
+// copyOutputRange2ToInputCGo copies two channel ranges from the same source
+// output surface to the same destination input surface in a single lock/unlock.
+func copyOutputRange2ToInputCGo(
+	dst *model.Kernel, dstInput int,
+	dst1Channel, dst1Offset int,
+	dst2Channel, dst2Offset int,
+	src *model.Kernel, srcOutput int,
+	src1Channel, src1Offset int,
+	src2Channel, src2Offset int,
+	channels, width int,
+) error {
+	if dst == nil || src == nil {
+		return fmt.Errorf("copy output range2 to input cgo: nil kernel")
+	}
+	if channels <= 0 {
+		return nil
+	}
+	dstLayout := dst.InputLayout(dstInput)
+	srcLayout := src.OutputLayout(srcOutput)
+	if dstLayout.Height != 1 || srcLayout.Height != 1 {
+		return fmt.Errorf("copy output range2 to input cgo: height > 1 not supported")
+	}
+	if width < 0 {
+		width = srcLayout.Width
+	}
+	if dstLayout.ElemSize != srcLayout.ElemSize {
+		return fmt.Errorf("copy output range2 to input cgo: elem size mismatch")
+	}
+	rowBytes := width * srcLayout.ElemSize
+	dstRef := dst.InputSurface(dstInput)
+	srcRef := src.OutputSurface(srcOutput)
+	if dstRef == 0 || srcRef == 0 {
+		return fmt.Errorf("copy output range2 to input cgo: nil surface ref")
+	}
+	rc := C.iosurface_copy_range2(
+		C.IOSurfaceRef(unsafe.Pointer(dstRef)),
+		C.int(dstLayout.PlaneStride), C.int(dstLayout.AllocSize()),
+		C.int(dst1Channel), C.int(dst1Offset),
+		C.int(dst2Channel), C.int(dst2Offset),
+		C.IOSurfaceRef(unsafe.Pointer(srcRef)),
+		C.int(srcLayout.PlaneStride), C.int(srcLayout.AllocSize()),
+		C.int(src1Channel), C.int(src1Offset),
+		C.int(src2Channel), C.int(src2Offset),
+		C.int(channels), C.int(rowBytes), C.int(srcLayout.ElemSize),
+	)
+	if rc != 0 {
+		return errNilIOSurfaceBase
+	}
+	return nil
 }
 
 // writeInputFP16CGo writes float32 data to a kernel's input IOSurface using CGo

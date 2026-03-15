@@ -474,11 +474,16 @@ func (lb *layerBackward) runDynamicAttention(dxNorm, dq, dk, dv, q, k, v, dx2 []
 	if err := evalKernelTracked(lb.metrics, lb.sdpa2); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: eval sdpa2: %w", err)
 	}
-	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 0, lb.sdpa2, 0, 0, 0, lb.dim, lb.seq); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: copy dq to qkv: %w", err)
-	}
-	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, lb.seq, lb.sdpa2, 0, lb.dim, 0, lb.dim, lb.seq); err != nil {
-		return fmt.Errorf("run layer backward dynamic attention: copy dk to qkv: %w", err)
+	if err := copyOutputRange2ToInputCGo(
+		lb.qkv, 0,
+		0, 0,          // dst1: channel 0, offset 0 (dq)
+		0, lb.seq,     // dst2: channel 0, offset seq (dk)
+		lb.sdpa2, 0,
+		0, 0,          // src1: channel 0, offset 0 (dq)
+		lb.dim, 0,     // src2: channel dim, offset 0 (dk)
+		lb.dim, lb.seq,
+	); err != nil {
+		return fmt.Errorf("run layer backward dynamic attention: copy dq+dk to qkv: %w", err)
 	}
 	if err := copyOutputRangeToInputCGo(lb.qkv, 0, 0, 2*lb.seq, lb.sdpa1, 0, 0, 0, lb.dim, lb.seq); err != nil {
 		return fmt.Errorf("run layer backward dynamic attention: copy dv to qkv: %w", err)
