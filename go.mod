@@ -4,7 +4,7 @@ go 1.25.2
 
 require (
 	github.com/ebitengine/purego v0.10.0
-	github.com/tmc/apple v0.0.0
+	github.com/tmc/apple v0.3.3-0.20260315071352-5021d6701d1a
 	github.com/tmc/mlx-go v0.0.0
 )
 
