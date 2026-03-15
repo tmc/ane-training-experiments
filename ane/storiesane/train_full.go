@@ -593,19 +593,8 @@ func (e *Engine) buildCompactVocab(targets []uint16) int {
 	return len(e.compactToFull)
 }
 
-func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, rrms []float32) {
-	if e.off == nil || !e.off.hasRMSBackward() {
-		stories.RMSNormBackward(dx, dw, dy, x, w, stories.Dim, e.seq)
-		return
-	}
-	if err := e.off.runRMSBackwardWithWeights(dx, dy, x, w); err != nil {
-		e.off.disableRMSBackward()
-		stories.RMSNormBackward(dx, dw, dy, x, w, stories.Dim, e.seq)
-		return
-	}
-	begin := time.Now()
-	rmsNormGradWeightsWithRRMS(dw, dy, x, rrms, stories.Dim, e.seq)
-	e.stepMetrics.addRMSDW(time.Since(begin))
+func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, _ []float32) {
+	stories.RMSNormBackward(dx, dw, dy, x, w, stories.Dim, e.seq)
 }
 
 func (e *Engine) ensureAttentionCache(layer *stories.LayerWeights, cache *layerCache) {
