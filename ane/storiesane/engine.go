@@ -126,6 +126,15 @@ type Engine struct {
 	embedGradDone    chan struct{}
 	asyncRefreshDone chan time.Duration // async weight refresh result
 	stepMetrics      aneStepMetrics
+
+	// Compact vocab buffers for embed gradient. Instead of a full
+	// 32K×dim GEMM we gather only the unique target tokens (~seq)
+	// and scatter back after the compact GEMM.
+	compactToFull  []int
+	compactTargets []uint16
+	embedCompact   []float32
+	gEmbedCompact  []float32
+	dLogitsCompact []float32
 }
 
 const (
@@ -514,6 +523,11 @@ func (e *Engine) Close() {
 	e.gradPrev = nil
 	e.ropeCos = nil
 	e.ropeSin = nil
+	e.compactToFull = nil
+	e.compactTargets = nil
+	e.embedCompact = nil
+	e.gEmbedCompact = nil
+	e.dLogitsCompact = nil
 	if e.gradTasks != nil {
 		e.gradTasks.Close()
 		e.gradTasks = nil

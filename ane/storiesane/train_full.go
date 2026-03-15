@@ -470,7 +470,7 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 		embedScale := gradScale
 		go func() {
 			begin := time.Now()
-			stories.MatMulGradEmbedScale(e.gEmbed, gradLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, embedScale)
+			e.compactEmbedGrad(gradLogits, embedScale, target)
 			e.stepMetrics.addEmbedGrad(time.Since(begin))
 			close(done)
 		}()
@@ -487,7 +487,7 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	}
 	if !embedAsync {
 		begin := time.Now()
-		stories.MatMulGradEmbedScale(e.gEmbed, gradLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, gradScale)
+		e.compactEmbedGrad(gradLogits, gradScale, target)
 		e.stepMetrics.addEmbedGrad(time.Since(begin))
 	}
 	if e.off == nil || !e.off.hasRMSBackward() {
@@ -502,6 +502,74 @@ func (e *Engine) runFinalHead(finalHidden []float32, target []uint16) (float32, 
 	}
 	e.stepMetrics.addFinalHead(time.Since(start))
 	return loss, nil
+}
+
+// compactEmbedGrad computes the embedding gradient using only the unique
+// tokens present in the target sequence. For seq=384 with ~300-384 unique
+// tokens out of 32K total vocab, this reduces the GEMM from 32K×dim to
+// ~384×dim — roughly 80-100× fewer multiply-adds.
+func (e *Engine) compactEmbedGrad(dLogits []float32, scale float32, targets []uint16) {
+	if scale == 0 {
+		clear(e.gEmbed)
+		return
+	}
+	compactVocab := e.buildCompactVocab(targets)
+	if compactVocab <= 0 || compactVocab > stories.Vocab/2 {
+		// Not enough savings — fall back to full GEMM.
+		stories.MatMulGradEmbedScale(e.gEmbed, dLogits, e.xNorm, stories.Vocab, stories.Dim, e.seq, scale)
+		return
+	}
+
+	// Gather the dLogits rows for compact tokens.
+	// dLogits layout: [vocab × seq] channel-first, stride=seq.
+	dLC := e.dLogitsCompact[:compactVocab*e.seq]
+	for c, full := range e.compactToFull[:compactVocab] {
+		copy(dLC[c*e.seq:(c+1)*e.seq], dLogits[full*e.seq:(full+1)*e.seq])
+	}
+
+	// Compact GEMM: gEmbedCompact[compactVocab × dim] = dLC[compactVocab × seq] @ xNorm[dim × seq]^T
+	gEC := e.gEmbedCompact[:compactVocab*stories.Dim]
+	stories.MatMulGradEmbedScale(gEC, dLC, e.xNorm, compactVocab, stories.Dim, e.seq, scale)
+
+	// Scatter compact grad back into full gEmbed.
+	clear(e.gEmbed)
+	for c, full := range e.compactToFull[:compactVocab] {
+		copy(
+			e.gEmbed[full*stories.Dim:(full+1)*stories.Dim],
+			gEC[c*stories.Dim:(c+1)*stories.Dim],
+		)
+	}
+}
+
+// buildCompactVocab builds the compactToFull mapping from unique target
+// tokens. Returns the compact vocabulary size.
+func (e *Engine) buildCompactVocab(targets []uint16) int {
+	// Allocate buffers on first use.
+	if e.compactToFull == nil {
+		e.compactToFull = make([]int, 0, e.seq)
+		e.compactTargets = make([]uint16, e.seq)
+		e.embedCompact = make([]float32, e.seq*stories.Dim)
+		e.gEmbedCompact = make([]float32, e.seq*stories.Dim)
+		e.dLogitsCompact = make([]float32, e.seq*e.seq)
+	}
+
+	// Use a bitmap for fast dedup. stories.Vocab=32000 → 1000 uint32 words.
+	const wordBits = 32
+	var seen [(stories.Vocab + wordBits - 1) / wordBits]uint32
+	e.compactToFull = e.compactToFull[:0]
+	for _, tok := range targets[:e.seq] {
+		t := int(tok)
+		if t >= stories.Vocab {
+			continue
+		}
+		word, bit := t/wordBits, uint32(1)<<(t%wordBits)
+		if seen[word]&bit != 0 {
+			continue
+		}
+		seen[word] |= bit
+		e.compactToFull = append(e.compactToFull, t)
+	}
+	return len(e.compactToFull)
 }
 
 func (e *Engine) runRMSBackwardLayer(dx, dw, dy, x, w, rrms []float32) {
