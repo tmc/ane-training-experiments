@@ -26,7 +26,7 @@ func crossEntropyLossAccel(dLogits, logits []float32, targets []uint16, v, s int
 		valid int
 	}
 
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(8, runtime.GOMAXPROCS(0))
 	if workers > s {
 		workers = s
 	}

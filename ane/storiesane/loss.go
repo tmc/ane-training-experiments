@@ -33,7 +33,7 @@ func crossEntropyLossFromProbsUnscaled(dLogits, probs []float32, targets []uint1
 	}
 	loss := 0.0
 	valid := 0
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(8, runtime.GOMAXPROCS(0))
 	if workers < 2 || seq < workers*4 {
 		loss, valid = crossEntropyLossFromProbsRange(dLogits, probs, targets, vocab, seq, 0, seq)
 		if valid == 0 {
