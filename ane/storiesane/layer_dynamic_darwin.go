@@ -436,8 +436,8 @@ func (lb *layerBackward) runDynamicFFN(dxNorm, dh1, dh3, dFFN, h1, h3 []float32)
 		return fmt.Errorf("run layer backward dynamic ffn: read tail output: %w", err)
 	}
 	copy(dxNorm, lb.ffnOut[:dimN])
-	copy(dh1, lb.ffnOut[dimN:dimN+hiddenN])
-	copy(dh3, lb.ffnOut[dimN+hiddenN:dimN+2*hiddenN])
+	// dh1 and dh3 remain in lb.ffnOut — callers alias them directly from
+	// lb.ffnOut[dimN:] to avoid two large copies per layer.
 	return nil
 }
 
