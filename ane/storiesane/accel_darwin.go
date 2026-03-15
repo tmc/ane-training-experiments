@@ -148,6 +148,33 @@ static void softmax_strided_ce_batch_f32(
 	*out_valid = totalValid;
 }
 
+// rms_norm_cf_f32 computes RMS normalization in channel-first layout for all
+// tokens in [t_start, t_end). Each token's dim values are at x[d*seq+t] with
+// stride=seq. Writes out[d*seq+t] = x[d*seq+t] * scale * w[d] where
+// scale = 1/sqrt(mean(x^2) + eps). Optionally writes rrms[t] = scale.
+// This replaces seq separate vDSP_svesq CGo calls with a single C function.
+static void rms_norm_cf_f32(
+	float* restrict out,
+	float* restrict rrms,
+	const float* restrict x,
+	const float* restrict w,
+	int dim,
+	int seq,
+	int t_start,
+	int t_end
+) {
+	float inv_dim = 1.0f / (float)dim;
+	for (int t = t_start; t < t_end; t++) {
+		float ssq;
+		vDSP_svesq(x + t, seq, &ssq, dim);
+		float scale = 1.0f / sqrtf(ssq * inv_dim + 1e-5f);
+		if (rrms) rrms[t] = scale;
+		for (int d = 0; d < dim; d++) {
+			out[d * seq + t] = x[d * seq + t] * scale * w[d];
+		}
+	}
+}
+
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -164,7 +191,6 @@ static void softmax_row_f32(float* out, const float* in, int n) {
 import "C"
 
 import (
-	"math"
 	"unsafe"
 
 	"github.com/maderix/ANE/ane/stories"
@@ -301,26 +327,22 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 	return float64(loss), int(valid)
 }
 
-// rmsNormCFWithRRMSImpl uses vDSP_svesq for the strided sum-of-squares in
-// channel-first layout. The inner scaling loop remains scalar because dim=64
-// is too small to amortize the CGo crossing overhead of additional vDSP calls.
+// rmsNormCFWithRRMSImpl uses a batched C function that processes all tokens
+// in a single CGo crossing, replacing seq separate vDSP_svesq calls.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
+	var rrmsPtr *C.float
+	if rrms != nil {
+		rrmsPtr = (*C.float)(unsafe.Pointer(&rrms[0]))
+	}
 	parallelForCF(seq, func(start, end int) {
-		for t := start; t < end; t++ {
-			var ssq C.float
-			C.vDSP_svesq(
-				(*C.float)(unsafe.Pointer(&x[t])), C.vDSP_Stride(seq),
-				&ssq,
-				C.vDSP_Length(dim),
-			)
-			scale := float32(1.0 / math.Sqrt(float64(ssq)/float64(dim)+1e-5))
-			if rrms != nil {
-				rrms[t] = scale
-			}
-			for i := 0; i < dim; i++ {
-				out[i*seq+t] = x[i*seq+t] * scale * w[i]
-			}
-		}
+		C.rms_norm_cf_f32(
+			(*C.float)(unsafe.Pointer(&out[0])),
+			rrmsPtr,
+			(*C.float)(unsafe.Pointer(&x[0])),
+			(*C.float)(unsafe.Pointer(&w[0])),
+			C.int(dim), C.int(seq),
+			C.int(start), C.int(end),
+		)
 	})
 }
 
