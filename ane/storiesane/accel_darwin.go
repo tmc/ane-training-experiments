@@ -222,16 +222,16 @@ static void rms_norm_backward_cf_f32(
 	if (!shards) {
 		// Fallback: single-threaded.
 		for (int t = 0; t < seq; t++) {
-			float r = rrms[t];
-			float rrms2InvD = (r * r) / (float)dim;
-			float dot = 0.0f;
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
-				dot += dy[d*seq+t] * x[d*seq+t] * w[d];
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
 			for (int d = 0; d < dim; d++) {
-				float v = dy[d*seq+t] - x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = v * r * w[d];
-				dw[d] += dy[d*seq+t] * x[d*seq+t] * r;
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
 		return;
@@ -245,16 +245,16 @@ static void rms_norm_backward_cf_f32(
 		if (start >= seq) return;
 		float* shard = shards + (int)wi * dim;
 		for (int t = start; t < end; t++) {
-			float r = rrms[t];
-			float rrms2InvD = (r * r) / (float)dim;
-			float dot = 0.0f;
+			double r = (double)rrms[t];
+			double rrms2InvD = (r * r) / (double)dim;
+			double dot = 0.0;
 			for (int d = 0; d < dim; d++) {
-				dot += dy[d*seq+t] * x[d*seq+t] * w[d];
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
 			}
 			for (int d = 0; d < dim; d++) {
-				float v = dy[d*seq+t] - x[d*seq+t] * dot * rrms2InvD;
-				dx[d*seq+t] = v * r * w[d];
-				shard[d] += dy[d*seq+t] * x[d*seq+t] * r;
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * r * (double)w[d]);
+				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * r);
 			}
 		}
 	});
