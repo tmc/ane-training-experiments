@@ -175,6 +175,85 @@ static void rms_norm_cf_f32(
 	}
 }
 
+// rms_norm_backward_cf_f32 computes both dx and dw for RMS norm backward in
+// channel-first layout. Uses dispatch_apply for parallelism, avoiding Go
+// goroutine overhead. Each worker computes dx for its token range and
+// accumulates dw into a thread-local shard, then the main thread reduces.
+#include <dispatch/dispatch.h>
+static void rms_norm_backward_cf_f32(
+	float* restrict dx,
+	float* restrict dw,
+	const float* restrict dy,
+	const float* restrict x,
+	const float* restrict w,
+	int dim,
+	int seq
+) {
+	int workers = 8;
+	if (workers > seq) workers = seq;
+	if (seq < workers * 4) workers = 1;
+	int chunk = (seq + workers - 1) / workers;
+
+	// Allocate thread-local dw shards.
+	float* shards = (float*)calloc(workers * dim, sizeof(float));
+	if (!shards) {
+		// Fallback: single-threaded.
+		for (int t = 0; t < seq; t++) {
+			double sum = 0.0;
+			for (int d = 0; d < dim; d++) {
+				double v = (double)x[d*seq+t];
+				sum += v * v;
+			}
+			double rrms = 1.0 / sqrt(sum / (double)dim + 1e-5);
+			double rrms2InvD = (rrms * rrms) / (double)dim;
+			double dot = 0.0;
+			for (int d = 0; d < dim; d++) {
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
+			}
+			for (int d = 0; d < dim; d++) {
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * rrms * (double)w[d]);
+				dw[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * rrms);
+			}
+		}
+		return;
+	}
+
+	dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
+	dispatch_apply(workers, queue, ^(size_t wi) {
+		int start = (int)wi * chunk;
+		int end = start + chunk;
+		if (end > seq) end = seq;
+		if (start >= seq) return;
+		float* shard = shards + (int)wi * dim;
+		for (int t = start; t < end; t++) {
+			double sum = 0.0;
+			for (int d = 0; d < dim; d++) {
+				double v = (double)x[d*seq+t];
+				sum += v * v;
+			}
+			double rrms = 1.0 / sqrt(sum / (double)dim + 1e-5);
+			double rrms2InvD = (rrms * rrms) / (double)dim;
+			double dot = 0.0;
+			for (int d = 0; d < dim; d++) {
+				dot += (double)(dy[d*seq+t] * x[d*seq+t] * w[d]);
+			}
+			for (int d = 0; d < dim; d++) {
+				double v = (double)dy[d*seq+t] - (double)x[d*seq+t] * dot * rrms2InvD;
+				dx[d*seq+t] = (float)(v * rrms * (double)w[d]);
+				shard[d] += (float)((double)(dy[d*seq+t] * x[d*seq+t]) * rrms);
+			}
+		}
+	});
+
+	// Reduce shards into dw.
+	for (int wi = 0; wi < workers; wi++) {
+		float* shard = shards + wi * dim;
+		vDSP_vadd(shard, 1, dw, 1, dw, 1, dim);
+	}
+	free(shards);
+}
+
 // softmax_row_f32 computes numerically-stable softmax over n elements.
 static void softmax_row_f32(float* out, const float* in, int n) {
 	float maxv;
@@ -371,6 +450,20 @@ func softmaxRowAccel(out, in []float32) {
 		(*C.float)(unsafe.Pointer(&out[0])),
 		(*C.float)(unsafe.Pointer(&in[0])),
 		C.int(n),
+	)
+}
+
+// rmsNormBackwardAccel computes both dx and dw for RMS norm backward in a
+// single CGo call, using dispatch_apply for parallelism instead of Go goroutines.
+func rmsNormBackwardAccel(dx, dw, dy, x, w []float32, dim, seq int) {
+	C.rms_norm_backward_cf_f32(
+		(*C.float)(unsafe.Pointer(&dx[0])),
+		(*C.float)(unsafe.Pointer(&dw[0])),
+		(*C.float)(unsafe.Pointer(&dy[0])),
+		(*C.float)(unsafe.Pointer(&x[0])),
+		(*C.float)(unsafe.Pointer(&w[0])),
+		C.int(dim),
+		C.int(seq),
 	)
 }
 

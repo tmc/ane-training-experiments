@@ -138,6 +138,10 @@ func softmaxRowAccel(out, in []float32) {
 	}
 }
 
+func rmsNormBackwardAccel(dx, dw, dy, x, w []float32, dim, seq int) {
+	rmsNormBackwardPooled(dx, dw, dy, x, w, dim, seq)
+}
+
 func transposeClassifierForwardTileAccel(dst, embed []float32, start, size int) {
 	dim := stories.Dim
 	for d := 0; d < dim; d++ {
