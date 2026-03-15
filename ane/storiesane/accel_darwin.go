@@ -328,7 +328,7 @@ func softmaxStridedCEBatchAccel(dLogits, logits []float32, targets []uint16, voc
 }
 
 // rmsNormCFWithRRMSImpl uses a batched C function that processes all tokens
-// in a single CGo crossing, replacing seq separate vDSP_svesq calls.
+// in a single CGo crossing per worker, replacing seq separate vDSP_svesq calls.
 func rmsNormCFWithRRMSImpl(out, rrms, x, w []float32, dim, seq int) {
 	var rrmsPtr *C.float
 	if rrms != nil {
