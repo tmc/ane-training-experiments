@@ -181,7 +181,7 @@ static void rms_norm_cf_parallel_f32(
 	int dim,
 	int seq
 ) {
-	int workers = 16;
+	int workers = 8;
 	if (workers > seq) workers = seq;
 	if (seq < workers * 4) {
 		rms_norm_cf_f32(out, rrms, x, w, dim, seq, 0, seq);
