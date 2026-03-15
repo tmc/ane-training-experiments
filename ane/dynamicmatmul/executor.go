@@ -226,17 +226,8 @@ func (e *Executor) evalCFLocked(xCF []float32, collectMetrics bool) (EvalStats, 
 	for i := range e.tiles {
 		tile := &e.tiles[i]
 		stageChannelFirstActivations(tile.inputPacked, xCF, e.batch, e.inDim, tile.outDim)
-		// When weights are already on the IOSurface (from PrimeWeightsIO),
-		// write only the activation columns instead of the full buffer.
-		// This reduces the write from inDim×(batch+outDim) to inDim×batch.
-		var writeErr error
-		if e.weightsReady {
-			writeErr = tileWriteActivationColumnsF32(tile, xCF, e.batch)
-		} else {
-			writeErr = tileWriteInputF32(tile)
-		}
-		if writeErr != nil {
-			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, writeErr)
+		if err := tileWriteInputF32(tile); err != nil {
+			return EvalStats{}, fmt.Errorf("dynamic matmul: write channel-first input tile %d: %w", i, err)
 		}
 		evalStart := time.Now()
 		var tileHW uint64

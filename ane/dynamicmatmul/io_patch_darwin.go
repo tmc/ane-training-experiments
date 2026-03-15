@@ -6,9 +6,6 @@ package dynamicmatmul
 #cgo darwin LDFLAGS: -framework IOSurface
 #include <IOSurface/IOSurface.h>
 #include <string.h>
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-#include <arm_neon.h>
-#endif
 
 static void *iosurface_lock_and_get_base(IOSurfaceRef surf, uint32_t options) {
 	IOSurfaceLock(surf, options, NULL);
@@ -55,40 +52,6 @@ static int iosurface_write_strided_f32(
 		}
 	}
 done:
-	iosurface_unlock(surf, 0);
-	return 0;
-}
-
-// iosurface_write_partial_columns_f32 writes only the first writeWidth
-// columns of each channel to an IOSurface, leaving the remaining columns
-// (e.g., weights) untouched. data has layout [channels, writeWidth].
-static int iosurface_write_partial_columns_f32(
-	IOSurfaceRef surf,
-	const float* data,
-	int channels, int writeWidth,
-	int planeStride,
-	int allocSize, int dataLen
-) {
-	void *base = iosurface_lock_and_get_base(surf, 0);
-	if (!base) {
-		iosurface_unlock(surf, 0);
-		return -1;
-	}
-	char *dst = (char*)base;
-	int logical = channels * writeWidth;
-	int limit = dataLen;
-	if (limit > logical) limit = logical;
-	int writeBytes = writeWidth * 4;
-	for (int c = 0; c < channels; c++) {
-		int srcIdx = c * writeWidth;
-		if (srcIdx >= limit) break;
-		int n = writeWidth;
-		int remain = limit - srcIdx;
-		if (remain < n) n = remain;
-		int off = c * planeStride;
-		if (off + n * 4 > allocSize) break;
-		memcpy(dst + off, data + srcIdx, n * 4);
-	}
 	iosurface_unlock(surf, 0);
 	return 0;
 }
@@ -165,29 +128,9 @@ static int iosurface_write_rows_f32(
 	iosurface_unlock(surf, 0);
 	return 0;
 }
-// cvt_f32_to_f16 converts n floats from src to fp16 in dst using NEON.
-static void cvt_f32_to_f16(__fp16 *dst, const float *src, int n) {
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-	int i = 0;
-	for (; i + 7 < n; i += 8) {
-		float16x8_t h = vcombine_f16(
-			vcvt_f16_f32(vld1q_f32(src + i)),
-			vcvt_f16_f32(vld1q_f32(src + i + 4)));
-		vst1q_f16(dst + i, h);
-	}
-	for (; i < n; i++) {
-		dst[i] = (__fp16)src[i];
-	}
-#else
-	for (int i = 0; i < n; i++) {
-		dst[i] = (__fp16)src[i];
-	}
-#endif
-}
-
 // iosurface_copy_f32_to_f16 copies channel-first FP32 data from srcSurf
 // to FP16 data in dstSurf, converting each element. Both surfaces must
-// have height=1 and the same width. Uses NEON-vectorized conversion.
+// have height=1 and the same width.
 static int iosurface_copy_f32_to_f16(
 	IOSurfaceRef dstSurf, int dstPlaneStride, int dstChannel, int dstAllocSize,
 	IOSurfaceRef srcSurf, int srcPlaneStride, int srcChannel, int srcAllocSize,
@@ -207,7 +150,9 @@ static int iosurface_copy_f32_to_f16(
 		if (srcOff + width * 4 > srcAllocSize) break;
 		const float *src = (const float*)((char*)srcBase + srcOff);
 		__fp16 *dst = (__fp16*)((char*)dstBase + dstOff);
-		cvt_f32_to_f16(dst, src, width);
+		for (int w = 0; w < width; w++) {
+			dst[w] = (__fp16)src[w];
+		}
 	}
 	iosurface_unlock(srcSurf, 1);
 	iosurface_unlock(dstSurf, 0);
@@ -284,28 +229,6 @@ func tileWriteInputF32(tile *tile) error {
 
 func tileReadOutputF32(tile *tile) error {
 	return readOutputF32CGo(tile.k, 0, tile.outputPacked)
-}
-
-// tileWriteActivationColumnsF32 writes only the activation portion (first
-// batch columns) of each channel to the tile's IOSurface, leaving the
-// weight columns untouched. actCF has layout [inDim, batch].
-func tileWriteActivationColumnsF32(tile *tile, actCF []float32, batch int) error {
-	layout := tile.k.InputLayout(0)
-	ref := tile.k.InputSurface(0)
-	if ref == 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface ref")
-	}
-	rc := C.iosurface_write_partial_columns_f32(
-		C.IOSurfaceRef(unsafe.Pointer(ref)),
-		(*C.float)(unsafe.Pointer(&actCF[0])),
-		C.int(layout.Channels), C.int(batch),
-		C.int(layout.PlaneStride),
-		C.int(layout.AllocSize()), C.int(len(actCF)),
-	)
-	if rc != 0 {
-		return fmt.Errorf("dynamic matmul: nil IOSurface base address")
-	}
-	return nil
 }
 
 func writeF32ToSurface(ref coregraphics.IOSurfaceRef, data []float32, layout xane.TensorLayout) error {
