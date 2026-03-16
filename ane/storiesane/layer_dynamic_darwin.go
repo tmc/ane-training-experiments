@@ -403,13 +403,13 @@ func (lf *layerForward) runDynamicForwardOnly(out, x []float32) error {
 	if err := evalKernelTracked(lf.metrics, lf.att); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval attention: %w", err)
 	}
-	if err := readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut); err != nil {
-		return fmt.Errorf("run layer forward dynamic: read attention output: %w", err)
-	}
-	// Attention kernel applies residual scale internally:
-	// attOut[:want] = x + Wo_output * scale (already blended x2).
-	if err := writeStoriesFFNForwardActs(lf.ffn, lf.seq, lf.attOut[:want]); err != nil {
-		return fmt.Errorf("run layer forward dynamic: write ffn input: %w", err)
+	// Copy x2 (first dim channels) directly from attention output surface
+	// to FFN input surface, avoiding FP16→FP32→FP16 round-trip through CPU.
+	// The full attention output read (all 5*dim channels) is deferred to
+	// fillDynamicCache which runs as a goroutine overlapped with the next
+	// layer's forward pass.
+	if err := copyOutputRangeToInputCGo(lf.ffn, 0, 0, 0, lf.att, 0, 0, 0, lf.dim, lf.seq); err != nil {
+		return fmt.Errorf("run layer forward dynamic: copy attention x2 to ffn input: %w", err)
 	}
 	if err := evalKernelTracked(lf.metrics, lf.ffn); err != nil {
 		return fmt.Errorf("run layer forward dynamic: eval ffn: %w", err)
@@ -432,6 +432,10 @@ func (lf *layerForward) fillDynamicCache(x []float32, cache *layerCache) {
 		return
 	}
 	want := lf.dim * lf.seq
+	// Read the full attention output (x2, q, k, v, attOut) from the ANE
+	// output surface. This was deferred from runDynamicForwardOnly to
+	// overlap with the next layer's forward pass.
+	readOutputFP16ChannelsFast(lf.att, 0, 0, lf.seq, lf.attOut) //nolint:errcheck
 	// The attention kernel applies residual scale internally, so
 	// attOut[:want] is already the blended x2 = x + Wo_output * scale.
 	cache.x2 = lf.attOut[:want]
